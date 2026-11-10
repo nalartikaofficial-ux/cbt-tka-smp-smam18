@@ -1,2413 +1,950 @@
-/* eslint-disable @next/next/no-img-element */
-// @ts-nocheck
 "use client";
 
-import * as XLSX from "xlsx";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-    Database,
     ChevronLeft,
-    Send,
-    Image as ImageIcon,
-    FileSpreadsheet,
-    FileText,
-    UploadCloud,
-    HelpCircle,
-    CheckCircle2,
-    AlertCircle,
-    Eye,
-    Trash2,
-    Link2,
-    Copy,
-    Check,
-    RefreshCw,
-    Home,
-    ListFilter,
-    Clock,
-    Save,
-<<<<<<< HEAD
+    Search,
     BookOpen,
-    Calculator
+    Calculator,
+    Plus,
+    Trash2,
+    Edit3,
+    CheckCircle2,
+    FileText,
+    Save,
+    RefreshCw,
+    FolderOpen,
+    Upload,
+    Download,
+    Eye,
+    X,
+    AlertTriangle,
+    HelpCircle,
+    Image as ImageIcon,
+    CheckSquare,
+    ListOrdered,
+    FileSpreadsheet,
+    Check,
+    Layers,
+    Sparkles
 } from "lucide-react";
+import katex from "katex";
+import "katex/dist/katex.min.css";
+import { tkaQuestions as defaultQuestions } from "@/data/questions";
 
-// URL BACKEND GOOGLE APPS SCRIPT DATABASE TKA SMP RESMI
-const GOOGLE_SCRIPT_API_URL =
-    "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
+// Tipe Data Butir Soal TKA SMP
+export interface TKAPartQuestion {
+    id: string | number;
+    subject: "Bahasa Indonesia" | "Matematika";
+    subtest: "LIT_INDO" | "PM";
+    type: "PG_SEDERHANA" | "PGK_MCMA" | "PGK_KATEGORI";
+    difficulty: number; // 1: Mudah, 2: Sedang, 3: Sulit
+    stimulus?: string;
+    question: string;
+    imageUrl?: string;
+    imagePosition?: "above" | "below";
+    options?: string[]; // Untuk PG Sederhana & PGK MCMA
+    singleAnswer?: number; // Index 0-4 (A-E)
+    multiAnswers?: number[]; // Array Index [0, 2] dsb
+    statements?: { id: string; statement: string; correctCategory: "Benar" | "Salah" | "Sesuai" | "Tidak Sesuai" }[];
+    explanation?: string;
+}
 
-// HELPER RENDER FORMULA LATEX / KATEX
-=======
-    Edit3
-} from "lucide-react";
+// Komponen Render Rumus LaTeX
+function RenderLatex({ content = "" }: { content: string }) {
+    const safeText = String(content ?? "");
+    if (!safeText.trim()) return null;
 
-// HELPER RENDER MATEMATIKA: MENDUKUNG FORMULA LATEX MAUPUN NASKAH POLOS
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-export const MathRenderer = ({ content }: { content: any }) => {
-    const [katexReady, setKatexReady] = useState(false);
+    const parts = safeText.split(/(\$\$[\s\S]*?\$\$|\$[^\$]+?\$)/g);
 
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        if ((window as any).katex) {
-            setKatexReady(true);
-            return;
-        }
-        const timer = setInterval(() => {
-            if ((window as any).katex) {
-                setKatexReady(true);
-                clearInterval(timer);
-            }
-        }, 100);
-        return () => clearInterval(timer);
-    }, []);
-
-    if (content === null || content === undefined) return null;
-    let text = String(content).replace(/\\n/g, "\n");
-    if (!text.trim()) return null;
-
-<<<<<<< HEAD
-    if (!text.includes("$") && /(\\log|\b\^|\\cdot|\\frac|\\sqrt|\\alpha|\\beta|\\times|\\le|\\ge|\\leq|\\geq)/.test(text)) {
-        const newlineIdx = text.indexOf("\n");
-        if (newlineIdx !== -1) {
-            const pre = text.slice(0, newlineIdx + 1);
-            const math = text.slice(newlineIdx + 1).trim();
-            text = `${pre}$$${math}$$`;
-        } else {
-            text = `$$${text.trim()}$$`;
-        }
-=======
-    text = text.replace(/<[^>]*>/g, "");
-
-    if (text.includes("$")) {
-        const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$]+?\$)/g);
-        return (
-            <span>
-                {parts.map((part, idx) => {
-                    if ((part.startsWith("$$") && part.endsWith("$$")) || (part.startsWith("$") && part.endsWith("$"))) {
-                        const isDisplay = part.startsWith("$$");
-                        let formula = isDisplay ? part.slice(2, -2).trim() : part.slice(1, -1).trim();
-
-                        if (katexReady && typeof window !== "undefined" && (window as any).katex) {
-                            try {
-                                const html = (window as any).katex.renderToString(formula, {
-                                    displayMode: isDisplay,
-                                    throwOnError: false
-                                });
-                                return (
-                                    <span
-                                        key={idx}
-                                        className={isDisplay ? "block my-2 overflow-x-auto text-center" : "inline-block px-0.5"}
-                                        dangerouslySetInnerHTML={{ __html: html }}
-                                    />
-                                );
-                            } catch { }
-                        }
-                        return <span key={idx} className="font-serif italic font-semibold">{formula}</span>;
-                    }
-                    return <span key={idx}>{part}</span>;
-                })}
-            </span>
-        );
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-    }
-
-    const formatCleanText = (str: string) => {
-        return str
-            .replace(/\^0/g, "⁰").replace(/\^1/g, "¹").replace(/\^2/g, "²").replace(/\^3/g, "³")
-            .replace(/\^4/g, "⁴").replace(/\^5/g, "⁵").replace(/\^6/g, "⁶").replace(/\^7/g, "⁷")
-            .replace(/\^8/g, "⁸").replace(/\^9/g, "⁹")
-            .replace(/<=/g, "≤").replace(/>=/g, "≥").replace(/!=/g, "≠").replace(/\+-/g, "±");
-    };
-
-<<<<<<< HEAD
     return (
         <span>
             {parts.map((part, idx) => {
-                if ((part.startsWith("$$") && part.endsWith("$$")) || (part.startsWith("$") && part.endsWith("$"))) {
-                    const isDisplay = part.startsWith("$$");
-                    let formula = isDisplay ? part.slice(2, -2).trim() : part.slice(1, -1).trim();
-
-                    if (katexReady && typeof window !== "undefined" && (window as any).katex) {
-                        try {
-                            const html = (window as any).katex.renderToString(formula, {
-                                displayMode: isDisplay,
-                                throwOnError: false
-                            });
-                            return (
-                                <span
-                                    key={idx}
-                                    className={isDisplay ? "block my-2 overflow-x-auto text-center" : "inline-block px-1"}
-                                    dangerouslySetInnerHTML={{ __html: html }}
-                                />
-                            );
-                        } catch { }
+                if (part.startsWith("$$") && part.endsWith("$$")) {
+                    const math = part.slice(2, -2);
+                    try {
+                        const html = katex.renderToString(math, { displayMode: true, throwOnError: false });
+                        return (
+                            <span
+                                key={idx}
+                                className="block my-2 overflow-x-auto py-1"
+                                dangerouslySetInnerHTML={{ __html: html }}
+                            />
+                        );
+                    } catch {
+                        return <span key={idx}>{part}</span>;
                     }
-                    return <span key={idx} className="font-mono text-blue-900 font-bold">{formula}</span>;
+                } else if (part.startsWith("$") && part.endsWith("$")) {
+                    const math = part.slice(1, -1);
+                    try {
+                        const html = katex.renderToString(math, { displayMode: false, throwOnError: false });
+                        return (
+                            <span
+                                key={idx}
+                                className="inline-block px-0.5 align-middle"
+                                dangerouslySetInnerHTML={{ __html: html }}
+                            />
+                        );
+                    } catch {
+                        return <span key={idx}>{part}</span>;
+                    }
                 }
                 return <span key={idx}>{part}</span>;
             })}
         </span>
     );
-=======
-    return <span className="leading-relaxed">{formatCleanText(text)}</span>;
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-};
-
-// HELPER GAMBAR GOOGLE DRIVE CDN
-export function convertToDirectImageUrl(rawUrl: string): string {
-    if (!rawUrl) return "";
-    const clean = String(rawUrl).trim();
-
-    const driveRegex = /(?:drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)|id=)([a-zA-Z0-9_-]{20,})/;
-    const driveMatch = clean.match(driveRegex);
-    if (driveMatch && driveMatch[1]) {
-        return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
-    }
-
-    if (clean.includes("lh3.googleusercontent.com")) {
-        return clean;
-    }
-
-    if (clean.includes("dropbox.com") && clean.includes("dl=0")) {
-        return clean.replace("dl=0", "dl=1");
-    }
-
-    return clean;
 }
 
-interface ParsedQuestion {
-    subtes_code: string;
-    no_soal: number;
-    stimulus?: string;
-    image_url?: string;
-    image_position?: "above" | "below";
-    pertanyaan: string;
-    opsi_a: string;
-    opsi_b: string;
-    opsi_c: string;
-    opsi_d: string;
-    opsi_e?: string;
-    opsi_a_img?: string;
-    opsi_b_img?: string;
-    opsi_c_img?: string;
-    opsi_d_img?: string;
-    opsi_e_img?: string;
-    kunci: string;
-    tingkat_kesukaran: string;
-    pembahasan?: string;
-    author_guru?: string;
-}
-
-interface SubtestDurationItem {
-    code: string;
-    name: string;
-    defaultDurationMinutes: number;
-}
-
-// STRUKTUR RESMI 7 SUBTES SNBT (TOTAL 160 BUTIR SOAL)
-const SNBT_STRUCTURE = [
-    { code: "PU", name: "Penalaran Umum (PU)", count: 30 },
-    { code: "PPU", name: "Pengetahuan & Pemahaman", count: 20 },
-    { code: "PBM", name: "Pemahaman Bacaan & Menulis", count: 20 },
-    { code: "PK", name: "Pengetahuan Kuantitatif", count: 20 },
-    { code: "LIT_INDO", name: "Literasi B. Indonesia", count: 30 },
-    { code: "LIT_ENG", name: "Literasi Bahasa Inggris", count: 20 },
-    { code: "PM", name: "Penalaran Matematika", count: 20 }
-];
-
-// ========================================================
-// MESIN IMPORT WORD DENGAN PARTISI SUBTES OTOMATIS
-// ========================================================
-function WordImporterSection({
-    selectedPaket,
-    onBulkSubmit,
-    isSubmittingServer
-}: {
-    selectedPaket: string;
-    onBulkSubmit: (questions: ParsedQuestion[]) => Promise<void>;
-    isSubmittingServer: boolean;
-}) {
-    const [isParsing, setIsParsing] = useState(false);
-    const [stagedList, setStagedList] = useState<ParsedQuestion[]>([]);
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState<ParsedQuestion | null>(null);
-
-    // Pemetaan subtes berdasarkan nomor urut global 0..159
-    const getSubtestMetaByIndex = (indexZeroBased: number) => {
-        let accumulated = 0;
-        for (const sub of SNBT_STRUCTURE) {
-            if (indexZeroBased < accumulated + sub.count) {
-                return {
-                    subtes: sub.code,
-                    localNo: (indexZeroBased - accumulated) + 1
-                };
-            }
-            accumulated += sub.count;
-        }
-        return { subtes: "PM", localNo: indexZeroBased + 1 };
-    };
-
-    const handleDocxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setIsParsing(true);
-        try {
-            const mammothModule: any = await import("mammoth");
-            const mammoth = mammothModule.default || mammothModule;
-            const arrayBuffer = await file.arrayBuffer();
-
-            const result = await mammoth.convertToHtml(
-                { arrayBuffer },
-                {
-                    convertImage: mammoth.images.inline((element: any) => {
-                        return element.read("base64").then((imageBuffer: any) => {
-                            return {
-                                src: `data:${element.contentType};base64,${imageBuffer}`,
-                            };
-                        });
-                    }),
-                }
-            );
-
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(result.value, "text/html");
-
-            const blocks: { text: string; imgUrl: string }[] = [];
-            const leafNodes = doc.body.querySelectorAll("p, td, li, h1, h2, h3, h4");
-            leafNodes.forEach((node) => {
-                if (node.tagName.toLowerCase() === "td" && node.querySelector("p")) {
-                    return;
-                }
-                const img = node.querySelector("img");
-                const imgSrc = img ? img.getAttribute("src") || "" : "";
-                const text = (node.textContent || "").replace(/\u00A0/g, " ").trim();
-                if (text || imgSrc) {
-                    blocks.push({ text, imgUrl: imgSrc });
-                }
-            });
-
-            const rawQuestions: any[] = [];
-            let current: any = {
-                image_position: "above",
-                tingkat_kesukaran: "Sedang",
-                kunci: "A",
-            };
-
-            const commitCurrent = () => {
-                if (current.pertanyaan && current.opsi_a) {
-                    rawQuestions.push({
-                        detectedSubtest: current.detectedSubtest || null,
-                        stimulus: (current.stimulus || "").trim(),
-                        image_url: current.image_url || "",
-                        image_position: current.image_position || "above",
-                        pertanyaan: (current.pertanyaan || "Pertanyaan").trim(),
-                        opsi_a: (current.opsi_a || "").trim(),
-                        opsi_b: (current.opsi_b || "").trim(),
-                        opsi_c: (current.opsi_c || "").trim(),
-                        opsi_d: (current.opsi_d || "").trim(),
-                        opsi_e: (current.opsi_e || "").trim(),
-                        kunci: (current.kunci || "A").trim().toUpperCase(),
-                        tingkat_kesukaran: current.tingkat_kesukaran || "Sedang",
-                        pembahasan: (current.pembahasan || "").trim(),
-                    });
-                    current = {
-                        image_position: "above",
-                        tingkat_kesukaran: "Sedang",
-                        kunci: "A",
-                        detectedSubtest: current.detectedSubtest || null
-                    };
-                }
-            };
-
-            blocks.forEach((block) => {
-                const { text, imgUrl } = block;
-
-                if (imgUrl && !current.image_url) {
-                    current.image_url = imgUrl;
-                }
-
-                if (!text) return;
-
-                const cleanLower = text.toLowerCase();
-                if (cleanLower.includes("penalaran umum") || cleanLower.includes("subtes pu")) {
-                    current.detectedSubtest = "PU";
-                } else if (cleanLower.includes("pengetahuan dan pemahaman umum") || cleanLower.includes("pemahaman umum") || cleanLower.includes("ppu")) {
-                    current.detectedSubtest = "PPU";
-                } else if (cleanLower.includes("pemahaman bacaan") || cleanLower.includes("bacaan dan menulis") || cleanLower.includes("pbm")) {
-                    current.detectedSubtest = "PBM";
-                } else if (cleanLower.includes("pengetahuan kuantitatif") || cleanLower.includes("kuantitatif") || cleanLower.includes("subtes pk")) {
-                    current.detectedSubtest = "PK";
-                } else if (cleanLower.includes("literasi dalam bahasa indonesia") || cleanLower.includes("literasi bahasa indonesia") || cleanLower.includes("lit indo")) {
-                    current.detectedSubtest = "LIT_INDO";
-                } else if (cleanLower.includes("literasi dalam bahasa inggris") || cleanLower.includes("literasi bahasa inggris") || cleanLower.includes("lit eng")) {
-                    current.detectedSubtest = "LIT_ENG";
-                } else if (cleanLower.includes("penalaran matematika") || cleanLower.includes("subtes pm")) {
-                    current.detectedSubtest = "PM";
-                }
-
-                if (/^(?:paket\s+[a-z]|bagian\s+[ivx]+|petunjuk|gambar\s+\d+:)/i.test(text)) {
-                    return;
-                }
-
-                const explicitQ = text.match(/^(?:soal|nomor|no\.?)\s*(\d+)[\.\:\)]?\s*(.*)$/i);
-                const numericQ = text.match(/^(\d+)[\.\)\uff0e]\s*(.*)$/i);
-
-                let isNewQuestionTrigger = false;
-                let trailingQuestionText = "";
-
-                if (explicitQ && !/^[a-e][\.\)\uff0e]/i.test(text) && !/^(?:kunci|jawaban|pembahasan)/i.test(text)) {
-                    isNewQuestionTrigger = true;
-                    trailingQuestionText = explicitQ[2].trim();
-                } else if (numericQ && !/^[a-e][\.\)\uff0e]/i.test(text) && !/^(?:kunci|jawaban|pembahasan)/i.test(text)) {
-                    if (current.opsi_a || !current.pertanyaan) {
-                        isNewQuestionTrigger = true;
-                        trailingQuestionText = numericQ[2].trim();
-                    }
-                }
-
-                if (isNewQuestionTrigger) {
-                    commitCurrent();
-                    if (trailingQuestionText) {
-                        current.pertanyaan = trailingQuestionText;
-                    }
-                    return;
-                }
-
-                const singleOptMatch = text.match(/^([a-e])[\.\)\uff0e]\s*(.*)$/i);
-                if (singleOptMatch) {
-                    const letter = singleOptMatch[1].toLowerCase();
-                    const val = singleOptMatch[2].trim();
-                    (current as any)[`opsi_${letter}`] = val;
-                    return;
-                }
-
-                const inlineMatches = Array.from(text.matchAll(/(?:^|\s+)([a-e])[\.\)\uff0e]\s+/gi));
-                if (inlineMatches.length >= 2) {
-                    for (let i = 0; i < inlineMatches.length; i++) {
-                        const letter = inlineMatches[i][1].toLowerCase();
-                        const start = inlineMatches[i].index! + inlineMatches[i][0].length;
-                        const end = (i + 1 < inlineMatches.length) ? inlineMatches[i + 1].index! : text.length;
-                        (current as any)[`opsi_${letter}`] = text.substring(start, end).trim();
-                    }
-                    return;
-                }
-
-                const keyMatch = text.match(/(?:kunci(?:\s*jawaban)?|jawaban)\s*[:=]\s*([a-e])/i);
-                if (keyMatch) {
-                    current.kunci = keyMatch[1].toUpperCase();
-                    return;
-                }
-
-                const pbhMatch = text.match(/^pembahasan(?:\s*soal)?\s*[:=]?\s*(.*)$/i);
-                if (pbhMatch) {
-                    current.pembahasan = pbhMatch[1] ? pbhMatch[1].trim() : "";
-                    return;
-                }
-
-                if (/^wacana:\s*/i.test(text)) {
-                    current.stimulus = text.replace(/^wacana:\s*/i, "").trim();
-                    return;
-                }
-
-                if (!current.opsi_a) {
-                    if (!current.pertanyaan) {
-                        current.pertanyaan = text;
-                    } else {
-                        current.pertanyaan += "\n" + text;
-                    }
-                } else if (current.pembahasan) {
-                    current.pembahasan += "\n" + text;
-                }
-            });
-
-            commitCurrent();
-
-            if (rawQuestions.length === 0) {
-                alert("Tidak ada butir soal yang terbaca dari dokumen Word.");
-                return;
-            }
-
-            // Pemisahan nomor lokal dan pembagian 7 subtes SNBT
-            const finalized: ParsedQuestion[] = rawQuestions.map((q, idx) => {
-                const subMeta = getSubtestMetaByIndex(idx);
-                const assignedSub = q.detectedSubtest || subMeta.subtes;
-                return {
-                    no_soal: subMeta.localNo,
-                    subtes_code: assignedSub,
-                    stimulus: q.stimulus,
-                    image_url: q.image_url,
-                    image_position: q.image_position,
-                    pertanyaan: q.pertanyaan,
-                    opsi_a: q.opsi_a,
-                    opsi_b: q.opsi_b,
-                    opsi_c: q.opsi_c,
-                    opsi_d: q.opsi_d,
-                    opsi_e: q.opsi_e,
-                    kunci: q.kunci,
-                    tingkat_kesukaran: q.tingkat_kesukaran,
-                    pembahasan: q.pembahasan
-                };
-            });
-
-            setStagedList(finalized);
-        } catch (err: any) {
-            console.error(err);
-            alert("Gagal membaca file .docx: " + (err?.message || "Format berkas tidak valid"));
-        } finally {
-            setIsParsing(false);
-            e.target.value = "";
-        }
-    };
-
-    return (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-sm text-left">
-            <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                    <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                        Import Naskah Word (.docx) &bull; Pembagian Otomatis 7 Subtes SNBT
-                    </h2>
-                    <p className="text-xs text-slate-500">
-                        160 soal otomatis dipartisi: PU (30 soal), PPU (20 soal), PBM (20 soal), PK (20 soal), LIT_INDO (30 soal), LIT_ENG (20 soal), PM (20 soal).
-                    </p>
-                </div>
-            </div>
-
-            <div className="border-2 border-dashed border-indigo-300 hover:border-indigo-600 bg-indigo-50/20 hover:bg-indigo-50/40 rounded-3xl p-8 text-center transition-all">
-                <input
-                    type="file"
-                    id="docx-file-input"
-                    accept=".docx"
-                    onChange={handleDocxUpload}
-                    disabled={isParsing || isSubmittingServer}
-                    className="hidden"
-                />
-                <label
-                    htmlFor="docx-file-input"
-                    className="cursor-pointer flex flex-col items-center justify-center gap-3"
-                >
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shadow-xs">
-                        <UploadCloud className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-sm font-bold text-slate-800">
-                            {isParsing ? "Sedang Memecah 160 Soal ke 7 Subtes..." : "Klik untuk Memilih File Dokumen Word (.docx)"}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                            Paket Target: <strong>{selectedPaket.replace("_", " ")}</strong>
-                        </p>
-                    </div>
-                </label>
-            </div>
-
-            {stagedList.length > 0 && (
-                <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
-                    <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-xs font-mono">
-                                {stagedList.length} Soal Berhasil Dipisahkan ke 7 Subtes
-                            </span>
-                            <span className="text-xs text-slate-300">Siap disimpan ke {selectedPaket.replace("_", " ")}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-400">
-                            Nomor soal telah di-reset per subtes (PU No. 1–30, PPU No. 1–20, dst).
-                        </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <button
-                            type="button"
-                            onClick={() => setStagedList([])}
-                            disabled={isSubmittingServer}
-                            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
-                        >
-                            Batalkan
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stagedList, null, 2));
-                                const downloadAnchor = document.createElement("a");
-                                downloadAnchor.setAttribute("href", dataStr);
-                                downloadAnchor.setAttribute("download", `${selectedPaket.toLowerCase()}.json`);
-                                document.body.appendChild(downloadAnchor);
-                                downloadAnchor.click();
-                                downloadAnchor.remove();
-                            }}
-                            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all"
-                        >
-                            <Download className="w-4 h-4" />
-                            <span>Download {selectedPaket.toLowerCase()}.json</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={async () => {
-                                await onBulkSubmit(stagedList);
-                                setStagedList([]);
-                            }}
-                            disabled={isSubmittingServer}
-                            className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 transition-all"
-                        >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Terapkan ke Pratinjau</span>
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {stagedList.length > 0 && (
-                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                    {stagedList.map((q, idx) => {
-                        const uniqueKey = `${q.subtes_code}_${q.no_soal}`;
-                        const isEditing = editingId === uniqueKey;
-
-                        if (isEditing && editForm) {
-                            return (
-                                <div key={uniqueKey} className="p-5 rounded-2xl bg-white border-2 border-indigo-500 shadow-md space-y-3">
-                                    <div className="flex items-center justify-between pb-2 border-b">
-                                        <span className="text-xs font-bold text-indigo-700 font-mono">
-                                            Edit Soal No. {q.no_soal} ({q.subtes_code})
-                                        </span>
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setStagedList((prev) => prev.map((item) => (item.subtes_code === editForm.subtes_code && item.no_soal === editForm.no_soal) ? editForm : item));
-                                                    setEditingId(null);
-                                                    setEditForm(null);
-                                                }}
-                                                className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-500"
-                                            >
-                                                Selesai Edit
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => { setEditingId(null); setEditForm(null); }}
-                                                className="px-3 py-1 bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
-                                            >
-                                                Batal
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-600 font-mono block mb-1">PERTANYAAN:</label>
-                                        <textarea
-                                            rows={3}
-                                            value={editForm.pertanyaan}
-                                            onChange={(e) => setEditForm({ ...editForm, pertanyaan: e.target.value })}
-                                            className="w-full text-xs p-2.5 border rounded-xl outline-none focus:border-indigo-600"
-                                        />
-                                    </div>
-
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        {(["a", "b", "c", "d", "e"] as const).map((letter) => (
-                                            <div key={letter} className="flex items-center gap-1.5">
-                                                <span className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center font-mono font-bold text-[10px] border">
-                                                    {letter.toUpperCase()}
-                                                </span>
-                                                <input
-                                                    type="text"
-                                                    value={(editForm as any)[`opsi_${letter}`]}
-                                                    onChange={(e) =>
-                                                        setEditForm({ ...editForm, [`opsi_${letter}`]: e.target.value })
-                                                    }
-                                                    className="flex-1 p-1.5 border rounded-lg text-xs"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        }
-
-                        return (
-                            <div key={uniqueKey} className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200">
-                                    <div className="flex items-center gap-2">
-                                        <span className="px-2 py-0.5 rounded bg-[#1e3a8a] text-white font-mono font-bold text-[10px]">
-                                            NO. {q.no_soal}
-                                        </span>
-                                        <span className="font-semibold text-slate-700 text-[11px] font-mono">
-                                            Subtes: {q.subtes_code}
-                                        </span>
-                                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono text-[10px] font-bold">
-                                            KUNCI: {q.kunci}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => { setEditingId(uniqueKey); setEditForm({ ...q }); }}
-                                            className="px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg flex items-center gap-1 transition-all"
-                                        >
-                                            <Edit3 className="w-3 h-3" />
-                                            <span>Edit</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setStagedList((prev) => prev.filter((_, i) => i !== idx))}
-                                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {q.stimulus && (
-                                    <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed italic">
-                                        <MathRenderer content={q.stimulus} />
-                                    </div>
-                                )}
-
-                                <div className="text-xs font-semibold text-slate-900 leading-relaxed">
-                                    <MathRenderer content={q.pertanyaan} />
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
-
-// ========================================================
-// HALAMAN UTAMA BANK SOAL
-// ========================================================
-export default function AdminBankSoalPage() {
+export default function BankSoalAdminPage() {
     const router = useRouter();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [isAuthorized, setIsAuthorized] = useState(false);
-    const [loggedTeacher, setLoggedTeacher] = useState<{ nama: string; mapel?: string }>({
-        nama: "Fadhillah Umar, S.Pd.",
-        mapel: "Fisika & Matematika"
-    });
+    const [questions, setQuestions] = useState<TKAPartQuestion[]>([]);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [selectedSubtest, setSelectedSubtest] = useState<"ALL" | "Bahasa Indonesia" | "Matematika">("ALL");
+    const [selectedType, setSelectedType] = useState<"ALL" | "PG_SEDERHANA" | "PGK_MCMA" | "PGK_KATEGORI">("ALL");
 
+    // State Modal Tambah / Edit Soal
+    const [showModal, setShowModal] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [previewMode, setPreviewMode] = useState(false);
+    const [selectedQuestionForPreview, setSelectedQuestionForPreview] = useState<TKAPartQuestion | null>(null);
+
+    // Form State Default
+    const initialFormState: TKAPartQuestion = {
+        id: "",
+        subject: "Bahasa Indonesia",
+        subtest: "LIT_INDO",
+        type: "PG_SEDERHANA",
+        difficulty: 2,
+        stimulus: "",
+        question: "",
+        imageUrl: "",
+        imagePosition: "above",
+        options: ["", "", "", ""],
+        singleAnswer: 0,
+        multiAnswers: [0],
+        statements: [
+            { id: "s1", statement: "", correctCategory: "Benar" },
+            { id: "s2", statement: "", correctCategory: "Salah" }
+        ],
+        explanation: ""
+    };
+
+    const [formData, setFormData] = useState<TKAPartQuestion>(initialFormState);
+
+    // Muat Soal dari LocalStorage atau Dataset Awal
     useEffect(() => {
         if (typeof window !== "undefined") {
-            const link = document.createElement("link");
-            link.rel = "stylesheet";
-            link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css";
-            document.head.appendChild(link);
-
-            const script = document.createElement("script");
-            script.src = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js";
-            script.async = true;
-            document.body.appendChild(script);
-
-            const raw = sessionStorage.getItem("logged_user");
-            if (!raw) {
-                setIsAuthorized(true);
-                return;
+            const saved = localStorage.getItem("tka_bank_soal");
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setQuestions(parsed);
+                        return;
+                    }
+                } catch { }
             }
-
-            try {
-                const parsed = JSON.parse(raw);
-                if (parsed.role === "admin" || parsed.role === "guru" || parsed.role === "proctor") {
-                    setLoggedTeacher(parsed);
-                    setIsAuthorized(true);
-                } else {
-                    alert("Akses Dibatasi: Bilik ini khusus Guru Pembuat Soal & Administrator.");
-                    router.replace("/admin");
-                }
-            } catch {
-                router.replace("/admin");
-            }
+            setQuestions((defaultQuestions as any) || []);
         }
-    }, [router]);
+    }, []);
 
-    const [selectedPaket, setSelectedPaket] = useState<"PAKET_1" | "PAKET_2" | "PAKET_3">("PAKET_1");
-    const [inputMode, setInputMode] = useState<"list" | "docx_upload" | "csv" | "manual">("list");
+    // Simpan ke LocalStorage setiap ada update
+    const saveQuestionsToStorage = (updated: TKAPartQuestion[]) => {
+        setQuestions(updated);
+        if (typeof window !== "undefined") {
+            localStorage.setItem("tka_bank_soal", JSON.stringify(updated));
+        }
+    };
 
-    const [serverQuestions, setServerQuestions] = useState<ParsedQuestion[]>([]);
-    const [isLoadingServerQuestions, setIsLoadingServerQuestions] = useState(false);
-    const [filterSubtestView, setFilterSubtestView] = useState("ALL");
+    // Filter Soal
+    const filteredQuestions = useMemo(() => {
+        return questions.filter((q) => {
+            const matchSearch =
+                (q.question && q.question.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (q.stimulus && q.stimulus.toLowerCase().includes(searchQuery.toLowerCase()));
 
-<<<<<<< HEAD
-    // ALOKASI WAKTU 2 SUBTES INTI TKA SMP
-    const [subtestsConfig, setSubtestsConfig] = useState<SubtestDurationItem[]>([
-        { code: "LIT_INDO", name: "Literasi Bahasa Indonesia", defaultDurationMinutes: 7.5 },
-        { code: "PM", name: "Penalaran Matematika (PM)", defaultDurationMinutes: 7.5 }
-=======
-    const [subtestsConfig, setSubtestsConfig] = useState<SubtestDurationItem[]>([
-        { code: "PU", name: "Penalaran Umum (PU)", defaultDurationMinutes: 30 },
-        { code: "PPU", name: "Pengetahuan & Pemahaman", defaultDurationMinutes: 15 },
-        { code: "PBM", name: "Pemahaman Bacaan & Menulis", defaultDurationMinutes: 25 },
-        { code: "PK", name: "Pengetahuan Kuantitatif", defaultDurationMinutes: 20 },
-        { code: "LIT_INDO", name: "Literasi B. Indonesia", defaultDurationMinutes: 42.5 },
-        { code: "LIT_ENG", name: "Literasi Bahasa Inggris", defaultDurationMinutes: 20 },
-        { code: "PM", name: "Penalaran Matematika", defaultDurationMinutes: 42.5 }
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-    ]);
-    const [isSavingDurations, setIsSavingDurations] = useState(false);
+            const matchSub = selectedSubtest === "ALL" || q.subject === selectedSubtest;
+            const matchType = selectedType === "ALL" || q.type === selectedType;
 
-    const [showCsvPreview, setShowCsvPreview] = useState(true);
-    const [testInputUrl, setTestInputUrl] = useState("");
-    const [testedDirectUrl, setTestedDirectUrl] = useState("");
-    const [isCopied, setIsCopied] = useState(false);
-    const [batchQuestions, setBatchQuestions] = useState<ParsedQuestion[]>([]);
-    const fileInputRef = useRef<HTMLInputElement | null>(null);
+            return matchSearch && matchSub && matchType;
+        });
+    }, [questions, searchQuery, selectedSubtest, selectedType]);
 
-    const [selectedSubtest, setSelectedSubtest] = useState("LIT_INDO");
-    const [noSoal, setNoSoal] = useState("1");
-    const [stimulus, setStimulus] = useState("");
-    const [imageUrl, setImageUrl] = useState("");
-    const [imagePosition, setImagePosition] = useState<"above" | "below">("below");
-    const [pertanyaan, setPertanyaan] = useState("");
-    const [opsiA, setOpsiA] = useState("");
-    const [opsiB, setOpsiB] = useState("");
-    const [opsiC, setOpsiC] = useState("");
-    const [opsiD, setOpsiD] = useState("");
-    const [opsiE, setOpsiE] = useState("");
-    const [opsiAImg, setOpsiAImg] = useState("");
-    const [opsiBImg, setOpsiBImg] = useState("");
-    const [opsiCImg, setOpsiCImg] = useState("");
-    const [opsiDImg, setOpsiDImg] = useState("");
-    const [opsiEImg, setOpsiEImg] = useState("");
-    const [kunci, setKunci] = useState("A");
-    const [kesukaran, setKesukaran] = useState("Sedang");
-    const [pembahasan, setPembahasan] = useState("");
+    // Statistik Bank Soal
+    const stats = useMemo(() => {
+        const total = questions.length;
+        const indo = questions.filter((q) => q.subject === "Bahasa Indonesia" || q.subtest === "LIT_INDO").length;
+        const math = questions.filter((q) => q.subject === "Matematika" || q.subtest === "PM").length;
+        const pg = questions.filter((q) => q.type === "PG_SEDERHANA").length;
+        const mcma = questions.filter((q) => q.type === "PGK_MCMA").length;
+        const kategori = questions.filter((q) => q.type === "PGK_KATEGORI").length;
+        return { total, indo, math, pg, mcma, kategori };
+    }, [questions]);
 
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-    const [isEditingMode, setIsEditingMode] = useState(false);
+    // Buka Form Buat Soal Baru
+    const handleOpenAddModal = () => {
+        setIsEditing(false);
+        setFormData({
+            ...initialFormState,
+            id: `TKA_${Date.now()}`
+        });
+        setShowModal(true);
+    };
 
-<<<<<<< HEAD
-    // AUTO-FORMAT NOTASI MATEMATIKA / SIMBOL SMP
-    const handleAutoFormatWordToLatex = () => {
-        if (!rawText.trim()) {
-            alert("Harap tempelkan naskah soal terlebih dahulu di kotak teks.");
+    // Buka Form Edit Soal
+    const handleOpenEditModal = (item: TKAPartQuestion) => {
+        setIsEditing(true);
+        setFormData({
+            ...item,
+            options: item.options && item.options.length > 0 ? item.options : ["", "", "", ""],
+            statements: item.statements && item.statements.length > 0 ? item.statements : [
+                { id: "s1", statement: "", correctCategory: "Benar" },
+                { id: "s2", statement: "", correctCategory: "Salah" }
+            ]
+        });
+        setShowModal(true);
+    };
+
+    // Hapus Soal
+    const handleDeleteQuestion = (id: string | number) => {
+        if (confirm("Apakah Anda yakin ingin menghapus butir soal ini dari bank soal?")) {
+            const updated = questions.filter((q) => q.id !== id);
+            saveQuestionsToStorage(updated);
+        }
+    };
+
+    // Simpan Form (Tambah / Edit)
+    const handleSaveForm = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.question.trim()) {
+            alert("Teks pertanyaan tidak boleh kosong!");
             return;
         }
 
-        setIsAiFormatting(true);
+        let updatedList: TKAPartQuestion[];
+        if (isEditing) {
+            updatedList = questions.map((q) => (q.id === formData.id ? formData : q));
+        } else {
+            updatedList = [formData, ...questions];
+        }
 
-        try {
-            let res = rawText;
-            res = res.replace(/[\u2010\u2013\u2014\u2212]/g, "-");
+        saveQuestionsToStorage(updatedList);
+        setShowModal(false);
+    };
 
-            const supMap: Record<string, string> = {
-                '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
-                '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
-                '⁻': '-', '⁺': '+'
-            };
+    // Handler Option Text
+    const handleOptionChange = (idx: number, value: string) => {
+        const newOptions = [...(formData.options || [])];
+        newOptions[idx] = value;
+        setFormData({ ...formData, options: newOptions });
+    };
 
-            res = res.replace(/(\d+)\s*([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_, base, exps) => {
-                const e = exps.split("").map((c: string) => supMap[c] || c).join("");
-                return `$${base}^{${e}}$`;
-            });
-            res = res.replace(/(\b\w+)\s*\^\s*(-?\d+)/g, "$$1^{$2}$");
-
-            res = res.replace(/(\d+)\s*°/g, "$$1^\\circ$");
-            res = res.replace(/<=|≤/g, "$\\le$");
-            res = res.replace(/>=|≥/g, "$\\ge$");
-
-            const lines = res.split("\n");
-            const sanitizedLines = lines.map((line: string) => {
-                const matchOpt = line.match(/^([A-E][\.\)])\s*(.*)$/i);
-                if (matchOpt) {
-                    const label = matchOpt[1];
-                    let content = matchOpt[2].trim();
-
-                    if (content.startsWith("$") && content.endsWith("$")) {
-                        return `${label} ${content}`;
-                    }
-
-                    if (/(\\text|\^|_|[⁰¹²³⁴⁵⁶⁷⁸⁹]|\\le|\\ge)/.test(content)) {
-                        const cleanContent = content.replace(/\$/g, "").trim();
-                        return `${label} $${cleanContent}$`;
-                    }
-                }
-                return line;
-            });
-
-            let finalClean = sanitizedLines.join("\n");
-            finalClean = finalClean.replace(/\$\s*\$/g, " ");
-
-            setRawText(finalClean);
-            setStatusMsg({
-                type: "success",
-                text: "✨ Berhasil! Notasi matematika, pangkat aljabar, dan opsi telah dirapikan secara instan."
-            });
-        } catch (err: any) {
-            setStatusMsg({
-                type: "error",
-                text: `Gagal memproses: ${err.message}`
-            });
-        } finally {
-            setIsAiFormatting(false);
+    const handleAddOption = () => {
+        if ((formData.options || []).length < 5) {
+            setFormData({ ...formData, options: [...(formData.options || []), ""] });
         }
     };
 
-=======
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-    const fetchSubtestDurations = async (pkg = selectedPaket) => {
-        try {
-            const raw = localStorage.getItem(`durasi_${pkg}`);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    setSubtestsConfig(parsed);
-                }
-            }
-        } catch { }
-    };
-
-    const handleSaveSubtestDurations = async () => {
-        setIsSavingDurations(true);
-        setStatusMsg(null);
-        try {
-            localStorage.setItem(`durasi_${selectedPaket}`, JSON.stringify(subtestsConfig));
-            setStatusMsg({
-                type: "success",
-<<<<<<< HEAD
-                text: `Alokasi durasi 2 subtes TKA SMP untuk ${selectedPaket.replace("_", " ")} berhasil disimpan!`
-=======
-                text: `Alokasi durasi 7 subtes untuk ${selectedPaket.replace("_", " ")} berhasil disimpan!`
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-            });
-        } catch {
-            setStatusMsg({
-                type: "error",
-                text: "Gagal menyimpan durasi subtes."
-            });
-        } finally {
-            setIsSavingDurations(false);
+    const handleRemoveOption = (idx: number) => {
+        if ((formData.options || []).length > 2) {
+            const newOptions = (formData.options || []).filter((_, i) => i !== idx);
+            setFormData({ ...formData, options: newOptions });
         }
     };
 
-    // Ambil data soal: Utamakan cache browser lokal, fallback ke API
-    const fetchServerQuestions = async (pkg = selectedPaket) => {
-        setIsLoadingServerQuestions(true);
-        try {
-            const localRaw = localStorage.getItem(`cbt_questions_${pkg}`);
-            if (localRaw) {
-                const parsedLocal = JSON.parse(localRaw);
-                if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
-                    setServerQuestions(parsedLocal);
-                    setIsLoadingServerQuestions(false);
-                    return;
-                }
-            }
-
-            const res = await fetch(`/api/questions?paket=${pkg}&_t=${Date.now()}`, {
-                cache: "no-store"
-            });
-            const json = await res.json();
-            if (json.status === "success" && Array.isArray(json.data) && json.data.length > 0) {
-                setServerQuestions(json.data);
-                localStorage.setItem(`cbt_questions_${pkg}`, JSON.stringify(json.data));
-            } else {
-                setServerQuestions([]);
-            }
-        } catch (err) {
-            console.error("Gagal memuat soal:", err);
-<<<<<<< HEAD
-=======
-            setServerQuestions([]);
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-        } finally {
-            setIsLoadingServerQuestions(false);
+    // Toggle Pilihan MCMA
+    const handleToggleMcmaAnswer = (idx: number) => {
+        const current = formData.multiAnswers || [];
+        let updated: number[];
+        if (current.includes(idx)) {
+            updated = current.filter((i) => i !== idx);
+        } else {
+            updated = [...current, idx];
         }
+        setFormData({ ...formData, multiAnswers: updated });
     };
 
-    useEffect(() => {
-        if (isAuthorized) {
-            fetchServerQuestions(selectedPaket);
-            fetchSubtestDurations(selectedPaket);
-        }
-    }, [selectedPaket, isAuthorized]);
-
-    // Hapus butir soal satuan
-    const handleDeleteServerQuestion = async (no: number, sub: string) => {
-        if (!confirm(`Hapus soal No. ${no} (${sub}) dari ${selectedPaket}?`)) return;
-
-        const updated = serverQuestions.filter((q) => !(Number(q.no_soal) === no && q.subtes_code === sub));
-        setServerQuestions(updated);
-        localStorage.setItem(`cbt_questions_${selectedPaket}`, JSON.stringify(updated));
-
-        fetch("/api/questions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                action: "delete_question",
-                paket: selectedPaket,
-                no_soal: no,
-                subtes_code: sub
-            })
-        }).catch(() => { });
-
-        setStatusMsg({ type: "success", text: `Soal No. ${no} (${sub}) berhasil dihapus!` });
+    // Handler Matriks Kategori
+    const handleStatementChange = (idx: number, field: "statement" | "correctCategory", val: any) => {
+        const list = [...(formData.statements || [])];
+        list[idx] = { ...list[idx], [field]: val };
+        setFormData({ ...formData, statements: list });
     };
 
-    // Hapus Semua Soal
-    const handleClearAllQuestions = async () => {
-        const konfirmasi = confirm(
-            `PERINGATAN!\nApakah Anda yakin ingin MENGHAPUS SEMUA SOAL di ${selectedPaket.replace("_", " ")}?\n\nSemua butir soal akan dikosongkan untuk diganti dengan paket soal baru.`
-        );
-        if (!konfirmasi) return;
-
-        setIsLoadingServerQuestions(true);
-        setStatusMsg(null);
-
-        try {
-            localStorage.removeItem(`cbt_questions_${selectedPaket}`);
-            setServerQuestions([]);
-            setNoSoal("1");
-
-            fetch("/api/questions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "clear_all_questions",
-                    paket: selectedPaket
-                })
-            }).catch(() => { });
-
-            setStatusMsg({
-                type: "success",
-                text: `Seluruh soal di ${selectedPaket.replace("_", " ")} berhasil dikosongkan.`
-            });
-        } catch (err: any) {
-            setStatusMsg({
-                type: "error",
-                text: "Gagal mengosongkan soal: " + err.message
-            });
-        } finally {
-            setIsLoadingServerQuestions(false);
-        }
-    };
-
-    const handleEditQuestion = (item: any) => {
-        setIsEditingMode(true);
-        setNoSoal(String(item.no_soal || item.no || "1"));
-        if (item.subtes_code || item.subtes) {
-            setSelectedSubtest(item.subtes_code || item.subtes);
-        }
-        setStimulus(item.stimulus || "");
-        setImageUrl(item.image_url || "");
-        setImagePosition(item.image_position === "above" ? "above" : "below");
-        setPertanyaan(item.pertanyaan || "");
-
-        setOpsiA(item.opsi_a || "");
-        setOpsiB(item.opsi_b || "");
-        setOpsiC(item.opsi_c || "");
-        setOpsiD(item.opsi_d || "");
-        setOpsiE(item.opsi_e || "");
-
-        setKunci(item.kunci || "A");
-        if (item.kesukaran || item.tingkat_kesukaran) setKesukaran(item.kesukaran || item.tingkat_kesukaran);
-        if (item.pembahasan) setPembahasan(item.pembahasan);
-
-        setInputMode("manual");
-        setStatusMsg({
-            type: "success",
-            text: `Memuat Soal No. ${item.no_soal} (${item.subtes_code}) untuk diedit.`
+    const handleAddStatement = () => {
+        const newId = `s_${Date.now()}`;
+        setFormData({
+            ...formData,
+            statements: [...(formData.statements || []), { id: newId, statement: "", correctCategory: "Benar" }]
         });
-
-        window.scrollTo({ top: 350, behavior: "smooth" });
     };
 
-    const extractOptionAndImg = (rawOptionText: string) => {
-        let text = String(rawOptionText || "").trim();
-        let img = "";
-        const match = text.match(/\[img:\s*([^\]]+)\]/i);
-        if (match) {
-            img = convertToDirectImageUrl(match[1]);
-            text = text.replace(match[0], "").trim();
-        } else if (/^https?:\/\//i.test(text) || text.startsWith("data:image/")) {
-            img = convertToDirectImageUrl(text);
-            text = "";
+    const handleRemoveStatement = (idx: number) => {
+        if ((formData.statements || []).length > 1) {
+            const list = (formData.statements || []).filter((_, i) => i !== idx);
+            setFormData({ ...formData, statements: list });
         }
-        return { text, img };
     };
 
-<<<<<<< HEAD
-    // SMART TEXT PARSER TKA SMP
-    const handleParseRawText = () => {
-        if (!rawText.trim()) return;
+    // Export Data JSON
+    const handleExportJSON = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(questions, null, 2));
+        const downloadAnchor = document.createElement("a");
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `bank_soal_tka_smp_${new Date().toISOString().slice(0, 10)}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    };
 
-        try {
-            const cleanSource = rawText.replace(/\r\n/g, "\n");
-            let blocks = cleanSource.split(/\n(?=\s*\d+[\.\)])/).filter((b) => b.trim() !== "");
-            if (blocks.length === 0 || (blocks.length === 1 && !/^\s*\d+[\.\)]/.test(blocks[0]))) {
-                blocks = [cleanSource.trim()];
-            }
-
-            const parsed: ParsedQuestion[] = [];
-
-            blocks.forEach((block, idx) => {
-                const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
-
-                let questionLines: string[] = [];
-                let a = "", b = "", c = "", d = "", e = "";
-                let aImg = "", bImg = "", cImg = "", dImg = "", eImg = "";
-                let kunciJawaban = "A", stimulusText = "", imgUrl = "";
-                let imgPos: "above" | "below" = "below";
-
-                lines.forEach((line) => {
-                    if (/^Wacana:\s*/i.test(line)) {
-                        stimulusText = line.replace(/^Wacana:\s*/i, "").trim();
-                    } else if (/^Gambar:\s*/i.test(line)) {
-                        imgUrl = convertToDirectImageUrl(line.replace(/^Gambar:\s*/i, "").trim());
-                    } else if (/^Posisi:\s*(atas|above)/i.test(line)) {
-                        imgPos = "above";
-                    } else if (/^Posisi:\s*(bawah|below)/i.test(line)) {
-                        imgPos = "below";
-                    } else if (/^Kunci:\s*/i.test(line)) {
-                        kunciJawaban = line.replace(/^Kunci:\s*/i, "").trim().toUpperCase().charAt(0);
-                    } else if (/^[A-E][\.\)]/i.test(line)) {
-                        const optMatch = line.match(/([A-E])[\.\)]\s*(.*?)(?=(?:[A-E][\.\)]|$))/gi);
-                        if (optMatch && optMatch.length > 1) {
-                            optMatch.forEach((m) => {
-                                const tag = m.charAt(0).toUpperCase();
-                                const val = m.replace(/^[A-E][\.\)]\s*/i, "").trim();
-                                const optParsed = extractOptionAndImg(val);
-                                if (tag === "A") { a = optParsed.text; aImg = optParsed.img; }
-                                if (tag === "B") { b = optParsed.text; bImg = optParsed.img; }
-                                if (tag === "C") { c = optParsed.text; cImg = optParsed.img; }
-                                if (tag === "D") { d = optParsed.text; dImg = optParsed.img; }
-                                if (tag === "E") { e = optParsed.text; eImg = optParsed.img; }
-                            });
-                        } else {
-                            const tag = line.charAt(0).toUpperCase();
-                            const val = line.replace(/^[A-E][\.\)]\s*/i, "").trim();
-                            const optParsed = extractOptionAndImg(val);
-                            if (tag === "A") { a = optParsed.text; aImg = optParsed.img; }
-                            if (tag === "B") { b = optParsed.text; bImg = optParsed.img; }
-                            if (tag === "C") { c = optParsed.text; cImg = optParsed.img; }
-                            if (tag === "D") { d = optParsed.text; dImg = optParsed.img; }
-                            if (tag === "E") { e = optParsed.text; eImg = optParsed.img; }
-                        }
+    // Import Data JSON
+    const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const fileReader = new FileReader();
+        if (e.target.files && e.target.files[0]) {
+            fileReader.readAsText(e.target.files[0], "UTF-8");
+            fileReader.onload = (event) => {
+                try {
+                    const parsed = JSON.parse(event.target?.result as string);
+                    if (Array.isArray(parsed)) {
+                        saveQuestionsToStorage(parsed);
+                        alert(`Berhasil mengimpor ${parsed.length} butir soal ke dalam bank soal!`);
                     } else {
-                        const cleanedLine = line.replace(/^\d+[\.\)]\s*/, "").trim();
-                        if (cleanedLine && !a) {
-                            questionLines.push(cleanedLine);
-                        }
+                        alert("Format file JSON tidak valid. Pastikan berisi array soal.");
                     }
-                });
-
-                parsed.push({
-                    subtes_code: selectedSubtest,
-                    no_soal: serverQuestions.length + idx + 1,
-                    stimulus: stimulusText,
-                    image_url: imgUrl,
-                    image_position: imgPos,
-                    pertanyaan: questionLines.join(" "),
-                    opsi_a: a, opsi_b: b, opsi_c: c, opsi_d: d, opsi_e: e,
-                    opsi_a_img: aImg, opsi_b_img: bImg, opsi_c_img: cImg, opsi_d_img: dImg, opsi_e_img: eImg,
-                    kunci: kunciJawaban || "A",
-                    tingkat_kesukaran: "Sedang",
-                    pembahasan: "",
-                    author_guru: `${loggedTeacher.nama} (${loggedTeacher.mapel || "Guru Mapel"})`
-                });
-            });
-
-            setBatchQuestions(parsed);
-            setStatusMsg({
-                type: "success",
-                text: `Sempurna! Berhasil membedah ${parsed.length} butir soal.`
-            });
-        } catch {
-            setStatusMsg({
-                type: "error",
-                text: "Format teks belum rapi. Pastikan ada penomoran dan opsi A. B. C. D."
-            });
+                } catch {
+                    alert("Gagal membaca file JSON. Periksa kembali struktur file.");
+                }
+            };
         }
     };
 
-    // DOWNLOAD TEMPLATE EXCEL TKA SMP RESMI
-=======
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-    const handleDownloadExcelTemplate = () => {
-        const data = [
-            {
-                "No": 1,
-                "Subtes": "LIT_INDO",
-                "Wacana / Stimulus": "Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan.",
-                "Link Gambar (Opsional)": "https://lh3.googleusercontent.com/d/contoh_link_gambar",
-                "Posisi Gambar": "above",
-                "Pertanyaan": "Fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...",
-                "Opsi A": "Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.",
-                "Opsi B": "Menyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dari hutan daratan.",
-                "Opsi C": "Melindungi bibit bandeng dan kepiting bakau dari pencemaran.",
-                "Opsi D": "Menahan laju penurunan permukaan tanah ibu kota.",
-                "Kunci Jawaban": "B",
-                "Tingkat Kesukaran": "Sedang",
-<<<<<<< HEAD
-                "Pembahasan": "Berdasarkan wacana paragraf 1, mangrove bertindak sebagai penyerap karbon biru (blue carbon)."
-            },
-            {
-                "No": 2,
-                "Subtes": "PM",
-                "Wacana / Stimulus": "Sebuah koperasi pendidikan memberikan promosi diskon bertingkat untuk paket seragam dan alat tulis.",
-                "Link Gambar (Opsional)": "",
-                "Posisi Gambar": "above",
-                "Pertanyaan": "Jika harga label satu set buku adalah Rp250.000 dengan diskon pertama 20% dan diskon anggota 10%, berapakah harga akhirnya?",
-                "Opsi A": "Rp 175.000",
-                "Opsi B": "Rp 180.000",
-                "Opsi C": "Rp 185.000",
-                "Opsi D": "Rp 200.000",
-                "Kunci Jawaban": "B",
-                "Tingkat Kesukaran": "Sedang",
-                "Pembahasan": "250.000 x 0.8 = 200.000. 200.000 x 0.9 = 180.000."
-=======
-                "Pembahasan": "Turunan pertama $a(t) = 6t + 4$. Saat $t = 2\\text{ s}$, $a(2) = 16\\text{ m/s}^2$."
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-            }
-        ];
-
-        const worksheet = XLSX.utils.json_to_sheet(data);
-        worksheet["!cols"] = [
-<<<<<<< HEAD
-            { wch: 6 },
-            { wch: 12 },
-            { wch: 35 },
-            { wch: 30 },
-            { wch: 14 },
-            { wch: 45 },
-            { wch: 25 },
-            { wch: 25 },
-            { wch: 25 },
-            { wch: 25 },
-            { wch: 14 },
-            { wch: 16 },
-            { wch: 40 }
-=======
-            { wch: 6 }, { wch: 10 }, { wch: 35 }, { wch: 30 }, { wch: 14 },
-            { wch: 45 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
-            { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 40 }
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-        ];
-
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Bank Soal TKA SMP");
-        XLSX.writeFile(workbook, "Template_Bank_Soal_TKA_SMP_M18.xlsx");
-    };
-
-<<<<<<< HEAD
-    // IMPORT FILE CSV / EXCEL
-=======
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const dataBuffer = event.target?.result;
-                if (!dataBuffer) return;
-
-                const workbook = XLSX.read(dataBuffer, { type: "binary" });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const rows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-
-                if (!rows || rows.length < 2) {
-                    alert("File kosong atau tidak memiliki baris data soal.");
-                    return;
-                }
-
-                const headerRow = (rows[0] || []).map((h) => String(h || "").trim().toLowerCase());
-
-                const findIdx = (keywords: string[], fallbackIdx: number) => {
-                    const idx = headerRow.findIndex((h) => keywords.some((k) => h.includes(k)));
-                    return idx !== -1 ? idx : fallbackIdx;
-                };
-
-                const idxNo = findIdx(["no", "nomor"], 0);
-                const idxSub = findIdx(["subtes", "sub", "mapel"], 1);
-                const idxStimulus = findIdx(["wacana", "stimulus"], 2);
-                const idxImg = findIdx(["link gambar", "image_url", "gambar"], 3);
-                const idxPos = findIdx(["posisi", "image_position"], 4);
-                const idxTanya = findIdx(["pertanyaan", "soal"], 5);
-                const idxA = findIdx(["opsi a", "pilihan a"], 6);
-                const idxB = findIdx(["opsi b", "pilihan b"], 7);
-                const idxC = findIdx(["opsi c", "pilihan c"], 8);
-                const idxD = findIdx(["opsi d", "pilihan d"], 9);
-                const idxE = findIdx(["opsi e", "pilihan e"], 10);
-                const idxKunci = findIdx(["kunci", "jawaban"], 11);
-                const idxLevel = findIdx(["kesukaran", "tingkat"], 12);
-                const idxBahasa = findIdx(["pembahasan", "penjelasan"], 13);
-
-                const parsed: ParsedQuestion[] = [];
-
-                for (let i = 1; i < rows.length; i++) {
-                    const r = rows[i];
-                    if (!r || r.length === 0) continue;
-
-                    const pertanyaanText = String(r[idxTanya] || "").trim();
-                    if (!pertanyaanText) continue;
-
-                    const optAParsed = extractOptionAndImg(String(r[idxA] || ""));
-                    const optBParsed = extractOptionAndImg(String(r[idxB] || ""));
-                    const optCParsed = extractOptionAndImg(String(r[idxC] || ""));
-                    const optDParsed = extractOptionAndImg(String(r[idxD] || ""));
-                    const optEParsed = extractOptionAndImg(String(r[idxE] || ""));
-
-                    const noSoalVal = Number(r[idxNo]) || (parsed.length + 1);
-                    const subtesVal = String(r[idxSub] || selectedSubtest || "LIT_INDO").trim().toUpperCase();
-                    const rawKunci = String(r[idxKunci] || "A").trim().toUpperCase();
-                    const kunciVal = ["A", "B", "C", "D", "E"].includes(rawKunci) ? rawKunci : "A";
-                    const posVal = String(r[idxPos] || "").toLowerCase().includes("bawah") ? "below" : "above";
-
-                    parsed.push({
-                        no_soal: noSoalVal,
-                        subtes_code: subtesVal,
-                        stimulus: String(r[idxStimulus] || "").trim(),
-                        image_url: convertToDirectImageUrl(String(r[idxImg] || "").trim()),
-                        image_position: posVal,
-                        pertanyaan: pertanyaanText,
-                        opsi_a: optAParsed.text,
-                        opsi_b: optBParsed.text,
-                        opsi_c: optCParsed.text,
-                        opsi_d: optDParsed.text,
-                        opsi_e: optEParsed.text,
-                        opsi_a_img: optAParsed.img,
-                        opsi_b_img: optBParsed.img,
-                        opsi_c_img: optCParsed.img,
-                        opsi_d_img: optDParsed.img,
-                        opsi_e_img: optEParsed.img,
-                        kunci: kunciVal,
-                        tingkat_kesukaran: String(r[idxLevel] || "Sedang").trim(),
-                        pembahasan: String(r[idxBahasa] || "").trim(),
-                        author_guru: `${loggedTeacher.nama} (${loggedTeacher.mapel || "Guru Mapel"})`
-                    });
-                }
-
-                if (parsed.length > 0) {
-                    setBatchQuestions(parsed);
-                    setShowCsvPreview(true);
-                    setStatusMsg({
-                        type: "success",
-<<<<<<< HEAD
-                        text: `Berhasil membaca ${parsed.length} butir soal dari file!`
-                    });
-                } else {
-                    setStatusMsg({
-                        type: "error",
-                        text: "Gagal membaca soal: pastikan file memiliki kolom Pertanyaan dan Opsi A–D."
-=======
-                        text: `Berhasil mengimpor ${parsed.length} butir soal! Periksa isinya sebelum disimpan.`
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                    });
-                }
-            } catch (err: any) {
-                setStatusMsg({
-                    type: "error",
-                    text: `Kendala membaca file: ${err.message}`
-                });
-            } finally {
-                if (e.target) e.target.value = "";
-            }
-        };
-
-        reader.readAsBinaryString(file);
-    };
-
-    // Simpan massal langsung ke memori lokal
-    const handleBulkSubmit = async (questionsToSubmit: ParsedQuestion[]) => {
-        if (!questionsToSubmit || questionsToSubmit.length === 0) return;
-
-        setIsSubmitting(true);
-        setStatusMsg(null);
-
-        try {
-            // Urutkan soal berdasarkan subtes dan nomor soal
-            localStorage.setItem(`cbt_questions_${selectedPaket}`, JSON.stringify(questionsToSubmit));
-            setServerQuestions(questionsToSubmit);
-            setBatchQuestions([]);
-
-            fetch("/api/questions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "bulk_upload_questions",
-                    paket: selectedPaket,
-                    questions: questionsToSubmit
-                })
-            }).catch(() => { });
-
-            setStatusMsg({
-                type: "success",
-<<<<<<< HEAD
-                text: `Sukses! ${batchQuestions.length} butir soal telah tersimpan ke ${selectedPaket}!`
-=======
-                text: `Sukses! Sebanyak ${questionsToSubmit.length} butir soal berhasil dibagi ke 7 subtes!`
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-            });
-
-            setTimeout(() => {
-                setInputMode("list");
-            }, 500);
-        } catch (err: any) {
-            setStatusMsg({ type: "error", text: "Kendala saat menyimpan: " + err.message });
-        } finally {
-            setIsSubmitting(false);
+    // Reset ke Bank Soal Default
+    const handleResetToDefault = () => {
+        if (confirm("Kembalikan seluruh bank soal ke naskah asli bawaan sistem TKA SMP?")) {
+            saveQuestionsToStorage((defaultQuestions as any) || []);
         }
     };
-
-    // Rekapitulasi jumlah butir soal per subtes
-    const subtestCounts = useMemo(() => {
-        const counts: Record<string, number> = {};
-        SNBT_STRUCTURE.forEach((s) => { counts[s.code] = 0; });
-        serverQuestions.forEach((q) => {
-            if (counts[q.subtes_code] !== undefined) {
-                counts[q.subtes_code]++;
-            }
-        });
-        return counts;
-    }, [serverQuestions]);
-
-    const filteredServerQuestions = useMemo(() => {
-        if (filterSubtestView === "ALL") return serverQuestions;
-        return serverQuestions.filter((q) => q.subtes_code === filterSubtestView);
-    }, [serverQuestions, filterSubtestView]);
-
-    if (!isAuthorized) {
-        return <div className="min-h-screen bg-slate-900" />;
-    }
 
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
+
             {/* HEADER ATAS */}
-            <header className="bg-white border-b border-slate-200/90 py-3 px-4 sm:px-8 sticky top-0 z-30 shadow-2xs">
+            <header className="bg-white border-b border-slate-200 py-3.5 px-4 sm:px-8 sticky top-0 z-30 shadow-xs">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Link
                             href="/admin"
-                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors"
-                            title="Kembali ke Dashboard Admin"
+                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition"
+                            title="Kembali ke Pusat Kendali"
                         >
                             <ChevronLeft className="w-4 h-4" />
                         </Link>
                         <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 flex items-center justify-center overflow-hidden shrink-0">
                             <img
                                 src="/logo-timsim.jpg"
-                                alt="Logo SMA Muhammadiyah 18 Jakarta"
+                                alt="Logo SMA Muhammadiyah 18"
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
-                                    (e.target as any).src = "/images/logo-smam18.png";
+                                    (e.target as HTMLElement).style.display = "none";
                                 }}
                             />
                         </div>
                         <div>
-                            <div className="text-xs sm:text-sm font-black text-slate-900 tracking-tight uppercase">
-                                BANK SOAL TKA SMP &bull; SMA MUHAMMADIYAH 18
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-medium">
-                                Penyusun: <strong className="text-blue-700">{loggedTeacher.nama}</strong> ({loggedTeacher.mapel || "Guru Mapel"})
-                            </div>
+                            <h1 className="text-sm font-black text-slate-900 tracking-tight uppercase">
+                                BILIK 01 &bull; MANAJEMEN BANK SOAL TKA SMP
+                            </h1>
+                            <p className="text-[11px] text-slate-500">
+                                Pusat Penyusunan Naskah Asesmen Standar Nasional Pusmendik &bull; SMA Muhammadiyah 18
+                            </p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => {
-                                fetchServerQuestions(selectedPaket);
-                                fetchSubtestDurations(selectedPaket);
-                            }}
-                            disabled={isLoadingServerQuestions}
+                            onClick={handleExportJSON}
                             className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title="Download Cadangan Soal (JSON)"
                         >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingServerQuestions ? "animate-spin text-blue-600" : ""}`} />
-                            <span className="hidden sm:inline">Refresh Data</span>
+                            <Download className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Ekspor JSON</span>
                         </button>
-                        <Link
-                            href="/"
-                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors"
-                            title="Ke Halaman Utama"
+
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title="Unggah Berkas Naskah Soal (JSON)"
                         >
-                            <Home className="w-4 h-4" />
-                        </Link>
+                            <Upload className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Impor JSON</span>
+                        </button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleImportJSON}
+                            accept=".json"
+                            className="hidden"
+                        />
+
+                        <button
+                            onClick={handleOpenAddModal}
+                            className="px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tambah Butir Soal</span>
+                        </button>
                     </div>
                 </div>
             </header>
 
-            <div className="max-w-6xl w-full mx-auto p-4 sm:p-6 space-y-5">
+            {/* KONTEN UTAMA */}
+            <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-                {/* Banner Database & Pemilihan Paket */}
-                <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
-                            <Database className="w-5 h-5" />
+                {/* 4 KARTU STATISTIK BANK SOAL */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between text-slate-400 font-mono text-[10px] font-bold uppercase">
+                            <span>TOTAL BANK SOAL</span>
+                            <FolderOpen className="w-4 h-4 text-slate-500" />
                         </div>
-                        <div>
-                            <div className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
-<<<<<<< HEAD
-                                <span>Database Cloud Soal TKA SMP</span>
-=======
-                                <span>Penyimpanan Lokal Edge JSON (7 Subtes SNBT)</span>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[10px]">
-                                    Aktif &bull; {serverQuestions.length} Butir Soal
-                                </span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-<<<<<<< HEAD
-                                Target Paket: <strong className="text-blue-700 font-bold">{selectedPaket.replace("_", " ")}</strong> &bull; Standar Asesmen SMP
-=======
-                                Target Aktif: <strong className="text-blue-700 font-bold">{selectedPaket.replace("_", " ")}</strong> &bull; Respon Cepat (&lt;50ms)
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                            </div>
-                        </div>
+                        <div className="text-3xl font-black text-slate-900 font-mono">{stats.total}</div>
+                        <p className="text-[11px] text-slate-500">Butir soal terdaftar aktif</p>
                     </div>
 
-                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200 self-stretch sm:self-auto">
-                        {(["PAKET_1", "PAKET_2", "PAKET_3"] as const).map((pkt) => (
-                            <button
-                                key={pkt}
-                                type="button"
-                                onClick={() => setSelectedPaket(pkt)}
-                                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${selectedPaket === pkt
-                                        ? "bg-[#1e3a8a] text-white shadow-xs"
-                                        : "text-slate-600 hover:text-slate-900"
-                                    }`}
-                            >
-                                {pkt.replace("_", " ")}
-                            </button>
-                        ))}
+                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between text-blue-600 font-mono text-[10px] font-bold uppercase">
+                            <span>LITERASI B. INDONESIA</span>
+                            <BookOpen className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div className="text-3xl font-black text-blue-700 font-mono">{stats.indo}</div>
+                        <p className="text-[11px] text-slate-500">Wacana Informasi &amp; Sastra</p>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between text-emerald-600 font-mono text-[10px] font-bold uppercase">
+                            <span>PENALARAN MATEMATIKA</span>
+                            <Calculator className="w-4 h-4 text-emerald-600" />
+                        </div>
+                        <div className="text-3xl font-black text-emerald-700 font-mono">{stats.math}</div>
+                        <p className="text-[11px] text-slate-500">Numerasi 4 domain konten</p>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between text-purple-600 font-mono text-[10px] font-bold uppercase">
+                            <span>MODEL VARIATIF</span>
+                            <Sparkles className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="text-2xl font-black text-purple-900 font-mono">
+                            {stats.pg} <span className="text-xs text-slate-400 font-normal">PG</span> &bull; {stats.mcma} <span className="text-xs text-slate-400 font-normal">MCMA</span> &bull; {stats.kategori} <span className="text-xs text-slate-400 font-normal">Matriks</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">Format asesmen standar Pusmendik</p>
                     </div>
                 </div>
 
-<<<<<<< HEAD
-                {/* TOOL EKSTRAKSI GOOGLE DRIVE */}
-=======
-                {/* KARTU STATISTIK 7 SUBTES SNBT */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-                    {SNBT_STRUCTURE.map((s) => {
-                        const count = subtestCounts[s.code] || 0;
-                        const isComplete = count >= s.count;
-                        return (
-                            <div
-                                key={s.code}
-                                onClick={() => {
-                                    setFilterSubtestView(s.code);
-                                    setInputMode("list");
-                                }}
-                                className={`p-3 rounded-2xl border cursor-pointer transition-all text-center ${filterSubtestView === s.code
-                                    ? "bg-blue-900 text-white border-blue-900 shadow-sm"
-                                    : "bg-white hover:bg-slate-50 border-slate-200 text-slate-800"
-                                    }`}
-                            >
-                                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${filterSubtestView === s.code
-                                    ? "bg-white/20 text-white"
-                                    : "bg-indigo-50 text-indigo-800 border border-indigo-200"
-                                    }`}>
-                                    {s.code}
-                                </span>
-                                <div className="text-[11px] font-bold mt-1.5 truncate" title={s.name}>
-                                    {s.name}
-                                </div>
-                                <div className="text-[11px] font-mono mt-0.5 font-bold">
-                                    <span className={filterSubtestView === s.code ? "text-emerald-300" : isComplete ? "text-emerald-600" : "text-amber-600"}>
-                                        {count}
-                                    </span>
-                                    <span className={filterSubtestView === s.code ? "text-slate-300" : "text-slate-400"}> / {s.count}</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-
-                {/* TOOL: EKSTRAKTOR GAMBAR GOOGLE DRIVE */}
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-3xl p-5 sm:p-6 text-white shadow-md space-y-3">
-                    <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-xl bg-white/10 text-amber-300 shrink-0">
-                            <Link2 className="w-4 h-4" />
-                        </div>
+                {/* TABEL BANK SOAL & FILTER */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                         <div>
-                            <h3 className="text-xs sm:text-sm font-black tracking-tight text-white flex items-center gap-2">
-                                <span>Universal Image Extractor (Google Drive CDN)</span>
-                                <span className="px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[9.5px] font-mono">
-                                    Bypass CORS
-                                </span>
-                            </h3>
-                            <p className="text-[11px] text-slate-300">
-                                Tempel link file gambar Google Drive untuk menghasilkan tautan langsung CDN tanpa terblokir hak akses.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1">
-                        <div className="sm:col-span-9">
-                            <input
-                                type="text"
-                                placeholder="Tempel link share Google Drive di sini..."
-                                value={testInputUrl}
-                                onChange={(e) => {
-                                    setTestInputUrl(e.target.value);
-                                    setTestedDirectUrl(convertToDirectImageUrl(e.target.value));
-                                }}
-                                className="w-full px-3.5 py-2.5 rounded-xl bg-white/10 border border-white/20 text-xs font-mono text-white placeholder:text-slate-400 focus:bg-white/20 focus:border-amber-400 outline-none"
-                            />
+                            <h2 className="text-base font-black text-slate-900">Daftar Naskah Butir Soal Terstandarisasi</h2>
+                            <p className="text-xs text-slate-500">Pilih butir soal untuk mengedit narasi stimulus, kunci, atau formula LaTeX.</p>
                         </div>
 
-                        <div className="sm:col-span-3 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setTestedDirectUrl(convertToDirectImageUrl(testInputUrl))}
-                                className="flex-1 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-sm"
-                            >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                <span>Konversi</span>
-                            </button>
-
-                            {testedDirectUrl && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(testedDirectUrl);
-                                        setIsCopied(true);
-                                        setTimeout(() => setIsCopied(false), 2000);
-                                    }}
-                                    className="px-3 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs flex items-center justify-center cursor-pointer transition-all"
-                                    title="Salin Link Hasil"
-                                >
-                                    {isCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    {testedDirectUrl && (
-                        <div className="p-3 bg-white/10 rounded-2xl border border-white/15 flex flex-col sm:flex-row items-center gap-3 animate-in fade-in">
-                            <div className="h-20 w-28 bg-white/20 rounded-xl border border-white/20 flex items-center justify-center overflow-hidden shrink-0">
-                                <img
-                                    src={testedDirectUrl}
-                                    alt="Hasil Ekstraksi"
-                                    referrerPolicy="no-referrer"
-                                    className="max-h-full max-w-full object-contain"
-                                    onError={(e) => {
-                                        (e.target as any).src = "https://placehold.co/120x80/red/white?text=Akses+Bukan+Publik";
-                                    }}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="relative">
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Cari kata kunci soal..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
                                 />
                             </div>
-                            <div className="space-y-1 text-left flex-1 min-w-0">
-                                <div className="text-[10px] font-mono text-emerald-300 font-bold uppercase flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>Gambar Siap Digunakan pada Soal</span>
-                                </div>
-                                <div className="text-[11px] font-mono text-slate-200 truncate bg-black/30 p-1.5 rounded-lg border border-white/10 select-all">
-                                    {testedDirectUrl}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
 
-                {/* ALOKASI DURASI 2 SUBTES TKA SMP */}
-                <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 space-y-4 shadow-sm">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                        <div>
-                            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                                <Clock className="w-5 h-5 text-indigo-700" />
-                                <span>Alokasi Waktu Subtes ({selectedPaket.replace("_", " ")})</span>
-                            </h3>
-                            <p className="text-xs text-slate-500">
-<<<<<<< HEAD
-                                Atur durasi pengerjaan untuk 2 subtes inti TKA SMP. Total alokasi standar: 15 menit.
-=======
-                                Tentukan durasi menit pengerjaan untuk masing-masing 7 subtes. Mendukung desimal seperti <strong>42.5</strong> menit.
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={handleSaveSubtestDurations}
-                            disabled={isSavingDurations}
-                            className="px-5 py-2.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50 shrink-0"
-                        >
-                            <Save className="w-4 h-4" />
-                            <span>{isSavingDurations ? "Menyimpan..." : "Simpan Durasi Subtes"}</span>
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {subtestsConfig.map((sub, idx) => (
-                            <div key={sub.code} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
-                                <div className="space-y-0.5">
-                                    <span className="text-[10px] font-mono font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 uppercase">
-                                        {sub.code}
-                                    </span>
-                                    <div className="text-xs font-bold text-slate-800">
-                                        {sub.name}
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5">
-                                    <input
-                                        type="number"
-                                        step="any"
-                                        min={0.1}
-                                        max={120}
-                                        value={sub.defaultDurationMinutes}
-                                        onChange={(e) => {
-                                            const rawVal = e.target.value;
-                                            const num = parseFloat(rawVal.replace(",", "."));
-                                            setSubtestsConfig((prev) => {
-                                                const updated = [...prev];
-                                                updated[idx] = {
-                                                    ...updated[idx],
-                                                    defaultDurationMinutes: isNaN(num) ? (rawVal as any) : num
-                                                };
-                                                return updated;
-                                            });
-                                        }}
-<<<<<<< HEAD
-                                        className="w-20 px-2.5 py-1.5 text-center font-mono font-bold text-xs rounded-xl border border-slate-300 focus:border-indigo-600 outline-none bg-white"
-=======
-                                        className="w-18 px-2 py-1 text-center font-mono font-bold text-xs rounded-lg border border-slate-300 focus:border-indigo-600 outline-none bg-white"
-                                        placeholder="30"
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                    />
-                                    <span className="text-xs text-slate-500 font-medium">menit</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* TAB NAVIGASI MODE INPUT */}
-                <div className="flex items-center gap-2 bg-slate-200/80 p-1 rounded-2xl border border-slate-300">
-                    <button
-                        type="button"
-                        onClick={() => setInputMode("list")}
-                        className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${inputMode === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                    >
-                        <ListFilter className="w-4 h-4 text-indigo-600" />
-<<<<<<< HEAD
-                        <span>Koleksi Soal Server ({serverQuestions.length})</span>
-=======
-                        <span>Daftar Soal Terbagi ({serverQuestions.length})</span>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setInputMode("docx_upload")}
-                        className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${inputMode === "docx_upload" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                    >
-<<<<<<< HEAD
-                        <Sparkles className="w-4 h-4 text-amber-500" />
-                        <span>Smart Paste (Word / KaTeX)</span>
-=======
-                        <FileText className="w-4 h-4 text-indigo-600" />
-                        <span>Import Naskah Word (.docx) Otomatis</span>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setInputMode("csv")}
-                        className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${inputMode === "csv" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                    >
-                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                        <span>Impor Massal Excel/CSV</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setInputMode("manual")}
-                        className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${inputMode === "manual" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                    >
-                        <FileText className="w-4 h-4 text-blue-600" />
-                        <span>Input Butir Satuan</span>
-                    </button>
-                </div>
-
-                {statusMsg && (
-                    <div
-                        className={`p-4 rounded-2xl border text-xs flex items-center gap-2.5 animate-in fade-in duration-200 ${statusMsg.type === "success"
-                                ? "bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold"
-                                : "bg-rose-50 border-rose-300 text-rose-900 font-semibold"
-                            }`}
-                    >
-                        {statusMsg.type === "success" ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        ) : (
-                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                        )}
-                        <span>{statusMsg.text}</span>
-                    </div>
-                )}
-
-<<<<<<< HEAD
-                {/* TAB 1: LIST SOAL DI SERVER */}
-=======
-                {/* TAB 0: DAFTAR SOAL BERKAS */}
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                {inputMode === "list" && (
-                    <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-5 shadow-sm">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
-                            <div>
-                                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                                    Koleksi Soal {selectedPaket.replace("_", " ")} ({filterSubtestView === "ALL" ? "Semua Subtes" : filterSubtestView})
-                                </h2>
-                                <p className="text-xs text-slate-500">
-<<<<<<< HEAD
-                                    Daftar butir soal yang aktif di server dan siap diujikan kepada siswa.
-=======
-                                    {filterSubtestView === "ALL"
-                                        ? "Menampilkan seluruh koleksi 7 subtes."
-                                        : `Menampilkan soal khusus subtes ${filterSubtestView} (Mulai dari No. 1).`}
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                </p>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <select
-                                    value={filterSubtestView}
-                                    onChange={(e) => setFilterSubtestView(e.target.value)}
-                                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold outline-none bg-white"
-                                >
-                                    <option value="ALL">Semua Subtes ({serverQuestions.length})</option>
-<<<<<<< HEAD
-                                    <option value="LIT_INDO">Literasi Bahasa Indonesia</option>
-                                    <option value="PM">Penalaran Matematika (PM)</option>
-=======
-                                    {SNBT_STRUCTURE.map((s) => (
-                                        <option key={s.code} value={s.code}>
-                                            {s.name} ({subtestCounts[s.code] || 0})
-                                        </option>
-                                    ))}
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                </select>
-
-                                {/* TOMBOL HAPUS SEMUA SOAL */}
-                                {serverQuestions.length > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={handleClearAllQuestions}
-                                        disabled={isLoadingServerQuestions}
-                                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                                        title="Kosongkan seluruh soal di paket ini"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                        <span>Hapus Semua</span>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {isLoadingServerQuestions ? (
-                            <div className="text-center py-12 text-slate-400 space-y-2">
-                                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
-<<<<<<< HEAD
-                                <p className="text-xs font-medium">Memuat butir soal dari database...</p>
-                            </div>
-                        ) : filteredServerQuestions.length === 0 ? (
-                            <div className="text-center py-12 text-slate-400 space-y-2">
-                                <p className="text-sm font-medium">Belum ada butir soal di {selectedPaket.replace("_", " ")}.</p>
-                                <p className="text-xs">Gunakan tab Smart Paste, Impor Excel, atau Input Satuan untuk menambah soal.</p>
-=======
-                                <p className="text-xs font-medium">Memuat butir soal dari berkas lokal...</p>
-                            </div>
-                        ) : filteredServerQuestions.length === 0 ? (
-                            <div className="text-center py-12 text-slate-400 space-y-2">
-                                <p className="text-sm font-medium">Belum ada butir soal pada kategori ini.</p>
-                                <p className="text-xs">Gunakan tab <strong>Import Dokumen Word</strong> untuk membagi soal otomatis ke 7 subtes.</p>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                            </div>
-                        ) : (
-                            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
-                                {filteredServerQuestions.map((q, idx) => (
-                                    <div key={idx} className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-left">
-                                        <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200">
-                                            <div className="flex items-center gap-2">
-                                                <span className="px-2 py-0.5 rounded bg-[#1e3a8a] text-white font-mono font-bold text-[10px]">
-                                                    NO. {q.no_soal}
-                                                </span>
-                                                <span className="font-semibold text-slate-700 text-[11px] font-mono">
-                                                    Subtes: {q.subtes_code}
-                                                </span>
-                                                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono text-[10px] font-bold">
-                                                    KUNCI: {q.kunci}
-                                                </span>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleEditQuestion(q)}
-<<<<<<< HEAD
-                                                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-all"
-                                                    title="Edit soal ini"
-                                                >
-                                                    Edit
-=======
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-all shadow-sm active:scale-95"
-                                                    title="Edit soal ini"
-                                                >
-                                                    <Edit3 className="w-3.5 h-3.5" />
-                                                    <span>Edit</span>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteServerQuestion(q.no_soal, q.subtes_code || "")}
-                                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                                    title="Hapus butir soal"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {q.stimulus && (
-                                            <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed italic">
-                                                <MathRenderer content={q.stimulus} />
-                                            </div>
-                                        )}
-
-                                        {q.image_url && (
-                                            <div className="p-3 my-2 bg-white rounded-xl border border-slate-200 flex justify-center">
-                                                <img
-                                                    src={convertToDirectImageUrl(q.image_url)}
-                                                    alt={`Gambar Soal No. ${q.no_soal}`}
-                                                    referrerPolicy="no-referrer"
-                                                    className="max-h-56 max-w-full rounded-lg object-contain"
-                                                />
-                                            </div>
-                                        )}
-
-                                        <div className="text-xs font-semibold text-slate-900 leading-relaxed">
-                                            <MathRenderer content={q.pertanyaan} />
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                                            {[
-<<<<<<< HEAD
-                                                { label: "A", text: q.opsi_a, img: q.opsi_a_img },
-                                                { label: "B", text: q.opsi_b, img: q.opsi_b_img },
-                                                { label: "C", text: q.opsi_c, img: q.opsi_c_img },
-                                                { label: "D", text: q.opsi_d, img: q.opsi_d_img },
-                                                ...(q.opsi_e ? [{ label: "E", text: q.opsi_e, img: q.opsi_e_img }] : [])
-=======
-                                                { label: "A", text: q.opsi_a },
-                                                { label: "B", text: q.opsi_b },
-                                                { label: "C", text: q.opsi_c },
-                                                { label: "D", text: q.opsi_d },
-                                                { label: "E", text: q.opsi_e }
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                            ].map((opt) => (
-                                                <div
-                                                    key={opt.label}
-                                                    className={`p-2 rounded-xl border text-xs flex items-center gap-2 ${String(q.kunci).trim().toUpperCase() === opt.label
-                                                            ? "bg-emerald-50 border-emerald-400 font-bold text-emerald-950"
-                                                            : "bg-white border-slate-200 text-slate-700"
-                                                        }`}
-                                                >
-                                                    <span className="font-mono font-bold">{opt.label}.</span>
-                                                    <span><MathRenderer content={opt.text || "-"} /></span>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {q.pembahasan && (
-                                            <div className="p-2.5 bg-blue-50/60 rounded-xl border border-blue-100 text-[11px] text-blue-900">
-                                                <strong>Pembahasan: </strong>
-                                                <MathRenderer content={q.pembahasan} />
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-<<<<<<< HEAD
-                {/* TAB 2: SMART TEXT PARSER */}
-                {inputMode === "text_parse" && (
-                    <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-5 shadow-sm">
-                        <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                                    Smart Text Parser &bull; Ekstraksi Naskah Soal &amp; KaTeX
-                                </h2>
-                                <p className="text-xs text-slate-500">
-                                    Tempelkan naskah wacana literasi atau persoalan matematika secara langsung.
-                                </p>
-                            </div>
-
-                            <button
-                                type="button"
-                                disabled={isAiFormatting}
-                                onClick={handleAutoFormatWordToLatex}
-                                className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all shrink-0 disabled:opacity-50"
-                            >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                <span>Auto-Format Rumus / Simbol</span>
-                            </button>
-                        </div>
-
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-700 font-mono">PILIH SUBTES TUJUAN:</label>
                             <select
                                 value={selectedSubtest}
-                                onChange={(e) => setSelectedSubtest(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-blue-600 outline-none bg-white cursor-pointer"
+                                onChange={(e) => setSelectedSubtest(e.target.value as any)}
+                                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white outline-none"
                             >
-                                <option value="LIT_INDO">Literasi Bahasa Indonesia</option>
-                                <option value="PM">Penalaran Matematika (PM)</option>
+                                <option value="ALL">Semua Subtes</option>
+                                <option value="Bahasa Indonesia">Literasi B. Indonesia</option>
+                                <option value="Matematika">Penalaran Matematika</option>
                             </select>
-                        </div>
 
-                        <textarea
-                            rows={8}
-                            value={rawText}
-                            onChange={(e) => setRawText(e.target.value)}
-                            placeholder="Tempelkan teks soal di sini..."
-                            className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs font-mono leading-relaxed focus:border-blue-600 outline-none"
-                        />
-
-                        <div className="flex items-center gap-3">
-                            <button
-                                type="button"
-                                onClick={handleParseRawText}
-                                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-sm"
+                            <select
+                                value={selectedType}
+                                onChange={(e) => setSelectedType(e.target.value as any)}
+                                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white outline-none"
                             >
-                                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Bedah Butir Soal</span>
-                            </button>
+                                <option value="ALL">Semua Model Soal</option>
+                                <option value="PG_SEDERHANA">PG Sederhana (Single Choice)</option>
+                                <option value="PGK_MCMA">PG Kompleks (MCMA Checkbox)</option>
+                                <option value="PGK_KATEGORI">PG Kompleks (Matriks Benar/Salah)</option>
+                            </select>
 
-                            {batchQuestions.length > 0 && (
-                                <button
-                                    type="button"
-                                    disabled={isSubmitting}
-                                    onClick={handleBulkSubmit}
-                                    className="px-5 py-2.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
-                                >
-                                    <Send className="w-3.5 h-3.5" />
-                                    <span>{isSubmitting ? "Menyimpan..." : `Simpan ${batchQuestions.length} Soal ke ${selectedPaket}`}</span>
-                                </button>
-                            )}
+                            <button
+                                onClick={handleResetToDefault}
+                                className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition"
+                                title="Reset ke naskah asli default"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                            </button>
                         </div>
                     </div>
-                )}
 
-                {/* TAB 3: UPLOAD CSV / EXCEL */}
-=======
-                {/* TAB 1: IMPORT DOKUMEN WORD (.DOCX) */}
-                {inputMode === "docx_upload" && (
-                    <WordImporterSection
-                        selectedPaket={selectedPaket}
-                        onBulkSubmit={async (readyList) => {
-                            const formatted = readyList.map((item) => ({
-                                ...item,
-                                author_guru: `${loggedTeacher.nama} (${loggedTeacher.mapel || "Guru Mapel"})`
-                            }));
-                            await handleBulkSubmit(formatted);
-                        }}
-                        isSubmittingServer={isSubmitting}
-                    />
-                )}
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="w-full text-left text-xs border-collapse">
+                            <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[11px] text-slate-600">
+                                <tr>
+                                    <th className="p-3.5 w-12 text-center">No</th>
+                                    <th className="p-3.5 w-36">Subtes</th>
+                                    <th className="p-3.5 w-44">Bentuk Soal</th>
+                                    <th className="p-3.5">Konten Soal &amp; Stimulus</th>
+                                    <th className="p-3.5 w-24 text-center">Tingkat</th>
+                                    <th className="p-3.5 w-28 text-center">Kunci</th>
+                                    <th className="p-3.5 w-28 text-right">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium">
+                                {filteredQuestions.map((q, idx) => {
+                                    const isMath = q.subject === "Matematika" || q.subtest === "PM";
+                                    return (
+                                        <tr key={q.id || idx} className="hover:bg-slate-50 transition">
+                                            <td className="p-3.5 text-center font-mono font-bold text-blue-700">#{idx + 1}</td>
+                                            <td className="p-3.5">
+                                                <span
+                                                    className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold border ${isMath
+                                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                            : "bg-blue-50 text-blue-800 border-blue-200"
+                                                        }`}
+                                                >
+                                                    {q.subject || (isMath ? "Matematika" : "Bahasa Indonesia")}
+                                                </span>
+                                            </td>
+                                            <td className="p-3.5 font-mono text-[11px] text-slate-600">
+                                                {q.type === "PG_SEDERHANA" && "PG Sederhana"}
+                                                {q.type === "PGK_MCMA" && "PGK (MCMA)"}
+                                                {q.type === "PGK_KATEGORI" && "PGK (Matriks)"}
+                                            </td>
+                                            <td className="p-3.5 space-y-1 max-w-md">
+                                                {q.stimulus && (
+                                                    <div className="text-[11px] text-slate-500 italic line-clamp-1">
+                                                        Stimulus: {q.stimulus}
+                                                    </div>
+                                                )}
+                                                <div className="font-semibold text-slate-900 line-clamp-2">
+                                                    <RenderLatex content={q.question} />
+                                                </div>
+                                            </td>
+                                            <td className="p-3.5 text-center font-mono">
+                                                <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-700">
+                                                    Lvl {q.difficulty || 2}
+                                                </span>
+                                            </td>
+                                            <td className="p-3.5 text-center font-mono font-bold text-emerald-700">
+                                                {q.type === "PG_SEDERHANA" && ["A", "B", "C", "D", "E"][q.singleAnswer ?? 0]}
+                                                {q.type === "PGK_MCMA" && `${(q.multiAnswers || []).length} Pilihan`}
+                                                {q.type === "PGK_KATEGORI" && `${(q.statements || []).length} Matriks`}
+                                            </td>
+                                            <td className="p-3.5 text-right">
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedQuestionForPreview(q);
+                                                            setPreviewMode(true);
+                                                        }}
+                                                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
+                                                        title="Lihat Pratinjau Soal"
+                                                    >
+                                                        <Eye className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleOpenEditModal(q)}
+                                                        className="p-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 transition"
+                                                        title="Edit Butir Soal"
+                                                    >
+                                                        <Edit3 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteQuestion(q.id)}
+                                                        className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition"
+                                                        title="Hapus Butir Soal"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
 
-                {/* TAB 2: UPLOAD MASSAL FILE CSV / EXCEL */}
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                {inputMode === "csv" && (
-                    <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-sm">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                            <div>
-                                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                                    Upload Massal Soal via File Excel / CSV
-                                </h2>
-                                <p className="text-xs text-slate-500">
-                                    Gunakan template resmi untuk memasukkan puluhan soal TKA SMP sekaligus.
-                                </p>
-                            </div>
+                                {filteredQuestions.length === 0 && (
+                                    <tr>
+                                        <td colSpan={7} className="text-center py-10 text-slate-400 font-medium">
+                                            Tidak ada butir soal yang sesuai dengan kriteria filter Anda.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
 
-                            <button
-                                type="button"
-                                onClick={handleDownloadExcelTemplate}
-                                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-400 rounded-full transition-all shadow-sm cursor-pointer"
-                            >
-<<<<<<< HEAD
-                                <span>Unduh Template TKA SMP (.xlsx)</span>
-=======
-                                <Download className="w-4 h-4 text-emerald-700" />
-                                <span>Unduh Template Lengkap (Excel .xlsx)</span>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                            </button>
-                        </div>
-
-                        <div
-                            onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed border-slate-300 hover:border-blue-600 hover:bg-blue-50/40 rounded-3xl p-8 text-center cursor-pointer transition-all space-y-3"
-                        >
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".csv, .xlsx, .xls"
-                                onChange={handleFileUpload}
-                                className="hidden"
-                            />
-                            <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center mx-auto">
-                                <UploadCloud className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <p className="text-sm font-bold text-slate-800">Klik untuk Memilih File Excel/CSV dari Perangkat</p>
-                                <p className="text-xs text-slate-400 mt-0.5">Format .xlsx atau .csv standar</p>
-                            </div>
-                        </div>
-
-                        {batchQuestions.length > 0 && (
-<<<<<<< HEAD
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setBatchQuestions([])}
-                                    className="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl"
-                                >
-                                    Batalkan
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={isSubmitting}
-                                    onClick={handleBulkSubmit}
-                                    className="px-5 py-2.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                                >
-                                    <Send className="w-3.5 h-3.5" />
-                                    <span>{isSubmitting ? "Mengunggah..." : `Simpan Semua ke ${selectedPaket}`}</span>
-                                </button>
-=======
-                            <div className="space-y-4 pt-4 border-t border-slate-200">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowCsvPreview(!showCsvPreview)}
-                                        className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95"
-                                    >
-                                        <Eye className="w-4 h-4 text-blue-700" />
-                                        <span>Pratinjau Hasil Impor CSV ({batchQuestions.length} Soal)</span>
-                                        <span className="text-[10px] bg-blue-200/70 text-blue-900 px-1.5 py-0.5 rounded font-mono">
-                                            {showCsvPreview ? "Tutup ▲" : "Lihat Hasil ▼"}
-                                        </span>
-                                    </button>
-
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setBatchQuestions([])}
-                                            className="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition-all cursor-pointer flex items-center gap-1"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                            <span>Bersihkan</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            disabled={isSubmitting}
-                                            onClick={() => handleBulkSubmit(batchQuestions)}
-                                            className="px-5 py-2.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-blue-900/20 cursor-pointer disabled:opacity-50"
-                                        >
-                                            <Send className="w-3.5 h-3.5" />
-                                            <span>{isSubmitting ? "Menyimpan ke File..." : `Simpan Semua ke ${selectedPaket}`}</span>
-                                        </button>
-                                    </div>
+            {/* ========================================================================= */}
+            {/* MODAL FORM TAMBAH / EDIT BUTIR SOAL LENGKAP                                */}
+            {/* ========================================================================= */}
+            {showModal && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+                    <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
+                        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 rounded-t-3xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-bold">
+                                    <FileText className="w-4 h-4" />
                                 </div>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
+                                <div>
+                                    <h3 className="font-bold text-sm text-slate-900">
+                                        {isEditing ? "Edit Butir Soal TKA SMP" : "Tambah Butir Soal Baru"}
+                                    </h3>
+                                    <p className="text-[11px] text-slate-500 font-mono">ID: {formData.id}</p>
+                                </div>
                             </div>
-                        )}
-                    </div>
-                )}
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
 
-                {/* TAB 4: INPUT MANUAL SATUAN */}
-                {inputMode === "manual" && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                        <form
-                            onSubmit={async (e) => {
-                                e.preventDefault();
-                                setIsSubmitting(true);
-                                setStatusMsg(null);
-
-                                const newQuestionItem = {
-                                    subtes_code: selectedSubtest,
-                                    no_soal: Number(noSoal),
-                                    stimulus,
-                                    image_url: convertToDirectImageUrl(imageUrl),
-                                    image_position: imagePosition,
-                                    pertanyaan,
-                                    opsi_a: opsiA,
-                                    opsi_b: opsiB,
-                                    opsi_c: opsiC,
-                                    opsi_d: opsiD,
-                                    opsi_e: opsiE,
-                                    opsi_a_img: convertToDirectImageUrl(opsiAImg),
-                                    opsi_b_img: convertToDirectImageUrl(opsiBImg),
-                                    opsi_c_img: convertToDirectImageUrl(opsiCImg),
-                                    opsi_d_img: convertToDirectImageUrl(opsiDImg),
-                                    opsi_e_img: convertToDirectImageUrl(opsiEImg),
-                                    kunci,
-                                    tingkat_kesukaran: kesukaran,
-                                    pembahasan,
-                                    author_guru: `${loggedTeacher.nama} (${loggedTeacher.mapel || "Guru Mapel"})`
-                                };
-
-                                try {
-                                    let updated = [...serverQuestions];
-                                    const existIdx = updated.findIndex((q) => Number(q.no_soal) === Number(noSoal) && q.subtes_code === selectedSubtest);
-                                    if (existIdx !== -1) {
-                                        updated[existIdx] = newQuestionItem;
-                                    } else {
-                                        updated.push(newQuestionItem);
-                                    }
-
-                                    setServerQuestions(updated);
-                                    localStorage.setItem(`cbt_questions_${selectedPaket}`, JSON.stringify(updated));
-
-                                    setStatusMsg({
-                                        type: "success",
-                                        text: `Soal No. ${noSoal} (${selectedSubtest}) berhasil disimpan ke ${selectedPaket}!`
-                                    });
-
-                                    setNoSoal((prev) => String(Number(prev) + 1));
-                                    setPertanyaan("");
-                                    setImageUrl("");
-                                    setOpsiA("");
-                                    setOpsiB("");
-                                    setOpsiC("");
-                                    setOpsiD("");
-                                    setOpsiE("");
-                                    setPembahasan("");
-                                } catch (err: any) {
-<<<<<<< HEAD
-                                    setStatusMsg({ type: "error", text: "Gagal menyimpan butir soal." });
-=======
-                                    setStatusMsg({ type: "error", text: "Gagal menyimpan: " + err.message });
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                } finally {
-                                    setIsSubmitting(false);
-                                }
-                            }}
-                            className="lg:col-span-7 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4 text-left"
-                        >
-                            <div className="border-b border-slate-100 pb-2 flex items-center justify-between">
-                                <h2 className="text-base font-black text-slate-900 tracking-tight">Formulir Butir Soal</h2>
-                                <span className="text-[11px] font-mono text-slate-400">Penyusun: {loggedTeacher.nama}</span>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
+                        <form onSubmit={handleSaveForm} className="p-6 overflow-y-auto space-y-4 text-xs text-left">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-700 font-mono">SUBTES:</label>
+                                    <label className="font-bold font-mono text-slate-700">SUBTES RESMI:</label>
                                     <select
-                                        value={selectedSubtest}
-                                        onChange={(e) => setSelectedSubtest(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:border-blue-600 outline-none bg-white"
+                                        value={formData.subject}
+                                        onChange={(e) => {
+                                            const sub = e.target.value as any;
+                                            setFormData({
+                                                ...formData,
+                                                subject: sub,
+                                                subtest: sub === "Bahasa Indonesia" ? "LIT_INDO" : "PM"
+                                            });
+                                        }}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:border-blue-600 outline-none bg-white"
                                     >
-                                        <option value="LIT_INDO">Literasi Bahasa Indonesia</option>
-                                        <option value="PM">Penalaran Matematika (PM)</option>
+                                        <option value="Bahasa Indonesia">Literasi Bahasa Indonesia</option>
+                                        <option value="Matematika">Penalaran Matematika</option>
                                     </select>
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-700 font-mono">NO SOAL (LOKAL SUBTES):</label>
-                                    <input
-                                        type="number"
-                                        required
-                                        min={1}
-                                        value={noSoal}
-                                        onChange={(e) => setNoSoal(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold font-mono focus:border-blue-600 outline-none"
-                                    />
+                                    <label className="font-bold font-mono text-slate-700">BENTUK SOAL:</label>
+                                    <select
+                                        value={formData.type}
+                                        onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:border-blue-600 outline-none bg-white"
+                                    >
+                                        <option value="PG_SEDERHANA">PG Sederhana (Pilihan A-D/E)</option>
+                                        <option value="PGK_MCMA">PG Kompleks (MCMA Centang Banyak)</option>
+                                        <option value="PGK_KATEGORI">PG Kompleks (Matriks Benar/Salah)</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="font-bold font-mono text-slate-700">TINGKAT KESUKARAN:</label>
+                                    <select
+                                        value={formData.difficulty}
+                                        onChange={(e) => setFormData({ ...formData, difficulty: Number(e.target.value) })}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:border-blue-600 outline-none bg-white"
+                                    >
+                                        <option value={1}>Level 1 (Mudah / Pemahaman)</option>
+                                        <option value={2}>Level 2 (Sedang / Aplikasi)</option>
+                                        <option value={3}>Level 3 (Sulit / Penalaran HOTS)</option>
+                                    </select>
                                 </div>
                             </div>
 
+                            {/* STIMULUS WACANA */}
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-700 font-mono">WACANA / STIMULUS (OPSIONAL):</label>
+                                <label className="font-bold font-mono text-slate-700">
+                                    STIMULUS WACANA / TEKS INFORMASI (OPSIONAL):
+                                </label>
                                 <textarea
-                                    rows={2}
-                                    value={stimulus}
-                                    onChange={(e) => setStimulus(e.target.value)}
-<<<<<<< HEAD
-                                    placeholder="Stimulus bacaan atau teks wacana..."
-=======
-                                    placeholder="Wacana atau stimulus bacaan..."
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:border-blue-600 outline-none"
+                                    rows={4}
+                                    placeholder="Ketik teks wacana bacaan atau stimulus bacaan di sini..."
+                                    value={formData.stimulus || ""}
+                                    onChange={(e) => setFormData({ ...formData, stimulus: e.target.value })}
+                                    className="w-full p-3 rounded-xl border border-slate-200 font-normal focus:border-blue-600 outline-none"
                                 />
                             </div>
 
+                            {/* TEKS PERTANYAAN */}
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-700 font-mono">PERTANYAAN UTAMA:</label>
+                                <label className="font-bold font-mono text-slate-700">
+                                    TEKS PERTANYAAN / SOAL (DUKUNGAN LATEX $...$):
+                                </label>
                                 <textarea
                                     rows={3}
                                     required
-                                    value={pertanyaan}
-                                    onChange={(e) => setPertanyaan(e.target.value)}
-                                    placeholder="Tuliskan butir soal di sini..."
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:border-blue-600 outline-none"
+                                    placeholder="Contoh: Nilai $x$ dari persamaan $2x + 5 = 15$ adalah..."
+                                    value={formData.question}
+                                    onChange={(e) => setFormData({ ...formData, question: e.target.value })}
+                                    className="w-full p-3 rounded-xl border border-slate-200 font-semibold focus:border-blue-600 outline-none"
                                 />
                             </div>
 
-                            <div className="space-y-2.5 pt-1">
-                                <label className="text-xs font-bold text-slate-700 font-mono">PILIHAN JAWABAN (A–D / E):</label>
-                                {[
-                                    { label: "A", val: opsiA, setVal: setOpsiA },
-                                    { label: "B", val: opsiB, setVal: setOpsiB },
-                                    { label: "C", val: opsiC, setVal: setOpsiC },
-                                    { label: "D", val: opsiD, setVal: setOpsiD }
-                                ].map((opt) => (
-<<<<<<< HEAD
-                                    <div key={opt.label} className="flex items-center gap-2">
-                                        <span className="w-6 h-6 rounded bg-slate-100 border border-slate-300 flex items-center justify-center font-mono font-bold text-xs shrink-0">
-                                            {opt.label}
-                                        </span>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={opt.val}
-                                            onChange={(e) => opt.setVal(e.target.value)}
-                                            placeholder={`Teks pilihan ${opt.label}...`}
-                                            className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:border-blue-600 outline-none"
-                                        />
-=======
-                                    <div key={opt.label} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-                                        <div className="flex items-center gap-2">
-                                            <span className="w-6 h-6 rounded bg-white border border-slate-300 flex items-center justify-center font-mono font-bold text-xs shrink-0">
-                                                {opt.label}
-                                            </span>
+                            {/* INPUT PILIHAN GANDA SEDERHANA */}
+                            {formData.type === "PG_SEDERHANA" && (
+                                <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                                    <label className="font-bold font-mono text-slate-700 block">
+                                        OPSI JAWABAN &amp; PILIH KUNCI JAWABAN BENAR:
+                                    </label>
+                                    {(formData.options || []).map((opt, idx) => {
+                                        const isCorrect = formData.singleAnswer === idx;
+                                        const char = ["A", "B", "C", "D", "E"][idx];
+                                        return (
+                                            <div key={idx} className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, singleAnswer: idx })}
+                                                    className={`w-8 h-8 rounded-xl font-mono font-bold flex items-center justify-center shrink-0 transition ${isCorrect
+                                                            ? "bg-emerald-600 text-white shadow-xs"
+                                                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                                        }`}
+                                                >
+                                                    {char}
+                                                </button>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    value={opt}
+                                                    onChange={(e) => handleOptionChange(idx, e.target.value)}
+                                                    placeholder={`Teks jawaban pilihan ${char}...`}
+                                                    className="flex-1 px-3 py-2 rounded-xl border border-slate-200 focus:border-blue-600 outline-none font-medium"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveOption(idx)}
+                                                    className="p-2 text-rose-500 hover:text-rose-700"
+                                                    title="Hapus Opsi"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                    {(formData.options || []).length < 5 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleAddOption}
+                                            className="text-blue-700 hover:underline font-bold text-xs inline-flex items-center gap-1 mt-1"
+                                        >
+                                            <Plus className="w-3 h-3" /> Tambah Pilihan Opsi ({["A", "B", "C", "D", "E"][(formData.options || []).length]})
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* INPUT PILIHAN GANDA KOMPLEKS (MCMA) */}
+                            {formData.type === "PGK_MCMA" && (
+                                <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                                    <label className="font-bold font-mono text-slate-700 block">
+                                        OPSI JAWABAN MCMA (CENTANG LEBIH DARI SATU KUNCI BENAR):
+                                    </label>
+                                    {(formData.options || []).map((opt, idx) => {
+                                        const isChecked = (formData.multiAnswers || []).includes(idx);
+                                        const char = ["A", "B", "C", "D", "E"][idx];
+                                        return (
+                                            <div key={idx} className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleMcmaAnswer(idx)}
+                                                    className={`w-8 h-8 rounded-xl font-mono font-bold flex items-center justify-center shrink-0 border transition ${isChecked
+                                                            ? "bg-indigo-700 border-indigo-700 text-white shadow-xs"
+                                                            : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
+                                                        }`}
+                                                >
+                                                    {isChecked ? <Check className="w-4 h-4" /> : char}
+                                                </button>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    value={opt}
+                                                    onChange={(e) => handleOptionChange(idx, e.target.value)}
+                                                    placeholder={`Pernyataan opsi ${char}...`}
+                                                    className="flex-1 px-3 py-2 rounded-xl border border-slate-200 focus:border-blue-600 outline-none font-medium"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveOption(idx)}
+                                                    className="p-2 text-rose-500 hover:text-rose-700"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                    {(formData.options || []).length < 5 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleAddOption}
+                                            className="text-blue-700 hover:underline font-bold text-xs inline-flex items-center gap-1 mt-1"
+                                        >
+                                            <Plus className="w-3 h-3" /> Tambah Opsi MCMA
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* INPUT PGK KATEGORI / MATRIKS */}
+                            {formData.type === "PGK_KATEGORI" && (
+                                <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                                    <label className="font-bold font-mono text-slate-700 block">
+                                        DAFTAR PERNYATAAN MATRIKS (BENAR / SALAH):
+                                    </label>
+                                    {(formData.statements || []).map((st, idx) => (
+                                        <div key={st.id || idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                            <span className="font-mono font-bold text-slate-500 w-5 text-center">{idx + 1}.</span>
                                             <input
                                                 type="text"
-                                                value={opt.val}
-                                                onChange={(e) => opt.setVal(e.target.value)}
-                                                placeholder={`Teks pilihan ${opt.label}...`}
-                                                className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:border-blue-600 outline-none"
+                                                required
+                                                value={st.statement}
+                                                onChange={(e) => handleStatementChange(idx, "statement", e.target.value)}
+                                                placeholder="Ketik pernyataan analisis di sini..."
+                                                className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:border-blue-600 outline-none text-xs"
                                             />
+                                            <select
+                                                value={st.correctCategory}
+                                                onChange={(e) => handleStatementChange(idx, "correctCategory", e.target.value)}
+                                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white font-bold text-xs outline-none"
+                                            >
+                                                <option value="Benar">Kunci: Benar</option>
+                                                <option value="Salah">Kunci: Salah</option>
+                                                <option value="Sesuai">Kunci: Sesuai</option>
+                                                <option value="Tidak Sesuai">Kunci: Tidak Sesuai</option>
+                                            </select>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveStatement(idx)}
+                                                className="p-1.5 text-rose-500 hover:text-rose-700"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={handleAddStatement}
+                                        className="text-blue-700 hover:underline font-bold text-xs inline-flex items-center gap-1 mt-1"
+                                    >
+                                        <Plus className="w-3 h-3" /> Tambah Baris Pernyataan
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* PEMBAHASAN SOAL */}
+                            <div className="space-y-1 pt-2 border-t border-slate-100">
+                                <label className="font-bold font-mono text-slate-700">
+                                    PEMBAHASAN SOAL / SOLUSI JAWABAN:
+                                </label>
+                                <textarea
+                                    rows={2}
+                                    placeholder="Ketik langkah pemecahan atau dasar analisis wacana..."
+                                    value={formData.explanation || ""}
+                                    onChange={(e) => setFormData({ ...formData, explanation: e.target.value })}
+                                    className="w-full p-3 rounded-xl border border-slate-200 font-normal focus:border-blue-600 outline-none"
+                                />
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowModal(false)}
+                                    className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-bold text-slate-700"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold flex items-center gap-1.5 shadow-md"
+                                >
+                                    <Save className="w-3.5 h-3.5" />
+                                    <span>Simpan ke Bank Soal</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* MODAL PRATINJAU SOAL (PREVIEW LAYAR SISWA)                                */}
+            {/* ========================================================================= */}
+            {previewMode && selectedQuestionForPreview && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+                    <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <span className="font-mono text-xs font-bold text-blue-800 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
+                                Pratinjau Layar Siswa &bull; {selectedQuestionForPreview.subject}
+                            </span>
+                            <button
+                                onClick={() => setPreviewMode(false)}
+                                className="p-1 rounded-lg hover:bg-slate-100 text-slate-500"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {selectedQuestionForPreview.stimulus && (
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed whitespace-pre-line">
+                                <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-1">
+                                    STIMULUS WACANA:
+                                </div>
+                                {selectedQuestionForPreview.stimulus}
+                            </div>
+                        )}
+
+                        <div className="text-sm font-bold text-slate-900 leading-snug">
+                            <RenderLatex content={selectedQuestionForPreview.question} />
+                        </div>
+
+                        {/* Opsi Jawaban */}
+                        {selectedQuestionForPreview.options && (
+                            <div className="space-y-2 pt-2">
+                                {selectedQuestionForPreview.options.map((opt, i) => (
+                                    <div
+                                        key={i}
+                                        className="p-3 rounded-xl border border-slate-200 text-xs flex items-center gap-3 bg-white"
+                                    >
+                                        <span className="w-6 h-6 rounded-lg bg-slate-100 font-mono font-bold flex items-center justify-center shrink-0">
+                                            {["A", "B", "C", "D", "E"][i]}
+                                        </span>
+                                        <span><RenderLatex content={opt} /></span>
                                     </div>
                                 ))}
                             </div>
+                        )}
 
-                            <div className="grid grid-cols-2 gap-3 pt-1">
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-700 font-mono">KUNCI JAWABAN:</label>
-                                    <select
-                                        value={kunci}
-                                        onChange={(e) => setKunci(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-emerald-300 text-xs font-black font-mono bg-emerald-50 text-emerald-950"
-                                    >
-                                        {["A", "B", "C", "D"].map((k) => (
-                                            <option key={k} value={k}>OPSI {k}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-700 font-mono">TINGKAT KESUKARAN:</label>
-                                    <select
-                                        value={kesukaran}
-                                        onChange={(e) => setKesukaran(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
-                                    >
-                                        <option value="Mudah">Mudah</option>
-                                        <option value="Sedang">Sedang</option>
-                                        <option value="Sulit">Sulit</option>
-                                    </select>
-                                </div>
+                        {selectedQuestionForPreview.explanation && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 mt-2">
+                                <strong>Pembahasan:</strong> {selectedQuestionForPreview.explanation}
                             </div>
+                        )}
 
-                            <button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full py-3 rounded-2xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
-                            >
-                                <Send className="w-4 h-4" />
-                                <span>
-                                    {isSubmitting
-                                        ? "Menyimpan ke File..."
-                                        : isEditingMode
-<<<<<<< HEAD
-                                            ? `Perbarui Soal No. ${noSoal}`
-                                            : `Simpan Soal ke ${selectedPaket}`}
-=======
-                                            ? `Perbarui Soal No. ${noSoal} (${selectedSubtest})`
-                                            : `Simpan Soal Baru ke ${selectedPaket}`}
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                </span>
-                            </button>
-                        </form>
-
-                        {/* LIVE CARD PREVIEW */}
-                        <div className="lg:col-span-5 bg-white rounded-3xl border-2 border-blue-200 p-5 shadow-lg space-y-4 text-left sticky top-20">
-                            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                                <div className="flex items-center gap-2 text-xs font-black text-blue-900">
-                                    <Eye className="w-4 h-4 text-blue-700" />
-                                    <span>Pratinjau Layar Siswa</span>
-                                </div>
-                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                                    Kunci: {kunci}
-                                </span>
-                            </div>
-
-                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                                <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 pb-1.5 border-b border-slate-200">
-                                    <span className="font-bold text-blue-700">SOAL NO. {noSoal || "1"}</span>
-                                    <span>{selectedSubtest}</span>
-                                </div>
-
-                                {stimulus && (
-                                    <div className="p-2.5 bg-white rounded-lg border text-[11px] text-slate-600 italic leading-relaxed">
-                                        <MathRenderer content={stimulus} />
-                                    </div>
-                                )}
-
-                                <div className="text-xs font-semibold text-slate-900 leading-snug">
-                                    <MathRenderer content={pertanyaan || "Pertanyaan akan tampil di sini..."} />
-                                </div>
-
-                                <div className="space-y-1.5 pt-1">
-                                    {[
-                                        { label: "A", text: opsiA },
-                                        { label: "B", text: opsiB },
-                                        { label: "C", text: opsiC },
-                                        { label: "D", text: opsiD }
-                                    ].map((opt) => (
-                                        <div
-                                            key={opt.label}
-                                            className={`p-2 rounded-xl border text-xs flex items-center gap-2 ${String(kunci).trim().toUpperCase() === opt.label
-                                                    ? "bg-emerald-50 border-emerald-400 font-semibold text-emerald-950"
-                                                    : "bg-white border-slate-200 text-slate-700"
-                                                }`}
-                                        >
-<<<<<<< HEAD
-                                            <span className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center font-mono font-bold text-[10px] shrink-0 border border-slate-200">
-                                                {opt.label}
-                                            </span>
-                                            <span className="text-[11px] leading-tight">
-                                                <MathRenderer content={opt.text || `(Pilihan ${opt.label})`} />
-                                            </span>
-=======
-                                            <div className="flex items-center gap-2">
-                                                <span className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center font-mono font-bold text-[10px] shrink-0 border border-slate-200">
-                                                    {opt.label}
-                                                </span>
-                                                <span className="text-[11px] leading-tight">
-                                                    <MathRenderer content={opt.text || `(Pilihan ${opt.label})`} />
-                                                </span>
-                                            </div>
->>>>>>> bd521521d6e4150f88dd58f9d66fa2ad6fb15e25
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <button
+                            onClick={() => setPreviewMode(false)}
+                            className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs"
+                        >
+                            Tutup Pratinjau
+                        </button>
                     </div>
-                )}
+                </div>
+            )}
 
-            </div>
         </div>
     );
 }

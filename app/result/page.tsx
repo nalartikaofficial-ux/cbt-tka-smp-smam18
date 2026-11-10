@@ -7,16 +7,15 @@ import {
     Award,
     CheckCircle2,
     AlertTriangle,
-    Layers,
     Home,
     Printer,
     MessageCircle,
     Sparkles,
     ChevronLeft,
-    FileText,
     ShieldCheck,
     BookOpen,
-    Calculator
+    Calculator,
+    QrCode
 } from "lucide-react";
 
 export default function ExamResultPage() {
@@ -30,7 +29,6 @@ export default function ExamResultPage() {
             document.exitFullscreen().catch(() => { });
         }
 
-        // Dukung key baru (tka_result) dan fallback key lama (cbt_exam_result)
         const rawTka = localStorage.getItem("tka_result");
         const rawLegacy = localStorage.getItem("cbt_exam_result");
 
@@ -41,8 +39,7 @@ export default function ExamResultPage() {
         } else if (rawLegacy) {
             try {
                 const parsed = JSON.parse(rawLegacy);
-                // Konversi otomatis format lama ke skala 0-100 standar SMP
-                const rawScore = parsed.score || 0;
+                const rawScore = Number(parsed.score ?? parsed.totalScore ?? 0);
                 const normalizedScore = rawScore > 100
                     ? Math.min(100, Math.max(0, Math.round(((rawScore - 200) / 600) * 100)))
                     : rawScore;
@@ -53,11 +50,11 @@ export default function ExamResultPage() {
                         school: parsed?.student?.school || "SMP / MTs",
                         grade: parsed?.student?.grade || "9",
                         phone: parsed?.student?.phone || parsed?.student?.nisn || "-",
-                        interest: parsed?.student?.interest || "Eksplorasi SMA"
+                        interest: parsed?.student?.interest || "Sains & Teknologi (STEM)"
                     },
                     totalScore: normalizedScore,
-                    indoScore: normalizedScore,
-                    mathScore: normalizedScore,
+                    indoScore: Number(parsed.indoScore ?? normalizedScore),
+                    mathScore: Number(parsed.mathScore ?? normalizedScore),
                     violations: parsed.violations || 0,
                     submittedAt: new Date().toISOString()
                 });
@@ -106,58 +103,68 @@ export default function ExamResultPage() {
         school: "SMP / MTs",
         grade: "9",
         phone: "-",
-        interest: "Umum"
+        interest: "Sains & Teknologi (STEM)"
     };
 
-    const totalScore = Number(result.totalScore ?? result.score ?? 0);
-    const indoScore = Number(result.indoScore ?? totalScore);
-    const mathScore = Number(result.mathScore ?? totalScore);
+    const totalScore = Math.min(100, Math.max(0, Number(result.totalScore ?? result.score ?? 0)));
+    const indoScore = Math.min(100, Math.max(0, Number(result.indoScore ?? totalScore)));
+    const mathScore = Math.min(100, Math.max(0, Number(result.mathScore ?? totalScore)));
     const violations = Number(result.violations || 0);
 
     // 2. Taksonomi 4 Kategori Tingkat Kompetensi Resmi Pemerintah (Pusmendik / BSKAP)
     let competency = {
         level: "MAHIR",
-        desc: "Siswa mampu bernalar kritis untuk memecahkan persoalan kontekstual yang rumit, mengevaluasi wacana secara mendalam, serta memiliki kesiapan istimewa memasuki program unggulan SMA.",
-        badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-300",
+        desc: "Siswa mampu bernalar kritis untuk memecahkan persoalan kontekstual yang kompleks, mengevaluasi wacana secara reflektif, serta memiliki kesiapan istimewa memasuki program akademik unggulan SMA.",
+        badgeClass: "bg-emerald-50 text-emerald-900 border-emerald-300",
         barColor: "bg-emerald-600",
-        scholarship: "Beasiswa Bebas Biaya SPP / Uang Gedung s.d. 100%"
+        scholarship: "Voucher Beasiswa Bebas Biaya SPP / Uang Pangkal s.d. 100%"
     };
 
-    if (totalScore < 54) {
+    if (totalScore < 55) {
         competency = {
             level: "PERLU INTERVENSI KHUSUS",
-            desc: "Siswa masih membutuhkan bimbingan intensif dalam mengidentifikasi informasi eksplisit bacaan dan pemahaman konsep dasar aritmetika-aljabar.",
-            badgeClass: "bg-rose-50 text-rose-800 border-rose-300",
+            desc: "Siswa masih membutuhkan pendampingan terstruktur dalam mengidentifikasi informasi eksplisit bacaan serta penguatan konsep operasi dasar matematika.",
+            badgeClass: "bg-rose-50 text-rose-900 border-rose-300",
             barColor: "bg-rose-600",
-            scholarship: "Program Bimbingan Belajar Klinik Akademik PPDB"
+            scholarship: "Program Klinik Belajar & Subsidi Registrasi Awal PPDB"
         };
-    } else if (totalScore < 70) {
+    } else if (totalScore <= 70) {
         competency = {
             level: "DASAR",
-            desc: "Siswa telah mencapai batas kompetensi minimum literasi dan numerasi dasar, namun memerlukan penguatan strategi penalaran kontekstual bertingkat.",
-            badgeClass: "bg-amber-50 text-amber-800 border-amber-300",
+            desc: "Siswa telah mencapai batas kompetensi minimum literasi dan numerasi dasar, namun memerlukan penguatan strategi penalaran masalah kontekstual.",
+            badgeClass: "bg-amber-50 text-amber-900 border-amber-300",
             barColor: "bg-amber-500",
-            scholarship: "Potongan Khusus Formulir Pendaftaran PPDB"
+            scholarship: "Potongan Khusus Biaya Masuk & Formulir PPDB Gelombang Khusus"
         };
-    } else if (totalScore < 85) {
+    } else if (totalScore <= 85) {
         competency = {
             level: "CAKAP",
             desc: "Siswa terampil mengaplikasikan konsep literasi dan matematika secara mandiri dan siap mengikuti pembelajaran lanjutan kurikulum SMA secara optimal.",
-            badgeClass: "bg-blue-50 text-blue-800 border-blue-300",
+            badgeClass: "bg-blue-50 text-blue-900 border-blue-300",
             barColor: "bg-blue-600",
-            scholarship: "Voucher Beasiswa Jalur Prestasi Akademik PPDB"
+            scholarship: "Voucher Beasiswa Jalur Prestasi Akademik PPDB (Potongan s.d. 50%)"
         };
     }
 
-    const voucherCode = `M18-TKA-${(student.phone || "00").replace(/[^0-9]/g, "").slice(-4) || "2026"}-${totalScore}`;
+    const cleanPhone = String(student.phone || "").replace(/\D/g, "");
+    const voucherCode = `M18-TKA-${cleanPhone.slice(-4) || "2026"}-${totalScore}`;
 
     return (
         <div className="min-h-screen bg-[#F1F5F9] text-slate-800 font-sans selection:bg-blue-600 selection:text-white pb-16 print:bg-white print:p-0 print:pb-0">
 
-            {/* ============================================================== */}
-            {/* NAVBAR ATAS (TERSEMBUNYI SAAT CETAK / PRINT)                    */}
-            {/* ============================================================== */}
-            <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-xs print:hidden">
+            {/* CSS KHUSUS PENCETAKAN PDF A4 RESMI */}
+            <style dangerouslySetInnerHTML={{
+                __html: `
+        @media print {
+          body { background: white !important; color: black !important; padding: 0 !important; margin: 0 !important; }
+          .print-hidden { display: none !important; }
+          .print-card { box-shadow: none !important; border: none !important; max-width: 100% !important; border-radius: 0 !important; padding: 0 !important; }
+          @page { size: A4 portrait; margin: 12mm 15mm; }
+        }
+      `}} />
+
+            {/* NAVBAR ATAS (TERSEMBUNYI SAAT PRINT) */}
+            <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-xs print-hidden">
                 <div className="flex items-center gap-3">
                     <button
                         type="button"
@@ -200,12 +207,9 @@ export default function ExamResultPage() {
                 </div>
             </header>
 
-            {/* ============================================================== */}
-            {/* DOKUMEN RAPOR FISIK (PRINT & SCREEN OPTIMIZED)                  */}
-            {/* ============================================================== */}
+            {/* DOKUMEN RAPOR FISIK (PRINT & SCREEN OPTIMIZED) */}
             <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 space-y-6 print:pt-0 print:max-w-none">
-
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-sm space-y-7 print:border-none print:shadow-none print:p-0">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-sm space-y-7 print-card">
 
                     {/* 1. KOP SURAT ASESMEN RESMI SEKOLAH */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b-2 border-slate-900 text-center sm:text-left">
@@ -241,7 +245,7 @@ export default function ExamResultPage() {
 
                         <div className="text-right font-mono text-xs">
                             <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200 inline-block mb-1">
-                                STANDAR SKALA 0–100
+                                STANDAR RESMI SKALA 0–100
                             </span>
                             <div className="text-slate-400 text-[10px]">Tahun Ajaran 2026/2027</div>
                         </div>
@@ -265,8 +269,7 @@ export default function ExamResultPage() {
 
                     {/* 3. REKAPITULASI CAPAIAN NILAI (SKALA 0-100) */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-
-                        {/* Skor Gabungan / Rerata Nasional */}
+                        {/* Skor Gabungan */}
                         <div className="bg-gradient-to-br from-blue-900 via-blue-950 to-slate-950 text-white p-6 rounded-3xl shadow-sm space-y-2 flex flex-col justify-between relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none" />
                             <div className="relative z-10">
@@ -296,7 +299,7 @@ export default function ExamResultPage() {
                                     <span className="text-xs font-normal text-slate-400 ml-1 font-sans">/ 100</span>
                                 </div>
                                 <p className="text-[11px] text-slate-500 font-medium mt-1 leading-snug">
-                                    Wacana Informasi &amp; Fiksi (Pemahaman Tekstual, Inferensial &amp; Evaluasi)
+                                    Wacana Informasi &amp; Sastra (Pemahaman Tekstual, Inferensial &amp; Evaluasi)
                                 </p>
                             </div>
                             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -323,10 +326,9 @@ export default function ExamResultPage() {
                                 <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${Math.min(100, mathScore)}%` }} />
                             </div>
                         </div>
-
                     </div>
 
-                    {/* 4. DIAGNOSIS 4 TINGKAT KOMPETENSI RESMI PEMERINTAH */}
+                    {/* 4. DIAGNOSIS 4 TINGKAT KOMPETENSI RESMI PUSMENDIK */}
                     <div className={`p-5 rounded-2xl border ${competency.badgeClass} space-y-2`}>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
@@ -335,11 +337,11 @@ export default function ExamResultPage() {
                                 <strong className="text-sm font-black tracking-tight">{competency.level}</strong>
                             </div>
                             <span className="text-[10px] font-mono font-bold bg-white/80 px-2.5 py-0.5 rounded-full border border-slate-200">
-                                Pusmendik Standardized
+                                Standar Pusmendik
                             </span>
                         </div>
                         <p className="text-xs leading-relaxed opacity-90 font-normal">
-                            {competency.desc} Catatan integritas bilik ujian terkunci aman (pelanggaran jendela/tab: {violations}x).
+                            {competency.desc} Catatan integritas bilik ujian: {violations === 0 ? "Tertib tanpa pelanggaran." : `${violations}x perpindahan jendela/tab.`}
                         </p>
                     </div>
 
@@ -353,12 +355,12 @@ export default function ExamResultPage() {
                                 {competency.scholarship}
                             </div>
                             <p className="text-[11px] text-slate-600">
-                                Tunjukkan bukti fisik/digital lembar diagnostik ini kepada Panitia SPMB SMA Muhammadiyah 18 Jakarta untuk verifikasi beasiswa.
+                                Tunjukkan bukti fisik/digital lembar diagnostik ini kepada Panitia SPMB SMA Muhammadiyah 18 Jakarta untuk verifikasi klaim beasiswa.
                             </p>
                         </div>
 
                         <div className="bg-white border border-amber-200 px-4 py-2.5 rounded-2xl text-center shadow-xs shrink-0">
-                            <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest block font-bold">KODE REGISTRASI</span>
+                            <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest block font-bold">KODE VOUCHER SPMB</span>
                             <span className="text-sm font-mono font-black text-blue-900 tracking-wider">{voucherCode}</span>
                         </div>
                     </div>
@@ -384,10 +386,8 @@ export default function ExamResultPage() {
 
                 </div>
 
-                {/* ============================================================== */}
-                {/* ACTION BUTTON STRIP BAWAH (TERSEMBUNYI SAAT PRINT)             */}
-                {/* ============================================================== */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs print:hidden">
+                {/* ACTION BUTTON STRIP BAWAH (TERSEMBUNYI SAAT PRINT) */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs print-hidden">
                     <button
                         type="button"
                         onClick={handleFinishAndHome}
@@ -398,7 +398,7 @@ export default function ExamResultPage() {
 
                     <div className="flex items-center gap-2.5 w-full sm:w-auto">
                         <a
-                            href={`https://wa.me/6281234567890?text=Halo%20Admin%20SMA%20Muhammadiyah%2018%20Jakarta,%20saya%20${encodeURIComponent(student.name)}%20dari%20${encodeURIComponent(student.school)}%20telah%20selesai%20mengikuti%20Simulasi%20TKA%20SMP%20dengan%20Skor%20${totalScore}%20(${competency.level}).%20Saya%20ingin%20konsultasi%20jalur%20beasiswa%20dan%20pendaftaran%20PPDB.`}
+                            href={`https://wa.me/6281234567890?text=Halo%20Panitia%20PPDB%20SMA%20Muhammadiyah%2018%20Jakarta,%20saya%20${encodeURIComponent(student.name)}%20dari%20${encodeURIComponent(student.school)}%20telah%20selesai%20mengikuti%20Simulasi%20TKA%20SMP%20dengan%20Skor%20${totalScore}%20(${competency.level}).%20Kode%20Voucher:%20${voucherCode}.%20Saya%20ingin%20konsultasi%20jalur%20beasiswa%20dan%20pendaftaran.`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { tkaQuestions } from "@/data/questions";
+import { tkaQuestions as defaultQuestions } from "@/data/questions";
 import {
     Clock,
     ChevronLeft,
@@ -15,8 +15,6 @@ import {
     FastForward,
     Home,
     Award,
-    BookOpen,
-    Calculator,
     CheckSquare,
     Check
 } from "lucide-react";
@@ -33,7 +31,7 @@ const TKA_SMP_SUBTESTS = [
     { code: "PM", name: "Penalaran Matematika", durationMin: 7.5 }
 ];
 
-// Helper Render Formula LaTeX
+// Helper Render Formula LaTeX / KaTeX
 function RenderLatex({ content = "" }: { content: string }) {
     const safeText = String(content ?? "");
     if (!safeText.trim()) return null;
@@ -82,11 +80,12 @@ export default function OfficialExamChamberPage() {
     const router = useRouter();
 
     const [studentSession, setStudentSession] = useState<any>(null);
+    const [allQuestionsList, setAllQuestionsList] = useState<any[]>(defaultQuestions || []);
     const [currentSubtestIndex, setCurrentSubtestIndex] = useState(0);
     const [currentQIndexInSubtest, setCurrentQIndexInSubtest] = useState(0);
     const [subtestTimeLeft, setSubtestTimeLeft] = useState<number>(7.5 * 60);
 
-    // Struktur State Jawaban menampung PG (string/number), MCMA (number[]), & Kategori (Record)
+    // Struktur Jawaban: PG (number), MCMA (number[]), Kategori (Record<id, choice>)
     const [answers, setAnswers] = useState<Record<string, any>>({});
     const [doubtfuls, setDoubtfuls] = useState<Record<string, boolean>>({});
 
@@ -97,10 +96,11 @@ export default function OfficialExamChamberPage() {
     const [violationCount, setViolationCount] = useState(0);
     const [showViolationModal, setShowViolationModal] = useState(false);
 
-    // 1. Verifikasi Kredensial Siswa (Wajib Login dari /login)
+    // 1. Verifikasi Kredensial Siswa & Muat Bank Soal Dinamis
     useEffect(() => {
         if (typeof window === "undefined") return;
 
+        // Baca sesi login siswa
         const localData = localStorage.getItem("tka_student");
         if (localData) {
             try {
@@ -112,17 +112,30 @@ export default function OfficialExamChamberPage() {
                 setStudentSession(parsed);
             } catch {
                 router.replace("/login");
+                return;
             }
         } else {
             router.replace("/login");
+            return;
+        }
+
+        // Baca bank soal dari localStorage (jika ada update dari admin)
+        const localBankSoal = localStorage.getItem("tka_bank_soal");
+        if (localBankSoal) {
+            try {
+                const parsedBank = JSON.parse(localBankSoal);
+                if (Array.isArray(parsedBank) && parsedBank.length > 0) {
+                    setAllQuestionsList(parsedBank);
+                }
+            } catch { }
         }
     }, [router]);
 
     const activeSubtest = TKA_SMP_SUBTESTS[currentSubtestIndex];
 
-    // 2. Filter Soal Khusus Subtes Aktif
+    // 2. Filter Soal Khusus Subtes yang Sedang Berjalan
     const currentSubtestQuestions = useMemo(() => {
-        const list = tkaQuestions || [];
+        const list = allQuestionsList || [];
         const filtered = list.filter((q: any) => {
             if (activeSubtest.code === "LIT_INDO") {
                 return q.subject === "Bahasa Indonesia" || q.subtest === "LIT_INDO";
@@ -130,12 +143,12 @@ export default function OfficialExamChamberPage() {
             return q.subject === "Matematika" || q.subtest === "PM";
         });
         return filtered.length > 0 ? filtered : list;
-    }, [activeSubtest]);
+    }, [allQuestionsList, activeSubtest]);
 
     const currentQ = currentSubtestQuestions[currentQIndexInSubtest] || currentSubtestQuestions[0];
     const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${currentQIndexInSubtest}`;
 
-    // 3. Masuk Bilik Ujian & Kunci Layar Penuh (Fullscreen)
+    // 3. Masuk Bilik Ujian & Kunci Layar Penuh (Kiosk Mode)
     const enterExamChamber = () => {
         setIsInExam(true);
         try {
@@ -145,7 +158,7 @@ export default function OfficialExamChamberPage() {
         } catch { }
     };
 
-    // 4. Sensor Anti-Cheat Kiosk (Deteksi Pindah Tab & Layar Penuh)
+    // 4. Sensor Anti-Cheat Kiosk (Deteksi Pindah Tab / Keluar Layar Penuh)
     const recordViolation = useCallback(() => {
         if (!isInExam || isExamCompleted) return;
         setViolationCount((prev) => prev + 1);
@@ -231,16 +244,22 @@ export default function OfficialExamChamberPage() {
         let indoScoreSum = 0, indoDiffSum = 0;
         let mathScoreSum = 0, mathDiffSum = 0;
 
-        const allQ = tkaQuestions || [];
+        const allQ = allQuestionsList || [];
         allQ.forEach((q: any, idx: number) => {
             const qKey = q.id ? String(q.id) : `${q.subject === "Bahasa Indonesia" ? "LIT_INDO" : "PM"}_${idx}`;
             const userAns = answers[qKey];
-            const diff = q.difficulty || 1;
+            const diff = Number(q.difficulty) || 1;
             let itemFraction = 0;
 
             if (userAns !== undefined) {
                 if (q.type === "PG_SEDERHANA" || !q.type) {
-                    if (userAns === q.singleAnswer) itemFraction = 1;
+                    // Normalisasi singleAnswer (menangani jika kunci tersimpan sebagai huruf 'A'-'E' atau index 0-4)
+                    let targetIndex = q.singleAnswer;
+                    if (typeof targetIndex === "string") {
+                        const mapKey: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
+                        targetIndex = mapKey[targetIndex.toUpperCase()] ?? 0;
+                    }
+                    if (userAns === targetIndex) itemFraction = 1;
                 } else if (q.type === "PGK_MCMA") {
                     const correctArr: number[] = q.multiAnswers || [];
                     const userArr: number[] = Array.isArray(userAns) ? userAns : [];
@@ -271,7 +290,7 @@ export default function OfficialExamChamberPage() {
         const totalScore = Math.round((skorIndo + skorMath) / 2);
 
         return { skorIndo, skorMath, totalScore };
-    }, [answers]);
+    }, [answers, allQuestionsList]);
 
     // 7. Pengiriman Nilai Akhir ke Google Sheets Panitia SPMB
     const executeFinalSubmission = async () => {
@@ -284,6 +303,7 @@ export default function OfficialExamChamberPage() {
             indoScore: scoreResults.skorIndo,
             mathScore: scoreResults.skorMath,
             violations: violationCount,
+            answers,
             submittedAt: new Date().toISOString()
         };
 

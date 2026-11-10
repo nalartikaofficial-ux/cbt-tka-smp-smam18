@@ -18,21 +18,21 @@ import {
     FileSpreadsheet,
     ClipboardPaste,
     Check,
-    AlertTriangle,
-    Sparkles,
-    Layers
+    ImageIcon
 } from "lucide-react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import { tkaQuestions as defaultQuestions } from "@/data/questions";
 
-// Interface Butir Soal Format SNBT
-export interface QuestionSNBT {
+export interface QuestionCBT {
     id: string | number;
     no_soal: number;
     subtes_code: "LIT_INDO" | "PM" | string;
     subject: "Bahasa Indonesia" | "Matematika";
     type: "PG_SEDERHANA" | "PGK_MCMA" | "PGK_KATEGORI";
     stimulus?: string;
+    image_url?: string;
+    image_position?: "above" | "below";
     pertanyaan: string;
     opsi_a: string;
     opsi_b: string;
@@ -40,14 +40,15 @@ export interface QuestionSNBT {
     opsi_d: string;
     opsi_e?: string;
     kunci: string; // "A", "B", "C", "D", "E"
+    difficulty: number;
+    tingkat_kesukaran?: string;
     pembahasan?: string;
-    image_url?: string;
 }
 
-// Helper Render Formula LaTeX / KaTeX
-function RenderLatex({ content = "" }: { content: string }) {
-    const safeText = String(content ?? "");
-    if (!safeText.trim()) return null;
+// Komponen Render LaTeX dengan Pengaman Ekstra (Anti-Crash)
+function RenderLatex({ content }: { content?: any }) {
+    const safeText = String(content ?? "").trim();
+    if (!safeText) return null;
 
     const parts = safeText.split(/(\$\$[\s\S]*?\$\$|\$[^\$]+?\$)/g);
 
@@ -89,23 +90,48 @@ function RenderLatex({ content = "" }: { content: string }) {
     );
 }
 
+// Parser Baris CSV Robust (Menangani kutip dua & koma dalam kalimat)
+function parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"' || char === '“' || char === '”') {
+            if (inQuotes && line[i + 1] === '"') {
+                current += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (char === "," && !inQuotes) {
+            result.push(current.trim());
+            current = "";
+        } else {
+            current += char;
+        }
+    }
+    result.push(current.trim());
+    return result.map((item) => item.replace(/^"|"$/g, "").trim());
+}
+
 export default function BankSoalAdminPage() {
     const router = useRouter();
     const csvInputRef = useRef<HTMLInputElement>(null);
 
-    const [questions, setQuestions] = useState<QuestionSNBT[]>([]);
+    const [questions, setQuestions] = useState<QuestionCBT[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSubtest, setSelectedSubtest] = useState<"ALL" | "LIT_INDO" | "PM">("ALL");
 
-    // Modal State
     const [showWordPasteModal, setShowWordPasteModal] = useState(false);
     const [pasteText, setPasteText] = useState("");
-    const [selectedQuestionForPreview, setSelectedQuestionForPreview] = useState<QuestionSNBT | null>(null);
+    const [selectedQuestionForPreview, setSelectedQuestionForPreview] = useState<QuestionCBT | null>(null);
 
-    // 1. Muat Soal dari LocalStorage (Jika kosong, mulai dari nol/kosong)
+    // 1. Muat Soal dari LocalStorage (Bawaan Bersih / Mengikuti Penyimpanan)
     useEffect(() => {
         if (typeof window !== "undefined") {
-            const saved = localStorage.getItem("tka_bank_soal_snbt");
+            const saved = localStorage.getItem("tka_bank_soal_cbt");
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
@@ -119,40 +145,38 @@ export default function BankSoalAdminPage() {
         }
     }, []);
 
-    const saveQuestions = (updated: QuestionSNBT[]) => {
+    const saveQuestions = (updated: QuestionCBT[]) => {
         setQuestions(updated);
         if (typeof window !== "undefined") {
-            localStorage.setItem("tka_bank_soal_snbt", JSON.stringify(updated));
-            // Sinkronkan juga ke key umum agar bilik ujian otomatis membaca soal baru ini
+            localStorage.setItem("tka_bank_soal_cbt", JSON.stringify(updated));
             localStorage.setItem("tka_bank_soal", JSON.stringify(updated));
         }
     };
 
-    // 2. Kosongkan Seluruh Soal (Hapus Soal Lama)
     const handleClearAllQuestions = () => {
-        if (confirm("Apakah Anda yakin ingin MENGHAPUS SEMUA SOAL yang ada? Bank soal akan bersih dan siap diisi dari berkas CSV/Word baru.")) {
+        if (confirm("Apakah Anda yakin ingin MENGHAPUS SEMUA SOAL? Bank soal akan bersih dan siap diunggah ulang.")) {
             saveQuestions([]);
         }
     };
 
-    // 3. Download Template CSV Format SNBT
-    const handleDownloadCsvTemplateSNBT = () => {
-        const headers = "no_soal,subtes_code,stimulus,pertanyaan,opsi_a,opsi_b,opsi_c,opsi_d,opsi_e,kunci,pembahasan\n";
-        const sample1 = `1,"LIT_INDO","Kawasan mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan abrasi...","Fungsi utama ekosistem mangrove terhadap mitigasi perubahan iklim adalah...","Mencegah abrasi fisik tanah pesisir","Menyerap karbon biru dengan kapasitas 5 kali lebih tinggi dari hutan tropis daratan","Melindungi kepiting dan bibit bandeng","Menahan laju intrusi air laut","Menambah keindahan pantai","B","Kapasitas penyerapan karbon biru sangat tinggi."\n`;
-        const sample2 = `2,"PM","Sebuah koperasi memberikan promosi diskon bertingkat 20% + 10%...","Jika harga satu set perlengkapan adalah Rp300.000, berapakah harga yang harus dibayar?","Rp 210.000","Rp 216.000","Rp 220.000","Rp 240.000","Rp 250.000","B","300.000 x 0.8 = 240.000; 240.000 x 0.9 = 216.000."\n`;
+    // 2. Download Template CSV Persis File Excel M18 (14 Kolom)
+    const handleDownloadCsvTemplateM18 = () => {
+        const headers = "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
+        const row1 = `1,"LIT_INDO","Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan yang kian mengkhawatirkan...","","above","Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...","Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.","Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.","Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.","Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.","","B","Mudah","Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan."\n`;
+        const row2 = `2,"PM","Menjelang tahun ajaran baru, sebuah koperasi pendidikan memberikan promosi diskon bertingkat untuk paket seragam dan alat tulis. Setiap pembelian paket seragam diberi diskon 20%, dan jika pembeli adalah anggota koperasi, akan mendapatkan potongan harga tambahan sebesar 10% dari harga setelah diskon pertama.","","above","Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal rupiah yang harus dibayarkan oleh seorang siswa yang terdaftar sebagai anggota koperasi?","Rp 210.000","Rp 216.000","Rp 220.000","Rp 240.000","","B","Sedang","Diskon 1 (20%): Rp300.000 x 0.8 = Rp240.000. Diskon 2 (10%): Rp240.000 x 0.9 = Rp216.000."\n`;
 
-        const blob = new Blob([headers + sample1 + sample2], { type: "text/csv;charset=utf-8;" });
+        const blob = new Blob([headers + row1 + row2], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "template_tka_smp_model_snbt.csv");
+        link.setAttribute("download", "Template_Bank_Soal_TKA_SMP_M18.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     };
 
-    // 4. Unggah File CSV Format SNBT
-    const handleUploadCsvSNBT = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // 3. Parser CSV Sesuai 14 Kolom Template Excel M18
+    const handleUploadCsvM18 = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -166,62 +190,80 @@ export default function BankSoalAdminPage() {
                     return;
                 }
 
-                const newParsed: QuestionSNBT[] = [];
+                const newParsed: QuestionCBT[] = [];
                 for (let i = 1; i < lines.length; i++) {
-                    const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map((val) => val.replace(/^"|"$/g, "").trim()) || [];
-                    if (row.length < 5) continue;
+                    const row = parseCSVLine(lines[i]);
+                    if (row.length < 6) continue;
+
+                    // Pemetaan 14 Kolom:
+                    // 0: No | 1: Subtes | 2: Wacana | 3: Link Gambar | 4: Posisi Gambar | 5: Pertanyaan
+                    // 6: Opsi A | 7: Opsi B | 8: Opsi C | 9: Opsi D | 10: Opsi E
+                    // 11: Kunci Jawaban | 12: Tingkat Kesukaran | 13: Pembahasan
 
                     const no_soal = Number(row[0]) || i;
-                    const subCodeRaw = (row[1] || "LIT_INDO").toUpperCase().trim();
-                    const isMath = subCodeRaw.includes("PM") || subCodeRaw.includes("MATH") || subCodeRaw.includes("MATEMATIKA");
+                    const rawSub = (row[1] || "LIT_INDO").toUpperCase().trim();
+                    const isMath = rawSub.includes("PM") || rawSub.includes("MATEMATIKA") || rawSub.includes("NUMERASI");
                     const subtes_code = isMath ? "PM" : "LIT_INDO";
                     const subject = isMath ? "Matematika" : "Bahasa Indonesia";
 
                     const stimulus = row[2] || "";
-                    const pertanyaan = row[3] || "";
-                    const opsi_a = row[4] || "";
-                    const opsi_b = row[5] || "";
-                    const opsi_c = row[6] || "";
-                    const opsi_d = row[7] || "";
-                    const opsi_e = row[8] || "";
-                    const kunci = (row[9] || "A").trim().toUpperCase();
-                    const pembahasan = row[10] || "";
+                    const image_url = row[3] || "";
+                    const image_position = row[4]?.toLowerCase() === "below" ? "below" : "above";
+                    const pertanyaan = row[5] || "";
 
-                    newParsed.push({
-                        id: `${subtes_code}_${no_soal}_${Date.now()}`,
-                        no_soal,
-                        subtes_code,
-                        subject,
-                        type: "PG_SEDERHANA",
-                        stimulus,
-                        pertanyaan,
-                        opsi_a,
-                        opsi_b,
-                        opsi_c,
-                        opsi_d,
-                        opsi_e,
-                        kunci,
-                        pembahasan
-                    });
+                    const opsi_a = row[6] || "";
+                    const opsi_b = row[7] || "";
+                    const opsi_c = row[8] || "";
+                    const opsi_d = row[9] || "";
+                    const opsi_e = row[10] || "";
+
+                    const kunci = (row[11] || "A").trim().toUpperCase();
+                    const tingkat_kesukaran = row[12] || "Sedang";
+                    const diffMap: Record<string, number> = { mudah: 1, sedang: 2, sulit: 3 };
+                    const difficulty = diffMap[tingkat_kesukaran.toLowerCase()] ?? 2;
+                    const pembahasan = row[13] || "";
+
+                    if (pertanyaan) {
+                        newParsed.push({
+                            id: `${subtes_code}_${no_soal}_${Date.now()}_${i}`,
+                            no_soal,
+                            subtes_code,
+                            subject,
+                            type: "PG_SEDERHANA",
+                            stimulus,
+                            image_url,
+                            image_position,
+                            pertanyaan,
+                            opsi_a,
+                            opsi_b,
+                            opsi_c,
+                            opsi_d,
+                            opsi_e,
+                            kunci,
+                            difficulty,
+                            tingkat_kesukaran,
+                            pembahasan
+                        });
+                    }
                 }
 
                 if (newParsed.length > 0) {
                     const updated = [...newParsed, ...questions];
                     saveQuestions(updated);
-                    alert(`Berhasil mengimpor ${newParsed.length} butir soal dari berkas CSV Model SNBT!`);
+                    alert(`Berhasil mengimpor ${newParsed.length} butir soal dari CSV Template M18!`);
                 } else {
-                    alert("Gagal membaca butir soal. Pastikan struktur kolom sesuai template.");
+                    alert("Gagal membaca butir soal. Pastikan kolom sesuai urutan template.");
                 }
             } catch (err) {
                 console.error(err);
-                alert("Terjadi kesalahan saat memproses CSV.");
+                alert("Terjadi kesalahan saat memproses file CSV.");
             }
         };
         reader.readAsText(file);
         e.target.value = "";
     };
 
-    // 5. Impor Salin-Tempel dari Naskah Word (Model SNBT)
+    // 4. Impor Salin-Tempel dari Naskah Word (Model SNBT)
     const handleParseWordPaste = () => {
         if (!pasteText.trim()) {
             alert("Kotak teks naskah masih kosong!");
@@ -230,7 +272,7 @@ export default function BankSoalAdminPage() {
 
         try {
             const blocks = pasteText.split(/(?=\d+\.\s+)/g).filter((b) => b.trim().length > 0);
-            const parsedFromWord: QuestionSNBT[] = [];
+            const parsedFromWord: QuestionCBT[] = [];
 
             let currentSubCode: "LIT_INDO" | "PM" = "LIT_INDO";
             let currentStimulus = "";
@@ -277,6 +319,7 @@ export default function BankSoalAdminPage() {
                         opsi_d,
                         opsi_e,
                         kunci,
+                        difficulty: 2,
                         pembahasan
                     });
                 }
@@ -289,14 +332,13 @@ export default function BankSoalAdminPage() {
                 setPasteText("");
                 alert(`Berhasil mengimpor ${parsedFromWord.length} butir soal dari salinan Word!`);
             } else {
-                alert("Format teks tidak terdeteksi. Gunakan pola: 1. Pertanyaan, A. Opsi, B. Opsi, KUNCI: X");
+                alert("Format teks tidak terdeteksi. Gunakan format: 1. Pertanyaan, A. Opsi, B. Opsi, KUNCI: X");
             }
         } catch {
             alert("Terjadi kesalahan saat memproses naskah Word.");
         }
     };
 
-    // Hapus Satuan
     const handleDeleteOne = (id: string | number) => {
         if (confirm("Hapus butir soal ini?")) {
             const updated = questions.filter((q) => q.id !== id);
@@ -324,7 +366,6 @@ export default function BankSoalAdminPage() {
 
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
-
             {/* HEADER ATAS */}
             <header className="bg-white border-b border-slate-200 py-3.5 px-4 sm:px-8 sticky top-0 z-30 shadow-xs">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -351,19 +392,18 @@ export default function BankSoalAdminPage() {
                                 MANAJEMEN BANK SOAL TKA SMP
                             </h1>
                             <p className="text-[11px] text-slate-500">
-                                Penyusunan Naskah Asesmen Massal Model SNBT &bull; SMA Muhammadiyah 18 Jakarta
+                                Template Resmi CBT SMA Muhammadiyah 18 Jakarta
                             </p>
                         </div>
                     </div>
 
-                    {/* AKSI TOMBOL ATAS */}
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={handleDownloadCsvTemplateSNBT}
+                            onClick={handleDownloadCsvTemplateM18}
                             className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
                             <Download className="w-3.5 h-3.5 text-blue-700" />
-                            <span>Template CSV (SNBT)</span>
+                            <span>Template CSV (M18)</span>
                         </button>
 
                         <button
@@ -376,7 +416,7 @@ export default function BankSoalAdminPage() {
                         <input
                             type="file"
                             ref={csvInputRef}
-                            onChange={handleUploadCsvSNBT}
+                            onChange={handleUploadCsvM18}
                             accept=".csv"
                             className="hidden"
                         />
@@ -393,7 +433,7 @@ export default function BankSoalAdminPage() {
                             <button
                                 onClick={handleClearAllQuestions}
                                 className="px-3 py-1.5 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                                title="Hapus semua soal untuk mulai dari nol"
+                                title="Kosongkan seluruh soal"
                             >
                                 <Trash2 className="w-3.5 h-3.5" />
                                 <span>Kosongkan Soal</span>
@@ -403,16 +443,16 @@ export default function BankSoalAdminPage() {
                 </div>
             </header>
 
-            {/* METRIK BANK SOAL */}
+            {/* METRIK */}
             <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
                         <div className="flex items-center justify-between text-slate-400 font-mono text-[10px] font-bold uppercase">
-                            <span>TOTAL BANK SOAL AKTIF</span>
+                            <span>TOTAL SOAL AKTIF</span>
                             <FolderOpen className="w-4 h-4 text-slate-500" />
                         </div>
                         <div className="text-3xl font-black text-slate-900 font-mono">{stats.total}</div>
-                        <p className="text-[11px] text-slate-500">Butir soal terdaftar di database</p>
+                        <p className="text-[11px] text-slate-500">Butir soal tersimpan di sistem</p>
                     </div>
 
                     <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
@@ -434,12 +474,12 @@ export default function BankSoalAdminPage() {
                     </div>
                 </div>
 
-                {/* TABEL BANK SOAL (DIPERLEBAR, RAPI & MUDAH DILIHAT) */}
+                {/* TABEL BANK SOAL */}
                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                         <div>
                             <h2 className="text-base font-black text-slate-900">Daftar Naskah Soal Terpasang</h2>
-                            <p className="text-xs text-slate-500">Klik ikon mata (Pratinjau) untuk melihat tampilan penuh seperti di layar ujian siswa.</p>
+                            <p className="text-xs text-slate-500">Gunakan tombol Pratinjau (Mata) untuk memeriksa tampilan persis seperti di bilik ujian siswa.</p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
@@ -466,14 +506,13 @@ export default function BankSoalAdminPage() {
                         </div>
                     </div>
 
-                    {/* TABLE CONTAINER */}
                     <div className="overflow-x-auto rounded-2xl border border-slate-200">
                         <table className="w-full text-left text-xs border-collapse">
                             <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[11px] text-slate-600">
                                 <tr>
                                     <th className="p-3.5 w-14 text-center">No</th>
                                     <th className="p-3.5 w-44">Subtes</th>
-                                    <th className="p-3.5">Konten Stimulus / Pertanyaan</th>
+                                    <th className="p-3.5">Konten Wacana / Pertanyaan</th>
                                     <th className="p-3.5 w-24 text-center">Kunci</th>
                                     <th className="p-3.5 w-24 text-right">Aksi</th>
                                 </tr>
@@ -516,14 +555,14 @@ export default function BankSoalAdminPage() {
                                                     <button
                                                         onClick={() => setSelectedQuestionForPreview(q)}
                                                         className="p-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer"
-                                                        title="Buka Pratinjau Lengkap"
+                                                        title="Buka Pratinjau Penuh"
                                                     >
                                                         <Eye className="w-4 h-4" />
                                                     </button>
                                                     <button
                                                         onClick={() => handleDeleteOne(q.id)}
                                                         className="p-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition cursor-pointer"
-                                                        title="Hapus Butir Soal"
+                                                        title="Hapus Soal"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
@@ -537,7 +576,7 @@ export default function BankSoalAdminPage() {
                                     <tr>
                                         <td colSpan={5} className="text-center py-12 text-slate-400 font-medium space-y-2">
                                             <FolderOpen className="w-8 h-8 mx-auto text-slate-300" />
-                                            <p>Bank soal masih kosong. Silakan klik tombol <strong>Unggah CSV</strong> atau <strong>Impor Teks Word</strong> di atas.</p>
+                                            <p>Bank soal kosong. Klik tombol <strong>Unggah CSV</strong> atau <strong>Impor Teks Word</strong> untuk mengisi naskah.</p>
                                         </td>
                                     </tr>
                                 )}
@@ -548,12 +587,11 @@ export default function BankSoalAdminPage() {
             </main>
 
             {/* ========================================================================= */}
-            {/* MODAL PRATINJAU SOAL BESAR, JELAS & ELEGAN (MIRIP BILIK UJIAN)            */}
+            {/* MODAL PRATINJAU SOAL BESAR & AMAN DARI ERROR                              */}
             {/* ========================================================================= */}
             {selectedQuestionForPreview && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
-                        {/* Modal Header */}
                         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-3xl">
                             <div className="flex items-center gap-2.5">
                                 <span className="px-3 py-1 rounded-full font-mono text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
@@ -571,9 +609,15 @@ export default function BankSoalAdminPage() {
                             </button>
                         </div>
 
-                        {/* Modal Content */}
                         <div className="p-6 overflow-y-auto space-y-5 text-left text-sm leading-relaxed">
-                            {/* Box Stimulus Wacana */}
+                            {/* Gambar (Jika Posisi Above) */}
+                            {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "above" && (
+                                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
+                                    <img src={selectedQuestionForPreview.image_url} alt="Gambar Soal" className="max-h-60 object-contain rounded-xl" />
+                                </div>
+                            )}
+
+                            {/* Wacana Stimulus */}
                             {selectedQuestionForPreview.stimulus && (
                                 <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line">
                                     <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-2 flex items-center gap-1.5">
@@ -588,7 +632,14 @@ export default function BankSoalAdminPage() {
                                 <RenderLatex content={selectedQuestionForPreview.pertanyaan} />
                             </div>
 
-                            {/* Daftar Opsi A - E */}
+                            {/* Gambar (Jika Posisi Below) */}
+                            {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "below" && (
+                                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
+                                    <img src={selectedQuestionForPreview.image_url} alt="Gambar Soal" className="max-h-60 object-contain rounded-xl" />
+                                </div>
+                            )}
+
+                            {/* Daftar Pilihan A - E (DENGAN PENANGANAN ERROR DATA STRING) */}
                             <div className="space-y-2.5 pt-1">
                                 {[
                                     { key: "A", text: selectedQuestionForPreview.opsi_a },
@@ -597,9 +648,9 @@ export default function BankSoalAdminPage() {
                                     { key: "D", text: selectedQuestionForPreview.opsi_d },
                                     { key: "E", text: selectedQuestionForPreview.opsi_e },
                                 ]
-                                    .filter((opt) => opt.text && opt.text.trim().length > 0)
+                                    .filter((opt) => opt.text !== undefined && opt.text !== null && String(opt.text).trim().length > 0)
                                     .map((opt) => {
-                                        const isKey = selectedQuestionForPreview.kunci === opt.key;
+                                        const isKey = String(selectedQuestionForPreview.kunci || "").toUpperCase().trim() === opt.key;
                                         return (
                                             <div
                                                 key={opt.key}
@@ -615,7 +666,7 @@ export default function BankSoalAdminPage() {
                                                     {opt.key}
                                                 </span>
                                                 <div className="flex-1 pt-0.5 leading-relaxed">
-                                                    <RenderLatex content={opt.text} />
+                                                    <RenderLatex content={String(opt.text ?? "")} />
                                                 </div>
                                                 {isKey && (
                                                     <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-mono text-[10px] font-bold uppercase shrink-0">
@@ -634,13 +685,12 @@ export default function BankSoalAdminPage() {
                                         PEMBAHASAN SOAL:
                                     </div>
                                     <div className="leading-relaxed">
-                                        <RenderLatex content={selectedQuestionForPreview.pembahasan} />
+                                        <RenderLatex content={String(selectedQuestionForPreview.pembahasan ?? "")} />
                                     </div>
                                 </div>
                             )}
                         </div>
 
-                        {/* Modal Footer */}
                         <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-3xl">
                             <button
                                 onClick={() => setSelectedQuestionForPreview(null)}
@@ -653,9 +703,9 @@ export default function BankSoalAdminPage() {
                 </div>
             )}
 
-            {/* ========================================================================= */}
-            {/* MODAL SALIN-TEMPEL DARI WORD (MODEL SNBT)                                 */}
-            {/* ========================================================================= */}
+            {/* ============================================================== */}
+            {/* MODAL SALIN-TEMPEL DARI WORD (MODEL SNBT)                      */}
+            {/* ============================================================== */}
             {showWordPasteModal && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl max-w-3xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95">
@@ -678,7 +728,7 @@ export default function BankSoalAdminPage() {
                         </div>
 
                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-900 space-y-1 leading-relaxed">
-                            <strong>Aturan Penulisan Naskah Word:</strong>
+                            <strong>Aturan Format Salin-Tempel:</strong>
                             <p>Gunakan tag <code>[SUBTES: BAHASA INDONESIA]</code> atau <code>[SUBTES: MATEMATIKA]</code>, tag wacana <code>[STIMULUS]...[/STIMULUS]</code>, nomor soal <code>1. Pertanyaan</code>, opsi <code>A.</code>, <code>B.</code>, dan baris <code>KUNCI: B</code>.</p>
                         </div>
 
@@ -710,7 +760,6 @@ export default function BankSoalAdminPage() {
                     </div>
                 </div>
             )}
-
         </div>
     );
 }

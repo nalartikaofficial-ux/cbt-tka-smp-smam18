@@ -16,7 +16,11 @@ import {
   Play,
   LogIn,
   KeyRound,
-  X
+  X,
+  BookOpen,
+  Calculator,
+  Award,
+  ArrowRight
 } from "lucide-react";
 
 export default function CBTEngineLandingPage() {
@@ -101,7 +105,7 @@ export default function CBTEngineLandingPage() {
   const [loadProgress, setLoadProgress] = useState(0);
 
   useEffect(() => {
-    const totalDuration = 2000;
+    const totalDuration = 1500;
     const updateInterval = 25;
     const totalTicks = totalDuration / updateInterval;
     let currentTick = 0;
@@ -127,14 +131,13 @@ export default function CBTEngineLandingPage() {
 
   return (
     <div className="min-h-screen bg-[#F1F5F9] text-slate-800 font-sans selection:bg-blue-700 selection:text-white relative overflow-x-hidden">
-
       {/* ============================================================== */}
       {/* A. ENTERPRISE BOOTLOADER SPLASH SCREEN                         */}
       {/* ============================================================== */}
       <div
         className={`fixed inset-0 top-0 left-0 w-screen h-screen z-[9999] flex flex-col items-center justify-center bg-white transition-all duration-700 ease-in-out ${isLoading
-          ? "opacity-100 pointer-events-auto"
-          : "opacity-0 -translate-y-4 pointer-events-none"
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 -translate-y-4 pointer-events-none"
           }`}
       >
         <div className="absolute w-80 h-80 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
@@ -185,7 +188,7 @@ export default function CBTEngineLandingPage() {
           </div>
 
           <div className="font-mono text-[9.5px] sm:text-[10px] text-slate-400 tracking-widest pt-1">
-            VERIFYING KIOSK &bull; CALIBRATING IRT 3PL &bull; READY
+            VERIFYING KIOSK &bull; 2 SUBTES PUSMENDIK &bull; READY
           </div>
         </div>
       </div>
@@ -195,14 +198,14 @@ export default function CBTEngineLandingPage() {
       {/* ============================================================== */}
       <div
         className={`transition-all duration-1000 ease-out ${isLoading
-          ? "opacity-0 translate-y-3 filter blur-xs"
-          : "opacity-100 translate-y-0 filter-none"
+            ? "opacity-0 translate-y-3 filter blur-xs"
+            : "opacity-100 translate-y-0 filter-none"
           }`}
       >
         {/* NAVBAR */}
         <header className="relative z-40 w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md shadow-xs sticky top-0">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
-            {/* Sisi Kiri: Branding & Logo Sekolah */}
+            {/* Branding & Logo */}
             <div className="flex items-center gap-3.5 text-left">
               <div className="relative group shrink-0">
                 <div className="absolute -inset-1 rounded-full bg-blue-500/20 blur-xs animate-pulse" />
@@ -233,13 +236,13 @@ export default function CBTEngineLandingPage() {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-200 opacity-75" />
                       <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
                     </span>
-                    <span>CBT ENGINE</span>
+                    <span>TKA SMP</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
                   <span className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50/90 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-800">
-                    OFFICIAL PROPRIETARY
+                    PPDB 2026/2027
                   </span>
                   <span className="font-semibold text-slate-700">
                     SMA Muhammadiyah 18 Jakarta
@@ -248,15 +251,15 @@ export default function CBTEngineLandingPage() {
               </div>
             </div>
 
-            {/* Sisi Kanan: Aksi Navigasi */}
+            {/* Nav Action */}
             <div className="flex items-center gap-3 shrink-0">
               <Link
                 href="/admin"
                 className="h-10 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 transition shadow-xs flex items-center gap-2 text-xs font-semibold cursor-pointer"
               >
                 <Building2 className="w-4 h-4 text-blue-700 shrink-0" />
-                <span className="hidden md:inline">Portal Pengawas &amp; Guru</span>
-                <span className="md:hidden">Portal Guru</span>
+                <span className="hidden md:inline">Portal Guru &amp; Admin</span>
+                <span className="md:hidden">Admin</span>
               </Link>
 
               <button
@@ -275,13 +278,12 @@ export default function CBTEngineLandingPage() {
         <section className="relative z-10 bg-gradient-to-b from-[#F8FAFC] via-[#F1F5F9] to-[#E2E8F0]/40 border-b border-slate-200/90 pt-8 pb-7">
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
-
-              {/* Kolom Kiri: Deskripsi & Call to Action */}
+              {/* Kolom Kiri */}
               <div className="lg:col-span-6 flex flex-col justify-between text-left py-1">
                 <div className="space-y-3.5">
                   <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white text-xs font-bold tracking-wider uppercase shadow-sm border border-blue-500/30">
                     <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="tracking-wide">SISTEM UJIAN TERSTANDARISASI NASIONAL</span>
+                    <span className="tracking-wide">STANDAR ASESMEN NASIONAL PUSMENDIK</span>
                   </div>
 
                   <h1 className="text-4xl sm:text-5xl lg:text-[48px] font-black tracking-tight leading-none pt-0.5">
@@ -291,7 +293,7 @@ export default function CBTEngineLandingPage() {
                   </h1>
 
                   <p className="text-slate-600 text-sm sm:text-[15px] leading-relaxed max-w-xl font-normal">
-                    Hadirkan pengalaman <strong className="font-bold text-slate-900">Tes Kemampuan Akademik (TKA) SMP</strong> terstandar langsung di sekolahmu. Dilengkapi algoritma pembobotan saintifik <strong className="font-bold text-blue-900">IRT 3-Parameter (Skala 200–800)</strong> dan voucher beasiswa khusus pendaftaran SMA Muhammadiyah 18 Jakarta.
+                    Uji kesiapan akademikmu menghadapi evaluasi standar nasional jenjang SMP. Terdiri dari 2 subtes inti: <strong className="font-bold text-slate-900">Literasi Bahasa Indonesia</strong> &amp; <strong className="font-bold text-slate-900">Penalaran Matematika</strong>. Dapatkan analisis diagnostik instan dan klaim <strong className="font-bold text-blue-900">Voucher Beasiswa Masuk SMA Muhammadiyah 18 Jakarta</strong>.
                   </p>
 
                   <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -301,7 +303,7 @@ export default function CBTEngineLandingPage() {
                       className="h-11 px-6 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs sm:text-sm transition shadow-md shadow-blue-700/20 flex items-center gap-2 cursor-pointer"
                     >
                       <Play className="w-4 h-4 fill-white" />
-                      <span>Uji Coba Simulasi</span>
+                      <span>Ikuti Try Out Sekarang</span>
                     </button>
 
                     <a
@@ -309,7 +311,7 @@ export default function CBTEngineLandingPage() {
                       className="h-11 px-5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs sm:text-sm transition shadow-2xs flex items-center gap-2"
                     >
                       <BarChart3 className="w-4 h-4 text-blue-700" />
-                      <span>Silabus TKA SMP</span>
+                      <span>Silabus 2 Subtes</span>
                     </a>
                   </div>
                 </div>
@@ -324,18 +326,18 @@ export default function CBTEngineLandingPage() {
                     <div className="text-2xl font-black text-slate-900 tracking-tight font-mono">
                       {metricCount}<span className="text-blue-600">+</span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Uji simultan stabil</div>
+                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Uji serentak stabil</div>
                   </div>
 
                   <div className="group relative p-3.5 rounded-2xl bg-white border border-slate-200 text-center transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-indigo-300 overflow-hidden cursor-default flex flex-col items-center justify-center">
                     <div className="flex items-center justify-center gap-1.5 font-mono text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       <BarChart3 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                      <span>PSIKOMETRI</span>
+                      <span>STANDARISASI</span>
                     </div>
                     <div className="text-2xl font-black text-slate-900 tracking-tight font-mono">
-                      IRT <span className="text-blue-600">3PL</span>
+                      SKALA <span className="text-blue-600">100</span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Skala 200–800</div>
+                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Rapor diagnostik</div>
                   </div>
 
                   <div className="group relative p-3.5 rounded-2xl bg-white border border-slate-200 text-center transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-emerald-300 overflow-hidden cursor-default flex flex-col items-center justify-center">
@@ -346,7 +348,7 @@ export default function CBTEngineLandingPage() {
                     <div className="text-2xl font-black text-slate-900 tracking-tight font-mono">
                       {metricCount}<span className="text-emerald-600">%</span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Kiosk &amp; proteksi data</div>
+                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Kiosk anti-cheat</div>
                   </div>
                 </div>
               </div>
@@ -463,7 +465,6 @@ export default function CBTEngineLandingPage() {
                   </div>
                 </div>
               </div>
-
             </div>
 
             {/* Trust Strip */}
@@ -476,9 +477,9 @@ export default function CBTEngineLandingPage() {
               <div className="flex items-center gap-4 text-[11px] font-mono text-slate-400">
                 <span>LATENCY: &lt; 40MS</span>
                 <span>&bull;</span>
-                <span>OFFLINE RESILIENCE: AKTIF</span>
+                <span>STANDAR: PUSMENDIK / AKM</span>
                 <span>&bull;</span>
-                <span>STANDAR: BPPP / PUSMENDIK</span>
+                <span>LEAD MARKETING INTEGRATED</span>
               </div>
             </div>
           </div>
@@ -519,7 +520,7 @@ export default function CBTEngineLandingPage() {
                     Kiosk Anti-Cheat Matrix
                   </h3>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Penguncian peramban otomatis dengan deteksi blur jendela, inspeksi multi-tab, pencegahan ekstensi pihak ketiga, dan isolasi layar terproteksi.
+                    Penguncian peramban otomatis dengan deteksi blur jendela, inspeksi ganti tab, pencegahan ekstensi, dan pencatatan pelanggaran *real-time*.
                   </p>
                 </div>
                 <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
@@ -539,19 +540,19 @@ export default function CBTEngineLandingPage() {
                       <BarChart3 className="w-5 h-5 text-blue-700" />
                     </div>
                     <span className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-800 border border-blue-200/60 text-[10px] font-bold uppercase tracking-wider font-mono">
-                      Standar TKA SMP
+                      Skala 0–100
                     </span>
                   </div>
                   <h3 className="text-base font-bold text-slate-900 tracking-tight mb-2">
-                    Algoritma IRT 3PL
+                    Evaluasi Diagnostik
                   </h3>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Kalkulasi pembobotan non-linier skala 200–800 berdasarkan parameter tingkat kesukaran dan daya pembeda butir soal secara objektif.
+                    Perhitungan skor terkalibrasi bobot kesukaran per butir soal, menghasilkan peta kekuatan literasi dan numerasi siswa secara transparan.
                   </p>
                 </div>
                 <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
                   <span>PEMBOBOTAN</span>
-                  <span className="text-blue-700 font-bold">OTOMATIS</span>
+                  <span className="text-blue-700 font-bold">STANDAR NASIONAL</span>
                 </div>
               </div>
 
@@ -560,22 +561,22 @@ export default function CBTEngineLandingPage() {
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-4">
                     <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-150 flex items-center justify-center text-indigo-700 group-hover:scale-105 transition-transform">
-                      <Cpu className="w-5 h-5 text-indigo-700" />
+                      <Award className="w-5 h-5 text-indigo-700" />
                     </div>
                     <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider font-mono">
-                      Akurasi Notasi
+                      Marketing PPDB
                     </span>
                   </div>
                   <h3 className="text-base font-bold text-slate-900 tracking-tight mb-2">
-                    Formula &amp; Stimulus Parser
+                    Voucher Beasiswa PPDB
                   </h3>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Render matematis, persamaan aljabar, dan wacana literasi panjang presisi tinggi tanpa distorsi resolusi di semua layar smartphone siswa.
+                    Siswa berprestasi langsung mendapatkan hak klaim voucher potongan biaya masuk SMA Muhammadiyah 18 Jakarta sesuai pencapaian skor.
                   </p>
                 </div>
                 <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
-                  <span>NOTASI SAINS</span>
-                  <span className="text-indigo-700 font-bold">PREP-READY</span>
+                  <span>BENEFIT SISWA</span>
+                  <span className="text-indigo-700 font-bold">KLAIM OTOMATIS</span>
                 </div>
               </div>
 
@@ -613,16 +614,16 @@ export default function CBTEngineLandingPage() {
               <div className="space-y-2 text-left">
                 <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white text-[10.5px] font-bold tracking-wider uppercase shadow-sm border border-blue-500/30">
                   <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>STANDARISASI PUSMENDIK &amp; BPPP</span>
+                  <span>STANDARISASI PUSMENDIK &amp; AKM</span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-black text-slate-900 tracking-tight leading-tight">
                   Cakupan Materi &amp;{" "}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900">
-                    Subtes TKA SMP
+                    2 Subtes Resmi TKA SMP
                   </span>
                 </h2>
                 <p className="text-slate-600 text-xs sm:text-sm max-w-2xl font-normal leading-relaxed">
-                  Struktur instrumen berbasis <strong>Soal Tunggal &amp; Soal Grup Stimulus</strong> dengan 3 bentuk evaluasi: Pilihan Ganda Sederhana, PGK MCMA (Multi-Jawaban), dan PGK Kategori (Benar/Salah).
+                  Struktur instrumen berbasis <strong>Stimulus Wacana &amp; Numerasi Kontekstual</strong> dengan 3 bentuk evaluasi: Pilihan Ganda Sederhana, PGK MCMA (Multi-Jawaban), dan PGK Kategori (Benar/Salah).
                 </p>
               </div>
 
@@ -640,7 +641,6 @@ export default function CBTEngineLandingPage() {
 
             {/* Grid 3 Kartu Subtes TKA SMP */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
-
               {/* 1. Bahasa Indonesia */}
               <div className="group h-full p-6 rounded-3xl bg-white border border-slate-200 hover:border-blue-500 hover:shadow-lg transition-all duration-200 flex flex-col justify-between text-left">
                 <div className="space-y-3">
@@ -663,13 +663,13 @@ export default function CBTEngineLandingPage() {
                   </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Stimulus teks <strong>Informasi &amp; Fiksi (200–250 kata)</strong> yang menguji 3 ranah kompetensi:
+                    Stimulus teks <strong>Informasi &amp; Fiksi</strong> yang menguji 3 ranah kompetensi asesmen:
                   </p>
 
                   <ul className="text-[11px] text-slate-600 space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-100 font-medium">
-                    <li>&bull; <strong>Pemahaman Tekstual:</strong> Info eksplisit &amp; rincian wacana.</li>
-                    <li>&bull; <strong>Pemahaman Inferensial:</strong> Simpulan &amp; makna tersirat.</li>
-                    <li>&bull; <strong>Evaluasi &amp; Apresiasi:</strong> Nilai isi &amp; kaidah kebahasaan.</li>
+                    <li>&bull; <strong>Menemukan Informasi:</strong> Fakta eksplisit teks.</li>
+                    <li>&bull; <strong>Interpretasi &amp; Integrasi:</strong> Ide pokok &amp; makna tersirat.</li>
+                    <li>&bull; <strong>Evaluasi &amp; Refleksi:</strong> Menilai kredibilitas teks.</li>
                   </ul>
                 </div>
 
@@ -684,7 +684,7 @@ export default function CBTEngineLandingPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-250 font-mono font-bold text-[10px]">
-                      PM &bull; 01
+                      PM &bull; 02
                     </span>
                     <div className="flex items-center gap-1 font-mono text-[11px] text-emerald-950 font-semibold bg-emerald-50/90 px-2 py-0.5 rounded-md border border-emerald-200">
                       <Clock className="w-3 h-3 text-emerald-600" /> 7.5m
@@ -696,12 +696,12 @@ export default function CBTEngineLandingPage() {
                       Penalaran Matematika (PM)
                     </h4>
                     <p className="text-[11px] text-emerald-700 font-bold mt-0.5">
-                      Fokus: 4 Elemen Muatan Asesmen
+                      Fokus: 4 Elemen Numerasi Fase D
                     </p>
                   </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Pengujian representasi, penalaran logis, dan pemecahan masalah kontekstual:
+                    Pengujian nalar logis, representasi data, dan pemecahan masalah kontekstual nyata:
                   </p>
 
                   <div className="grid grid-cols-2 gap-1.5 text-[10.5px] font-mono text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
@@ -718,16 +718,16 @@ export default function CBTEngineLandingPage() {
                 </div>
               </div>
 
-              {/* 3. Model Asesmen & IRT 3PL */}
+              {/* 3. Model Asesmen Pusmendik */}
               <div className="group h-full p-6 rounded-3xl bg-gradient-to-b from-slate-900 via-blue-950 to-slate-950 text-white shadow-md border border-blue-600/40 flex flex-col justify-between text-left relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
                 <div className="relative z-10 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="px-2.5 py-1 rounded-md bg-amber-400/20 text-amber-300 border border-amber-300/40 text-[10px] font-mono font-bold">
-                      ENGINE SCORE
+                      SKOR DIAGNOSTIK
                     </span>
                     <div className="flex items-center gap-1 text-blue-200 font-mono text-[11px] bg-white/10 px-2 py-0.5 rounded-md">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> 200–800
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Skala 0–100
                     </div>
                   </div>
 
@@ -736,7 +736,7 @@ export default function CBTEngineLandingPage() {
                       3 Bentuk Soal Interaktif
                     </h4>
                     <p className="text-[11px] text-amber-300 font-mono mt-0.5">
-                      Standar ANBK / BPPP
+                      Standar Pusmendik / AKM
                     </p>
                   </div>
 
@@ -745,18 +745,17 @@ export default function CBTEngineLandingPage() {
                   </p>
 
                   <ul className="text-[11px] text-slate-300 space-y-1.5 bg-white/5 p-3 rounded-xl border border-white/10 font-mono">
-                    <li>1. <strong>PG Sederhana:</strong> 1 Opsi Benar.</li>
-                    <li>2. <strong>PGK MCMA:</strong> Multi-Jawaban Centang.</li>
-                    <li>3. <strong>PGK Kategori:</strong> Matriks Benar/Salah.</li>
+                    <li>1. <strong>PG Sederhana:</strong> 1 Opsi Pilihan Tunggal.</li>
+                    <li>2. <strong>PGK MCMA:</strong> Multi-Jawaban Kotak Centang.</li>
+                    <li>3. <strong>PGK Kategori:</strong> Matriks Tabel Benar/Salah.</li>
                   </ul>
                 </div>
 
                 <div className="relative z-10 pt-4 mt-5 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-400">STANDAR UJIAN</span>
-                  <span className="font-bold text-amber-400 tracking-wide">100% TERKALIBRASI</span>
+                  <span className="text-slate-400">STANDAR ASESMEN</span>
+                  <span className="font-bold text-amber-400 tracking-wide">100% TERSTANDARISASI</span>
                 </div>
               </div>
-
             </div>
           </div>
         </section>
@@ -777,13 +776,13 @@ export default function CBTEngineLandingPage() {
                 <div className="flex items-center gap-2.5 text-[10.5px] font-mono font-bold text-slate-500">
                   <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs">FULL-CLIENT RESILIENT</span>
                   <span className="text-slate-300">&bull;</span>
-                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs text-blue-800">IRT 3PL VERIFIED</span>
+                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs text-blue-800">PUSMENDIK VERIFIED</span>
                 </div>
               </div>
 
               <blockquote className="relative py-6 sm:py-7">
                 <p className="text-base sm:text-lg lg:text-[18.5px] font-normal text-slate-800 leading-relaxed tracking-tight">
-                  “CBT Engine ini dikembangkan langsung dari bilik asesmen nyata untuk menjawab masalah mendasar pengujian massal: <strong className="font-semibold text-slate-950">server rentan saat akses serentak</strong>, minimnya penguncian layar peramban, dan ketiadaan pembobotan IRT. Kami memastikan seluruh instrumen <strong className="font-semibold text-blue-900">terkalibrasi presisi, stabil, dan objektif</strong>.”
+                  “CBT Engine ini dikembangkan untuk menghadirkan pengalaman asesmen otentik bagi calon siswa jenjang SMA. Kami memastikan instrumen pengujian ini <strong className="font-semibold text-slate-950">ramah bagi semua perangkat siswa</strong>, berbobot saintifik, dan terintegrasi langsung dengan kemudahan pendaftaran di SMA Muhammadiyah 18 Jakarta.”
                 </p>
               </blockquote>
 
@@ -848,10 +847,10 @@ export default function CBTEngineLandingPage() {
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="font-black text-xs sm:text-sm text-slate-900 tracking-tight">
-                      CBT ENGINE
+                      CBT ENGINE &bull; TO TKA SMP
                     </span>
                     <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 font-mono text-[9px] font-bold">
-                      v1.3
+                      v1.4
                     </span>
                   </div>
                   <p className="text-[11.5px] text-slate-500 font-normal">
@@ -873,7 +872,7 @@ export default function CBTEngineLandingPage() {
                 <div className="font-mono text-[9.5px] text-slate-400 font-medium tracking-tight flex items-center justify-center">
                   <span>ENKRIPSI TLS 1.3</span>
                   <span className="mx-1.5 text-slate-300">&bull;</span>
-                  <span>STANDAR BPPP / PUSMENDIK</span>
+                  <span>STANDAR PUSMENDIK / AKM</span>
                 </div>
               </div>
             </div>
@@ -886,7 +885,7 @@ export default function CBTEngineLandingPage() {
       {/* ============================================================== */}
       {showStudentAuthModal && (
         <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 max-w-md w-full p-6 sm:p-7 space-y-5 shadow-2xl relative">
+          <div className="bg-white rounded-3xl border border-slate-200 max-w-md w-full p-6 sm:p-7 space-y-5 shadow-2xl relative animate-in zoom-in-95">
             <button
               onClick={() => setShowStudentAuthModal(false)}
               className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
@@ -905,20 +904,20 @@ export default function CBTEngineLandingPage() {
                 Ruang Ujian Siswa
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed max-w-xs">
-                Masukkan identitas diri untuk memulai pengerjaan <strong>10 Soal Asesmen</strong> dan klaim voucher beasiswa pendaftaran SMA Muhammadiyah 18 Jakarta.
+                Isi biodata pendaftaran singkat untuk memulai <strong>10 Soal Asesmen</strong> dan klaim voucher beasiswa PPDB SMA Muhammadiyah 18 Jakarta.
               </p>
             </div>
 
             <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 space-y-2 text-xs text-slate-600">
               <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 font-mono text-[11px]">
-                <span className="text-slate-400">Target Asesmen:</span>
-                <span className="font-bold text-slate-700">TKA SMP &bull; Kelas 8 &amp; 9</span>
+                <span className="text-slate-400">Sasaran Peserta:</span>
+                <span className="font-bold text-slate-700">Siswa SMP/MTs Kelas 8 &amp; 9</span>
               </div>
               <div className="flex items-center justify-between pt-0.5 font-mono text-[11px]">
-                <span className="text-slate-400">Sistem Penilaian:</span>
+                <span className="text-slate-400">Format Penilaian:</span>
                 <span className="font-bold text-emerald-600 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  IRT 3-Parameter (200–800)
+                  Skala 0–100 (Standar Pusmendik)
                 </span>
               </div>
             </div>
@@ -926,22 +925,22 @@ export default function CBTEngineLandingPage() {
             <div className="space-y-2 pt-1">
               <Link
                 href="/login"
-                className="px-6 py-3 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-md transition"
+                className="w-full py-3 px-4 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
               >
-                Mulai Try Out TKA SMP
+                <span>Daftar &amp; Mulai Try Out TKA SMP</span>
+                <ArrowRight className="w-4 h-4" />
               </Link>
               <button
                 type="button"
                 onClick={() => setShowStudentAuthModal(false)}
                 className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
               >
-                Tutup Jendela
+                Batal
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }

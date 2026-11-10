@@ -16,18 +16,67 @@ import {
     Home,
     Award,
     BookOpen,
-    Calculator
+    Calculator,
+    CheckSquare,
+    Check
 } from "lucide-react";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 
-// Webhook Google Sheets Hasil Ujian
+// Webhook Google Sheets Hasil Ujian Siswa
 const GOOGLE_SCRIPT_API_URL =
     "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
 
-// 2 SUBTES RESMI TKA SMP
+// 2 SUBTES RESMI TKA SMP STANDAR PUSMENDIK
 const TKA_SMP_SUBTESTS = [
-    { code: "LIT_INDO", name: "Literasi Bahasa Indonesia", durationMin: 7.5, count: 10 },
-    { code: "PM", name: "Penalaran Matematika", durationMin: 7.5, count: 10 }
+    { code: "LIT_INDO", name: "Literasi Bahasa Indonesia", durationMin: 7.5 },
+    { code: "PM", name: "Penalaran Matematika", durationMin: 7.5 }
 ];
+
+// Helper Render Formula LaTeX
+function RenderLatex({ content = "" }: { content: string }) {
+    const safeText = String(content ?? "");
+    if (!safeText.trim()) return null;
+
+    const parts = safeText.split(/(\$\$[\s\S]*?\$\$|\$[^\$]+?\$)/g);
+
+    return (
+        <span>
+            {parts.map((part, idx) => {
+                if (part.startsWith("$$") && part.endsWith("$$")) {
+                    const math = part.slice(2, -2);
+                    try {
+                        const html = katex.renderToString(math, { displayMode: true, throwOnError: false });
+                        return (
+                            <span
+                                key={idx}
+                                className="block my-2 overflow-x-auto py-1"
+                                dangerouslySetInnerHTML={{ __html: html }}
+                            />
+                        );
+                    } catch {
+                        return <span key={idx}>{part}</span>;
+                    }
+                } else if (part.startsWith("$") && part.endsWith("$")) {
+                    const math = part.slice(1, -1);
+                    try {
+                        const html = katex.renderToString(math, { displayMode: false, throwOnError: false });
+                        return (
+                            <span
+                                key={idx}
+                                className="inline-block px-0.5 align-middle"
+                                dangerouslySetInnerHTML={{ __html: html }}
+                            />
+                        );
+                    } catch {
+                        return <span key={idx}>{part}</span>;
+                    }
+                }
+                return <span key={idx}>{part}</span>;
+            })}
+        </span>
+    );
+}
 
 export default function OfficialExamChamberPage() {
     const router = useRouter();
@@ -37,38 +86,41 @@ export default function OfficialExamChamberPage() {
     const [currentQIndexInSubtest, setCurrentQIndexInSubtest] = useState(0);
     const [subtestTimeLeft, setSubtestTimeLeft] = useState<number>(7.5 * 60);
 
-    const [answers, setAnswers] = useState<Record<string | number, string>>({});
-    const [doubtfuls, setDoubtfuls] = useState<Record<string | number, boolean>>({});
+    // Struktur State Jawaban menampung PG (string/number), MCMA (number[]), & Kategori (Record)
+    const [answers, setAnswers] = useState<Record<string, any>>({});
+    const [doubtfuls, setDoubtfuls] = useState<Record<string, boolean>>({});
 
     const [isInExam, setIsInExam] = useState(false);
     const [isExamCompleted, setIsExamCompleted] = useState(false);
+    const [isSubmittingScore, setIsSubmittingScore] = useState(false);
     const [showSubtestConfirmModal, setShowSubtestConfirmModal] = useState(false);
     const [violationCount, setViolationCount] = useState(0);
     const [showViolationModal, setShowViolationModal] = useState(false);
 
-    // Ambil Data Siswa dari LocalStorage (yang diinput di /login)
+    // 1. Verifikasi Kredensial Siswa (Wajib Login dari /login)
     useEffect(() => {
         if (typeof window === "undefined") return;
 
         const localData = localStorage.getItem("tka_student");
         if (localData) {
             try {
-                setStudentSession(JSON.parse(localData));
-            } catch { }
+                const parsed = JSON.parse(localData);
+                if (!parsed.phone || !parsed.name) {
+                    router.replace("/login");
+                    return;
+                }
+                setStudentSession(parsed);
+            } catch {
+                router.replace("/login");
+            }
         } else {
-            setStudentSession({
-                name: "Muhammad Rizki Pratama",
-                school: "SMPN 161 Jakarta",
-                grade: "9",
-                phone: "081234567890",
-                interest: "Sains & Teknologi (STEM)"
-            });
+            router.replace("/login");
         }
-    }, []);
+    }, [router]);
 
     const activeSubtest = TKA_SMP_SUBTESTS[currentSubtestIndex];
 
-    // Filter soal sesuai subtes yang aktif (Bahasa Indonesia atau Matematika)
+    // 2. Filter Soal Khusus Subtes Aktif
     const currentSubtestQuestions = useMemo(() => {
         const list = tkaQuestions || [];
         const filtered = list.filter((q: any) => {
@@ -81,18 +133,19 @@ export default function OfficialExamChamberPage() {
     }, [activeSubtest]);
 
     const currentQ = currentSubtestQuestions[currentQIndexInSubtest] || currentSubtestQuestions[0];
+    const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${currentQIndexInSubtest}`;
 
-    // Masuk Bilik Ujian & Kunci Layar Penuh (Fullscreen)
+    // 3. Masuk Bilik Ujian & Kunci Layar Penuh (Fullscreen)
     const enterExamChamber = () => {
         setIsInExam(true);
         try {
-            if (document.documentElement.requestFullscreen) {
+            if (typeof document !== "undefined" && document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(() => { });
             }
         } catch { }
     };
 
-    // Sensor Anti-Cheat Kiosk (Pindah Tab / Keluar Fullscreen)
+    // 4. Sensor Anti-Cheat Kiosk (Deteksi Pindah Tab & Layar Penuh)
     const recordViolation = useCallback(() => {
         if (!isInExam || isExamCompleted) return;
         setViolationCount((prev) => prev + 1);
@@ -118,7 +171,7 @@ export default function OfficialExamChamberPage() {
         };
     }, [isInExam, isExamCompleted, recordViolation]);
 
-    // Timer Hitung Mundur per Subtes
+    // 5. Timer Hitung Mundur per Subtes
     useEffect(() => {
         if (!isInExam || isExamCompleted) return;
 
@@ -135,16 +188,30 @@ export default function OfficialExamChamberPage() {
         return () => clearInterval(timer);
     }, [isInExam, isExamCompleted, currentSubtestIndex]);
 
-    const handleSelectOption = (optId: string) => {
-        if (!currentQ) return;
-        const qKey = currentQ.id || `${activeSubtest.code}_${currentQIndexInSubtest}`;
-        setAnswers((prev) => ({ ...prev, [qKey]: optId }));
+    // Handlers Jawaban
+    const handleSelectSingleOption = (optIdx: number) => {
+        setAnswers((prev) => ({ ...prev, [currentQKey]: optIdx }));
+    };
+
+    const handleToggleMultiOption = (optIdx: number) => {
+        const existing: number[] = Array.isArray(answers[currentQKey]) ? answers[currentQKey] : [];
+        let updated: number[];
+        if (existing.includes(optIdx)) {
+            updated = existing.filter((i) => i !== optIdx);
+        } else {
+            updated = [...existing, optIdx];
+        }
+        setAnswers((prev) => ({ ...prev, [currentQKey]: updated }));
+    };
+
+    const handleSelectCategory = (statementId: string, choice: string) => {
+        const existing = answers[currentQKey] || {};
+        const updated = { ...existing, [statementId]: choice };
+        setAnswers((prev) => ({ ...prev, [currentQKey]: updated }));
     };
 
     const handleToggleDoubtful = () => {
-        if (!currentQ) return;
-        const qKey = currentQ.id || `${activeSubtest.code}_${currentQIndexInSubtest}`;
-        setDoubtfuls((prev) => ({ ...prev, [qKey]: !prev[qKey] }));
+        setDoubtfuls((prev) => ({ ...prev, [currentQKey]: !prev[currentQKey] }));
     };
 
     const handleNextSubtestManual = () => {
@@ -159,35 +226,57 @@ export default function OfficialExamChamberPage() {
         }
     };
 
-    // Kalkulasi Skor Standar Skala 0 - 100
+    // 6. Kalkulasi Skor Terstandarisasi Skala 0–100 Berbobot Pusmendik
     const scoreResults = useMemo(() => {
-        let indoCorrect = 0, indoTotal = 0;
-        let mathCorrect = 0, mathTotal = 0;
+        let indoScoreSum = 0, indoDiffSum = 0;
+        let mathScoreSum = 0, mathDiffSum = 0;
 
         const allQ = tkaQuestions || [];
         allQ.forEach((q: any, idx: number) => {
-            const qKey = q.id || `${q.subject === "Bahasa Indonesia" ? "LIT_INDO" : "PM"}_${idx}`;
+            const qKey = q.id ? String(q.id) : `${q.subject === "Bahasa Indonesia" ? "LIT_INDO" : "PM"}_${idx}`;
             const userAns = answers[qKey];
-            const isIndo = q.subject === "Bahasa Indonesia" || q.subtest === "LIT_INDO";
+            const diff = q.difficulty || 1;
+            let itemFraction = 0;
 
+            if (userAns !== undefined) {
+                if (q.type === "PG_SEDERHANA" || !q.type) {
+                    if (userAns === q.singleAnswer) itemFraction = 1;
+                } else if (q.type === "PGK_MCMA") {
+                    const correctArr: number[] = q.multiAnswers || [];
+                    const userArr: number[] = Array.isArray(userAns) ? userAns : [];
+                    const matchCount = userArr.filter((val) => correctArr.includes(val)).length;
+                    const wrongCount = userArr.filter((val) => !correctArr.includes(val)).length;
+                    itemFraction = Math.max(0, (matchCount - wrongCount) / (correctArr.length || 1));
+                } else if (q.type === "PGK_KATEGORI" && q.statements) {
+                    let correctCount = 0;
+                    q.statements.forEach((st: any) => {
+                        if (userAns && userAns[st.id] === st.correctCategory) correctCount++;
+                    });
+                    itemFraction = correctCount / (q.statements.length || 1);
+                }
+            }
+
+            const isIndo = q.subject === "Bahasa Indonesia" || q.subtest === "LIT_INDO";
             if (isIndo) {
-                indoTotal++;
-                if (userAns && userAns === q.correctAnswer) indoCorrect++;
+                indoDiffSum += diff;
+                indoScoreSum += itemFraction * diff;
             } else {
-                mathTotal++;
-                if (userAns && userAns === q.correctAnswer) mathCorrect++;
+                mathDiffSum += diff;
+                mathScoreSum += itemFraction * diff;
             }
         });
 
-        const skorIndo = Math.round((indoCorrect / (indoTotal || 1)) * 100);
-        const skorMath = Math.round((mathCorrect / (mathTotal || 1)) * 100);
+        const skorIndo = Math.round((indoScoreSum / (indoDiffSum || 1)) * 100);
+        const skorMath = Math.round((mathScoreSum / (mathDiffSum || 1)) * 100);
         const totalScore = Math.round((skorIndo + skorMath) / 2);
 
         return { skorIndo, skorMath, totalScore };
     }, [answers]);
 
+    // 7. Pengiriman Nilai Akhir ke Google Sheets Panitia SPMB
     const executeFinalSubmission = async () => {
         setShowSubtestConfirmModal(false);
+        setIsSubmittingScore(true);
 
         const finalReport = {
             student: studentSession,
@@ -200,7 +289,6 @@ export default function OfficialExamChamberPage() {
 
         localStorage.setItem("tka_result", JSON.stringify(finalReport));
 
-        // Kirim Nilai Akhir ke Google Sheets
         const cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "");
         if (cleanPhone) {
             try {
@@ -211,19 +299,23 @@ export default function OfficialExamChamberPage() {
                     body: JSON.stringify({
                         action: "submit_exam_score",
                         phone: cleanPhone,
-                        name: studentSession?.name || studentSession?.candidateName,
+                        name: studentSession?.name,
                         school: studentSession?.school,
+                        grade: studentSession?.grade,
+                        interest: studentSession?.interest,
                         score: scoreResults.totalScore,
                         indoScore: scoreResults.skorIndo,
                         mathScore: scoreResults.skorMath,
-                        violations: violationCount
+                        violations: violationCount,
+                        waktu_selesai: new Date().toLocaleTimeString("id-ID")
                     })
                 });
             } catch (e) {
-                console.error(e);
+                console.error("Gagal sinkronisasi skor ke server:", e);
             }
         }
 
+        setIsSubmittingScore(false);
         setIsExamCompleted(true);
     };
 
@@ -233,7 +325,11 @@ export default function OfficialExamChamberPage() {
         return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
     };
 
-    // TAHAP 1: GERBANG KARANTINA
+    if (!studentSession) return null;
+
+    // =========================================================================
+    // TAHAP 1: GERBANG KARANTINA UJIAN
+    // =========================================================================
     if (!isInExam && !isExamCompleted) {
         return (
             <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans text-slate-800">
@@ -246,7 +342,7 @@ export default function OfficialExamChamberPage() {
                             alt="Logo SMA Muhammadiyah 18 Jakarta"
                             className="w-full h-full object-contain"
                             onError={(e) => {
-                                (e.target as any).src = "/images/logo-smam18.png";
+                                (e.target as HTMLElement).style.display = "none";
                             }}
                         />
                     </div>
@@ -257,18 +353,18 @@ export default function OfficialExamChamberPage() {
                         </span>
                         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Karantina Bilik Ujian TKA SMP</h1>
                         <p className="text-xs text-slate-500">
-                            Peserta: <strong className="text-slate-800">{studentSession?.name || studentSession?.candidateName}</strong> ({studentSession?.school})
+                            Peserta: <strong className="text-slate-800">{studentSession?.name}</strong> ({studentSession?.school})
                         </p>
                     </div>
 
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2 text-xs">
                         <div className="font-bold text-slate-700 font-mono uppercase text-[11px] flex justify-between">
                             <span>Mata Uji Asesmen (2 Subtes):</span>
-                            <span className="text-blue-700 font-black">Skala 0–100</span>
+                            <span className="text-blue-700 font-black">Standar Pusmendik (0–100)</span>
                         </div>
                         <ul className="text-slate-600 leading-relaxed text-[11px] list-disc list-inside space-y-1">
-                            <li><strong>Subtes 1:</strong> Literasi Bahasa Indonesia (Wacana Informasi &amp; Fiksi)</li>
-                            <li><strong>Subtes 2:</strong> Penalaran Matematika (Aljabar, Geometri, Data &amp; Logika)</li>
+                            <li><strong>Subtes 1:</strong> Literasi Bahasa Indonesia (Wacana Informasi &amp; Sastra)</li>
+                            <li><strong>Subtes 2:</strong> Penalaran Matematika (Numerasi Kontekstual &amp; Logika)</li>
                         </ul>
                     </div>
 
@@ -284,7 +380,9 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // TAHAP 4: SELESAI UJIAN
+    // =========================================================================
+    // TAHAP 4: SELESAI UJIAN & KONFIRMASI
+    // =========================================================================
     if (isExamCompleted) {
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 flex items-center justify-center">
@@ -298,7 +396,7 @@ export default function OfficialExamChamberPage() {
                             TRY OUT TKA SMP SELESAI
                         </span>
                         <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-                            Selamat, {studentSession?.name || studentSession?.candidateName}!
+                            Selamat, {studentSession?.name}!
                         </h2>
                         <p className="text-xs text-slate-500">
                             Hasil evaluasi diagnostik dan hak voucher beasiswa PPDB Anda telah diterbitkan.
@@ -337,7 +435,9 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // TAHAP 2 & 3: BILIK SOAL
+    // =========================================================================
+    // TAHAP 2 & 3: BILIK SOAL UJIAN AKTIF
+    // =========================================================================
     return (
         <div className="min-h-screen bg-[#F1F5F9] text-slate-800 flex flex-col justify-between font-sans selection:bg-blue-600 selection:text-white">
             {/* HEADER ATAS */}
@@ -349,13 +449,13 @@ export default function OfficialExamChamberPage() {
                             alt="Logo Sekolah"
                             className="w-full h-full object-contain"
                             onError={(e) => {
-                                (e.target as any).src = "/images/logo-smam18.png";
+                                (e.target as HTMLElement).style.display = "none";
                             }}
                         />
                     </div>
                     <div>
                         <div className="text-xs sm:text-sm font-black text-slate-900 truncate max-w-[200px] sm:max-w-md">
-                            {studentSession?.name || studentSession?.candidateName} &bull; <span className="text-slate-600 font-medium">{studentSession?.school}</span>
+                            {studentSession?.name} &bull; <span className="text-slate-600 font-medium">{studentSession?.school}</span>
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5">
                             <span>TKA SMP KELAS {studentSession?.grade || "9"}</span>
@@ -381,68 +481,182 @@ export default function OfficialExamChamberPage() {
                 </div>
             </header>
 
-            {/* BILIK KONTEN */}
+            {/* BILIK KONTEN UTAMA */}
             <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start flex-1">
-
-                {/* KIRI: SOAL */}
+                {/* KIRI: KOTAK SOAL */}
                 <div className="lg:col-span-8 bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs">
                     <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                        <span className="text-[10.5px] font-mono font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                            SOAL NO. {currentQIndexInSubtest + 1} &bull; {activeSubtest.code}
-                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10.5px] font-mono font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+                                SOAL NO. {currentQIndexInSubtest + 1} &bull; {activeSubtest.code}
+                            </span>
+                            <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-bold">
+                                {currentQ?.type === "PGK_MCMA"
+                                    ? "PG KOMPLEKS (MCMA)"
+                                    : currentQ?.type === "PGK_KATEGORI"
+                                        ? "PG KOMPLEKS (MATRIKS)"
+                                        : "PILIHAN GANDA"}
+                            </span>
+                        </div>
 
                         <button
                             type="button"
                             onClick={handleToggleDoubtful}
-                            className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${doubtfuls[currentQ?.id || `${activeSubtest.code}_${currentQIndexInSubtest}`]
-                                ? "bg-amber-100 border-amber-300 text-amber-900 font-bold"
-                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                            className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${doubtfuls[currentQKey]
+                                    ? "bg-amber-100 border-amber-300 text-amber-900 font-bold"
+                                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                                 }`}
                         >
                             <Bookmark className="w-3.5 h-3.5" /> Ragu-ragu
                         </button>
                     </div>
 
+                    {/* Stimulus Teks Wacana */}
                     {currentQ?.stimulus && (
                         <div className="p-4 sm:p-5 bg-slate-50/80 border border-slate-200 rounded-2xl text-xs sm:text-[13px] text-slate-700 leading-relaxed whitespace-pre-line font-normal">
                             <div className="flex items-center gap-1.5 text-blue-800 font-mono font-bold text-[10px] uppercase mb-2">
                                 <FileText className="w-3.5 h-3.5" /> STIMULUS WACANA INFORMASI / TEKS
                             </div>
-                            {currentQ.stimulus}
+                            <RenderLatex content={currentQ.stimulus} />
                         </div>
                     )}
 
+                    {/* Teks Pertanyaan */}
                     <div className="text-sm sm:text-[15px] font-bold text-slate-900 leading-relaxed">
-                        {currentQ?.question}
+                        <RenderLatex content={currentQ?.question} />
                     </div>
 
-                    <div className="space-y-3 pt-1">
-                        {currentQ?.options?.map((opt: any, oIdx: number) => {
-                            const optId = typeof opt === "string" ? ["A", "B", "C", "D", "E"][oIdx] : opt.id;
-                            const optText = typeof opt === "string" ? opt : opt.text;
-                            const qKey = currentQ.id || `${activeSubtest.code}_${currentQIndexInSubtest}`;
-                            const isSelected = answers[qKey] === optId;
+                    {/* ============================================================== */}
+                    {/* RENDER MODEL OPSI JAWABAN (3 MODEL PUSMENDIK)                  */}
+                    {/* ============================================================== */}
 
-                            return (
-                                <button
-                                    key={optId}
-                                    type="button"
-                                    onClick={() => handleSelectOption(optId)}
-                                    className={`w-full text-left p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm border transition flex items-start gap-3.5 cursor-pointer ${isSelected
-                                        ? "bg-blue-50/90 border-blue-600 text-blue-950 font-semibold ring-1 ring-blue-600 shadow-xs"
-                                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                                        }`}
-                                >
-                                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600"
-                                        }`}>
-                                        {optId}
-                                    </span>
-                                    <span className="pt-0.5 leading-relaxed">{optText}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    {/* 1. Pilihan Ganda Tunggal */}
+                    {(!currentQ?.type || currentQ?.type === "PG_SEDERHANA") && currentQ?.options && (
+                        <div className="space-y-3 pt-1">
+                            {currentQ.options.map((opt: any, oIdx: number) => {
+                                const optText = typeof opt === "string" ? opt : opt.text;
+                                const isSelected = answers[currentQKey] === oIdx;
+                                const alphabet = ["A", "B", "C", "D", "E"][oIdx];
 
+                                return (
+                                    <button
+                                        key={oIdx}
+                                        type="button"
+                                        onClick={() => handleSelectSingleOption(oIdx)}
+                                        className={`w-full text-left p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm border transition flex items-start gap-3.5 cursor-pointer ${isSelected
+                                                ? "bg-blue-50/90 border-blue-600 text-blue-950 font-semibold ring-1 ring-blue-600 shadow-xs"
+                                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                            }`}
+                                    >
+                                        <span
+                                            className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600"
+                                                }`}
+                                        >
+                                            {alphabet}
+                                        </span>
+                                        <span className="pt-0.5 leading-relaxed">
+                                            <RenderLatex content={optText} />
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* 2. Pilihan Ganda Kompleks MCMA (Centang Lebih dari Satu) */}
+                    {currentQ?.type === "PGK_MCMA" && currentQ?.options && (
+                        <div className="space-y-3 pt-1">
+                            <div className="text-[11px] text-blue-800 font-semibold italic bg-blue-50/70 p-2.5 rounded-xl border border-blue-200/60 flex items-center gap-1.5">
+                                <CheckSquare className="w-3.5 h-3.5 shrink-0" />
+                                <span>Model MCMA: Anda dapat memilih lebih dari satu jawaban yang benar dengan mencentang kotak.</span>
+                            </div>
+                            {currentQ.options.map((opt: any, oIdx: number) => {
+                                const optText = typeof opt === "string" ? opt : opt.text;
+                                const chosenList: number[] = Array.isArray(answers[currentQKey]) ? answers[currentQKey] : [];
+                                const isSelected = chosenList.includes(oIdx);
+
+                                return (
+                                    <button
+                                        key={oIdx}
+                                        type="button"
+                                        onClick={() => handleToggleMultiOption(oIdx)}
+                                        className={`w-full text-left p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm border transition flex items-start gap-3.5 cursor-pointer ${isSelected
+                                                ? "bg-indigo-50/90 border-indigo-600 text-indigo-950 font-semibold ring-1 ring-indigo-600 shadow-xs"
+                                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                            }`}
+                                    >
+                                        <div
+                                            className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition ${isSelected ? "bg-indigo-700 border-indigo-700 text-white" : "bg-white border-slate-300"
+                                                }`}
+                                        >
+                                            {isSelected && <Check className="w-3.5 h-3.5" />}
+                                        </div>
+                                        <span className="pt-0.5 leading-relaxed">
+                                            <RenderLatex content={optText} />
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* 3. Pilihan Ganda Kompleks Matriks Kategori (Benar / Salah) */}
+                    {currentQ?.type === "PGK_KATEGORI" && currentQ?.statements && (
+                        <div className="pt-1 overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                                <thead>
+                                    <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold">
+                                        <th className="p-3.5 rounded-l-xl">Pernyataan</th>
+                                        <th className="p-3.5 text-center w-28">Benar / Sesuai</th>
+                                        <th className="p-3.5 text-center w-28 rounded-r-xl">Salah / Tidak Sesuai</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {currentQ.statements.map((st: any) => {
+                                        const currentVal = answers[currentQKey]?.[st.id];
+                                        const labelYes = st.correctCategory === "Benar" || st.correctCategory === "Salah" ? "Benar" : "Sesuai";
+                                        const labelNo = st.correctCategory === "Benar" || st.correctCategory === "Salah" ? "Salah" : "Tidak Sesuai";
+                                        const isYes = currentVal === labelYes;
+                                        const isNo = currentVal === labelNo;
+
+                                        return (
+                                            <tr key={st.id} className="hover:bg-slate-50/60 transition">
+                                                <td className="p-3.5 text-slate-800 leading-relaxed font-normal">
+                                                    <RenderLatex content={st.statement} />
+                                                </td>
+                                                <td className="p-3.5 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSelectCategory(st.id, labelYes)}
+                                                        className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition cursor-pointer ${isYes
+                                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                                                : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
+                                                            }`}
+                                                    >
+                                                        {labelYes}
+                                                    </button>
+                                                </td>
+                                                <td className="p-3.5 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSelectCategory(st.id, labelNo)}
+                                                        className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition cursor-pointer ${isNo
+                                                                ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                                                                : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
+                                                            }`}
+                                                    >
+                                                        {labelNo}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Navigasi Soal Bawah */}
                     <div className="pt-6 border-t border-slate-100 flex items-center justify-between">
                         <button
                             type="button"
@@ -465,29 +679,51 @@ export default function OfficialExamChamberPage() {
                             className="px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-blue-700/20 transition cursor-pointer"
                         >
                             {currentQIndexInSubtest < currentSubtestQuestions.length - 1 ? (
-                                <>Berikutnya <ChevronRight className="w-4 h-4" /></>
+                                <>
+                                    Berikutnya <ChevronRight className="w-4 h-4" />
+                                </>
                             ) : (
-                                <>Selesai Subtes <CheckCircle2 className="w-4 h-4" /></>
+                                <>
+                                    Selesai Subtes <CheckCircle2 className="w-4 h-4" />
+                                </>
                             )}
                         </button>
                     </div>
                 </div>
 
-                {/* KANAN: PALET NOMOR */}
+                {/* KANAN: PALET NOMOR SOAL */}
                 <div className="lg:col-span-4 bg-white border border-slate-200 rounded-3xl p-6 space-y-5 shadow-xs sticky top-24">
                     <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-slate-400 font-mono uppercase tracking-wider">PALET SOAL {activeSubtest.code}</span>
+                        <span className="text-slate-400 font-mono uppercase tracking-wider">
+                            PALET SOAL {activeSubtest.code}
+                        </span>
                         <span className="text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 font-mono">
-                            {currentSubtestQuestions.filter((_, idx) => answers[currentQ?.id || `${activeSubtest.code}_${idx}`]).length}/{currentSubtestQuestions.length} Terisi
+                            {
+                                currentSubtestQuestions.filter((q: any, idx: number) => {
+                                    const key = q.id ? String(q.id) : `${activeSubtest.code}_${idx}`;
+                                    const ans = answers[key];
+                                    if (ans === undefined) return false;
+                                    if (Array.isArray(ans)) return ans.length > 0;
+                                    if (typeof ans === "object") return Object.keys(ans).length > 0;
+                                    return true;
+                                }).length
+                            }
+                            /{currentSubtestQuestions.length} Terisi
                         </span>
                     </div>
 
                     <div className="grid grid-cols-5 gap-2.5">
-                        {currentSubtestQuestions.map((q, idx) => {
-                            const qKey = q.id || `${activeSubtest.code}_${idx}`;
+                        {currentSubtestQuestions.map((q: any, idx: number) => {
+                            const key = q.id ? String(q.id) : `${activeSubtest.code}_${idx}`;
                             const isCurrent = currentQIndexInSubtest === idx;
-                            const isAnswered = Boolean(answers[qKey]);
-                            const isDoubt = Boolean(doubtfuls[qKey]);
+                            const ans = answers[key];
+                            let isAnswered = false;
+                            if (ans !== undefined) {
+                                if (Array.isArray(ans)) isAnswered = ans.length > 0;
+                                else if (typeof ans === "object") isAnswered = Object.keys(ans).length > 0;
+                                else isAnswered = true;
+                            }
+                            const isDoubt = Boolean(doubtfuls[key]);
 
                             let btnClass = "bg-white border-slate-200 text-slate-600 hover:bg-slate-50";
                             if (isAnswered) btnClass = "bg-blue-700 text-white font-black border-blue-700 shadow-2xs";
@@ -509,23 +745,22 @@ export default function OfficialExamChamberPage() {
 
                     <div className="pt-4 border-t border-slate-100 text-[11px] space-y-2 text-slate-500">
                         <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded bg-blue-700"></span> <span>Terjawab</span>
+                            <span className="w-3 h-3 rounded bg-blue-700" /> <span>Terjawab</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded bg-amber-400"></span> <span>Ragu-ragu</span>
+                            <span className="w-3 h-3 rounded bg-amber-400" /> <span>Ragu-ragu</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded bg-white border border-slate-300"></span> <span>Belum Dijawab</span>
+                            <span className="w-3 h-3 rounded bg-white border border-slate-300" /> <span>Belum Dijawab</span>
                         </div>
                     </div>
                 </div>
-
             </main>
 
-            {/* MODAL KONFIRMASI SUBTES */}
+            {/* MODAL KONFIRMASI PERALIHAN / SELESAI SUBTES */}
             {showSubtestConfirmModal && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 text-center shadow-2xl border border-slate-100">
+                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 text-center shadow-2xl border border-slate-100 animate-in zoom-in-95">
                         <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-900 flex items-center justify-center mx-auto">
                             <FastForward className="w-6 h-6" />
                         </div>
@@ -535,38 +770,44 @@ export default function OfficialExamChamberPage() {
                                 : "Lanjut ke Subtes 2 (Penalaran Matematika)?"}
                         </h3>
                         <p className="text-xs text-slate-500 leading-relaxed">
-                            Setelah dikonfirmasi, Anda akan beralih ke subtes berikutnya dan jawaban subtes ini tidak dapat diubah lagi.
+                            {currentSubtestIndex === TKA_SMP_SUBTESTS.length - 1
+                                ? "Jawaban Anda akan dikunci dan dihitung otomatis untuk penerbitan lembar rapor diagnostik."
+                                : "Setelah dikonfirmasi, Anda akan beralih ke subtes berikutnya dan jawaban subtes ini tidak dapat diubah lagi."}
                         </p>
                         <div className="flex gap-2 pt-2">
                             <button
+                                type="button"
                                 onClick={() => setShowSubtestConfirmModal(false)}
                                 className="w-1/2 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
                             >
                                 Cek Kembali
                             </button>
                             <button
+                                type="button"
                                 onClick={handleNextSubtestManual}
-                                className="w-1/2 py-2.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white text-xs font-bold cursor-pointer shadow-xs"
+                                disabled={isSubmittingScore}
+                                className="w-1/2 py-2.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white text-xs font-bold cursor-pointer shadow-xs disabled:opacity-50"
                             >
-                                Ya, Lanjutkan
+                                {isSubmittingScore ? "Menyimpan..." : "Ya, Lanjutkan"}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* MODAL PERINGATAN KIOSK */}
+            {/* MODAL PERINGATAN KIOSK ANTI-CHEAT */}
             {showViolationModal && (
                 <div className="fixed inset-0 z-[999] bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 text-center shadow-2xl border border-rose-200">
+                    <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 text-center shadow-2xl border border-rose-200 animate-in zoom-in-95">
                         <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
                             <AlertTriangle className="w-7 h-7" />
                         </div>
                         <h3 className="font-black text-lg text-slate-900">Peringatan Integritas Bilik Ujian!</h3>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            Sistem mendeteksi Anda keluar dari layar penuh atau berpindah jendela tab. Catatan pelanggaran: <strong className="text-rose-600">{violationCount}x</strong>.
+                            Sistem mendeteksi Anda keluar dari mode layar penuh atau berpindah jendela/tab aplikasi lain. Pelanggaran terekam: <strong className="text-rose-600">{violationCount}x</strong>.
                         </p>
                         <button
+                            type="button"
                             onClick={() => {
                                 setShowViolationModal(false);
                                 enterExamChamber();

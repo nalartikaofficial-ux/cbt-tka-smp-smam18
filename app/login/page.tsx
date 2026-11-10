@@ -117,7 +117,7 @@ export default function StudentLoginPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 shadow-lg space-y-6">
                     <div className="text-center space-y-1.5">
                         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10px] font-bold uppercase tracking-wider">
-                            <Sparkles className="w-3.5 h-3.5 text-blue-600" /> SIMULASI DIAGNOSTIK KELAS 9
+                            <Sparkles className="w-3.5 h-3.5 text-blue-600" /> SIMULASI DIAGNOSTIK TKA SMP
                         </div>
                         <h1 className="text-2xl font-black text-slate-900 tracking-tight">Formulir Peserta Try Out</h1>
                         <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
@@ -191,7 +191,7 @@ export default function StudentLoginPage() {
                                     onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, "") })}
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-mono font-bold text-slate-900 focus:border-blue-600 outline-none text-xs"
                                 />
-                                <span className="text-[10px] text-slate-400 block">*Hasil Rapor & voucher beasiswa dikirim ke nomor ini</span>
+                                <span className="text-[10px] text-slate-400 block">*Hasil Rapor &amp; voucher dikirim ke nomor ini</span>
                             </div>
 
                             <div className="space-y-1">

@@ -62,7 +62,7 @@ function RenderLatex({ content }: { content?: any }) {
                         return (
                             <span
                                 key={idx}
-                                className="block my-2 overflow-x-auto py-1"
+                                className="block my-2 overflow-x-auto py-1 max-w-full text-center"
                                 dangerouslySetInnerHTML={{ __html: html }}
                             />
                         );
@@ -76,7 +76,7 @@ function RenderLatex({ content }: { content?: any }) {
                         return (
                             <span
                                 key={idx}
-                                className="inline-block px-0.5 align-middle"
+                                className="inline-block px-0.5 align-middle max-w-full overflow-x-auto"
                                 dangerouslySetInnerHTML={{ __html: html }}
                             />
                         );
@@ -194,11 +194,6 @@ export default function BankSoalAdminPage() {
                 for (let i = 1; i < lines.length; i++) {
                     const row = parseCSVLine(lines[i]);
                     if (row.length < 6) continue;
-
-                    // Pemetaan 14 Kolom:
-                    // 0: No | 1: Subtes | 2: Wacana | 3: Link Gambar | 4: Posisi Gambar | 5: Pertanyaan
-                    // 6: Opsi A | 7: Opsi B | 8: Opsi C | 9: Opsi D | 10: Opsi E
-                    // 11: Kunci Jawaban | 12: Tingkat Kesukaran | 13: Pembahasan
 
                     const no_soal = Number(row[0]) || i;
                     const rawSub = (row[1] || "LIT_INDO").toUpperCase().trim();
@@ -366,18 +361,18 @@ export default function BankSoalAdminPage() {
 
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
-            {/* HEADER ATAS */}
-            <header className="bg-white border-b border-slate-200 py-3.5 px-4 sm:px-8 sticky top-0 z-30 shadow-xs">
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+            {/* HEADER ATAS RESPONSIF */}
+            <header className="bg-white border-b border-slate-200 py-3 sm:py-3.5 px-3.5 sm:px-8 sticky top-0 z-30 shadow-xs">
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 w-full md:w-auto">
                         <Link
                             href="/admin"
-                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition"
+                            className="p-1.5 sm:p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition shrink-0 cursor-pointer"
                             title="Kembali ke Bilik Admin"
                         >
                             <ChevronLeft className="w-4 h-4" />
                         </Link>
-                        <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 flex items-center justify-center overflow-hidden shrink-0">
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white border border-slate-200 p-0.5 flex items-center justify-center overflow-hidden shrink-0">
                             <img
                                 src="/logo-timsim.jpg"
                                 alt="Logo SMA Muhammadiyah 18"
@@ -387,28 +382,29 @@ export default function BankSoalAdminPage() {
                                 }}
                             />
                         </div>
-                        <div>
-                            <h1 className="text-sm font-black text-slate-900 tracking-tight uppercase">
+                        <div className="min-w-0">
+                            <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight uppercase truncate">
                                 MANAJEMEN BANK SOAL TKA SMP
                             </h1>
-                            <p className="text-[11px] text-slate-500">
+                            <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
                                 Template Resmi CBT SMA Muhammadiyah 18 Jakarta
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* Toolbar Tombol Aksi Impor / Unduh */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full md:w-auto justify-start md:justify-end">
                         <button
                             onClick={handleDownloadCsvTemplateM18}
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
                             <Download className="w-3.5 h-3.5 text-blue-700" />
-                            <span>Template CSV (M18)</span>
+                            <span>Template CSV</span>
                         </button>
 
                         <button
                             onClick={() => csvInputRef.current?.click()}
-                            className="px-3.5 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            className="px-2.5 sm:px-3.5 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
                             <FileSpreadsheet className="w-3.5 h-3.5" />
                             <span>Unggah CSV</span>
@@ -423,20 +419,20 @@ export default function BankSoalAdminPage() {
 
                         <button
                             onClick={() => setShowWordPasteModal(true)}
-                            className="px-3.5 py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            className="px-2.5 sm:px-3.5 py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
                             <ClipboardPaste className="w-3.5 h-3.5" />
-                            <span>Impor Teks Word</span>
+                            <span>Impor Word</span>
                         </button>
 
                         {questions.length > 0 && (
                             <button
                                 onClick={handleClearAllQuestions}
-                                className="px-3 py-1.5 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                                className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] sm:text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs"
                                 title="Kosongkan seluruh soal"
                             >
                                 <Trash2 className="w-3.5 h-3.5" />
-                                <span>Kosongkan Soal</span>
+                                <span>Kosongkan</span>
                             </button>
                         )}
                     </div>
@@ -444,45 +440,45 @@ export default function BankSoalAdminPage() {
             </header>
 
             {/* METRIK */}
-            <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
-                        <div className="flex items-center justify-between text-slate-400 font-mono text-[10px] font-bold uppercase">
+            <main className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1 text-left">
+                        <div className="flex items-center justify-between text-slate-400 font-mono text-[9.5px] sm:text-[10px] font-bold uppercase">
                             <span>TOTAL SOAL AKTIF</span>
                             <FolderOpen className="w-4 h-4 text-slate-500" />
                         </div>
-                        <div className="text-3xl font-black text-slate-900 font-mono">{stats.total}</div>
-                        <p className="text-[11px] text-slate-500">Butir soal tersimpan di sistem</p>
+                        <div className="text-2xl sm:text-3xl font-black text-slate-900 font-mono">{stats.total}</div>
+                        <p className="text-[10.5px] sm:text-[11px] text-slate-500">Butir soal tersimpan di sistem</p>
                     </div>
 
-                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
-                        <div className="flex items-center justify-between text-blue-600 font-mono text-[10px] font-bold uppercase">
+                    <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1 text-left">
+                        <div className="flex items-center justify-between text-blue-600 font-mono text-[9.5px] sm:text-[10px] font-bold uppercase">
                             <span>LITERASI B. INDONESIA (LIT_INDO)</span>
                             <BookOpen className="w-4 h-4 text-blue-600" />
                         </div>
-                        <div className="text-3xl font-black text-blue-700 font-mono">{stats.indo}</div>
-                        <p className="text-[11px] text-slate-500">Wacana Informasi &amp; Sastra</p>
+                        <div className="text-2xl sm:text-3xl font-black text-blue-700 font-mono">{stats.indo}</div>
+                        <p className="text-[10.5px] sm:text-[11px] text-slate-500">Wacana Informasi &amp; Sastra</p>
                     </div>
 
-                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1">
-                        <div className="flex items-center justify-between text-emerald-600 font-mono text-[10px] font-bold uppercase">
+                    <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs space-y-1 text-left">
+                        <div className="flex items-center justify-between text-emerald-600 font-mono text-[9.5px] sm:text-[10px] font-bold uppercase">
                             <span>PENALARAN MATEMATIKA (PM)</span>
                             <Calculator className="w-4 h-4 text-emerald-600" />
                         </div>
-                        <div className="text-3xl font-black text-emerald-700 font-mono">{stats.math}</div>
-                        <p className="text-[11px] text-slate-500">Numerasi 4 Elemen Fase D</p>
+                        <div className="text-2xl sm:text-3xl font-black text-emerald-700 font-mono">{stats.math}</div>
+                        <p className="text-[10.5px] sm:text-[11px] text-slate-500">Numerasi 4 Elemen Fase D</p>
                     </div>
                 </div>
 
                 {/* TABEL BANK SOAL */}
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4 text-left">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                         <div>
-                            <h2 className="text-base font-black text-slate-900">Daftar Naskah Soal Terpasang</h2>
-                            <p className="text-xs text-slate-500">Gunakan tombol Pratinjau (Mata) untuk memeriksa tampilan persis seperti di bilik ujian siswa.</p>
+                            <h2 className="text-sm sm:text-base font-black text-slate-900">Daftar Naskah Soal Terpasang</h2>
+                            <p className="text-[11px] sm:text-xs text-slate-500">Gunakan tombol Pratinjau (Mata) untuk memeriksa tampilan persis seperti di bilik ujian siswa.</p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                             <div className="relative">
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
@@ -490,14 +486,14 @@ export default function BankSoalAdminPage() {
                                     placeholder="Cari kata kunci soal..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
+                                    className="w-full sm:w-auto pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
                                 />
                             </div>
 
                             <select
                                 value={selectedSubtest}
                                 onChange={(e) => setSelectedSubtest(e.target.value as any)}
-                                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white outline-none"
+                                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white outline-none cursor-pointer"
                             >
                                 <option value="ALL">Semua Subtes</option>
                                 <option value="LIT_INDO">Literasi Bahasa Indonesia</option>
@@ -507,14 +503,14 @@ export default function BankSoalAdminPage() {
                     </div>
 
                     <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                        <table className="w-full text-left text-xs border-collapse">
-                            <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[11px] text-slate-600">
+                        <table className="w-full text-left text-xs border-collapse min-w-[620px]">
+                            <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
                                 <tr>
-                                    <th className="p-3.5 w-14 text-center">No</th>
-                                    <th className="p-3.5 w-44">Subtes</th>
-                                    <th className="p-3.5">Konten Wacana / Pertanyaan</th>
-                                    <th className="p-3.5 w-24 text-center">Kunci</th>
-                                    <th className="p-3.5 w-24 text-right">Aksi</th>
+                                    <th className="p-3 w-12 text-center">No</th>
+                                    <th className="p-3 w-40">Subtes</th>
+                                    <th className="p-3">Konten Wacana / Pertanyaan</th>
+                                    <th className="p-3 w-20 text-center">Kunci</th>
+                                    <th className="p-3 w-24 text-right">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-medium">
@@ -522,49 +518,49 @@ export default function BankSoalAdminPage() {
                                     const isMath = q.subtes_code === "PM";
                                     return (
                                         <tr key={q.id || idx} className="hover:bg-slate-50/80 transition">
-                                            <td className="p-3.5 text-center font-mono font-bold text-blue-700">
+                                            <td className="p-3 text-center font-mono font-bold text-blue-700">
                                                 #{q.no_soal || idx + 1}
                                             </td>
-                                            <td className="p-3.5">
+                                            <td className="p-3">
                                                 <span
-                                                    className={`px-3 py-1 rounded-full font-mono text-[10.5px] font-bold border inline-block ${isMath
-                                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                                            : "bg-blue-50 text-blue-800 border-blue-200"
+                                                    className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border inline-block ${isMath
+                                                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                        : "bg-blue-50 text-blue-800 border-blue-200"
                                                         }`}
                                                 >
                                                     {isMath ? "PM (Matematika)" : "LIT_INDO (B. Indo)"}
                                                 </span>
                                             </td>
-                                            <td className="p-3.5 space-y-1.5">
+                                            <td className="p-3 space-y-1">
                                                 {q.stimulus && (
-                                                    <div className="text-[11.5px] text-slate-500 italic line-clamp-1 bg-slate-50 p-1.5 px-2.5 rounded-lg border border-slate-100">
+                                                    <div className="text-[11px] text-slate-500 italic line-clamp-1 bg-slate-50 p-1 px-2 rounded-lg border border-slate-100">
                                                         <strong>Wacana:</strong> {q.stimulus}
                                                     </div>
                                                 )}
-                                                <div className="font-semibold text-slate-900 leading-relaxed text-[12.5px]">
+                                                <div className="font-semibold text-slate-900 leading-relaxed text-xs sm:text-[12.5px]">
                                                     <RenderLatex content={q.pertanyaan} />
                                                 </div>
                                             </td>
-                                            <td className="p-3.5 text-center">
-                                                <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono font-black text-xs inline-flex items-center justify-center shadow-2xs">
+                                            <td className="p-3 text-center">
+                                                <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono font-black text-xs inline-flex items-center justify-center shadow-2xs">
                                                     {q.kunci}
                                                 </span>
                                             </td>
-                                            <td className="p-3.5 text-right">
+                                            <td className="p-3 text-right">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     <button
                                                         onClick={() => setSelectedQuestionForPreview(q)}
-                                                        className="p-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer"
+                                                        className="p-1.5 sm:p-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer"
                                                         title="Buka Pratinjau Penuh"
                                                     >
-                                                        <Eye className="w-4 h-4" />
+                                                        <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                                     </button>
                                                     <button
                                                         onClick={() => handleDeleteOne(q.id)}
-                                                        className="p-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition cursor-pointer"
+                                                        className="p-1.5 sm:p-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition cursor-pointer"
                                                         title="Hapus Soal"
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
+                                                        <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                                     </button>
                                                 </div>
                                             </td>
@@ -574,9 +570,9 @@ export default function BankSoalAdminPage() {
 
                                 {filteredQuestions.length === 0 && (
                                     <tr>
-                                        <td colSpan={5} className="text-center py-12 text-slate-400 font-medium space-y-2">
+                                        <td colSpan={5} className="text-center py-10 sm:py-12 text-slate-400 font-medium space-y-2">
                                             <FolderOpen className="w-8 h-8 mx-auto text-slate-300" />
-                                            <p>Bank soal kosong. Klik tombol <strong>Unggah CSV</strong> atau <strong>Impor Teks Word</strong> untuk mengisi naskah.</p>
+                                            <p className="text-xs">Bank soal kosong. Klik tombol <strong>Unggah CSV</strong> atau <strong>Impor Word</strong> untuk mengisi naskah.</p>
                                         </td>
                                     </tr>
                                 )}
@@ -586,18 +582,16 @@ export default function BankSoalAdminPage() {
                 </div>
             </main>
 
-            {/* ========================================================================= */}
-            {/* MODAL PRATINJAU SOAL BESAR & AMAN DARI ERROR                              */}
-            {/* ========================================================================= */}
+            {/* MODAL PRATINJAU SOAL */}
             {selectedQuestionForPreview && (
-                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
-                        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-3xl">
-                            <div className="flex items-center gap-2.5">
-                                <span className="px-3 py-1 rounded-full font-mono text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                    <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
+                        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-3xl">
+                            <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-mono text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
                                     SOAL NO. {selectedQuestionForPreview.no_soal} &bull; {selectedQuestionForPreview.subtes_code}
                                 </span>
-                                <span className="text-xs text-slate-500 font-medium">
+                                <span className="text-[11px] sm:text-xs text-slate-500 font-medium hidden sm:inline">
                                     Pratinjau Layar Siswa
                                 </span>
                             </div>
@@ -609,18 +603,18 @@ export default function BankSoalAdminPage() {
                             </button>
                         </div>
 
-                        <div className="p-6 overflow-y-auto space-y-5 text-left text-sm leading-relaxed">
-                            {/* Gambar (Jika Posisi Above) */}
+                        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 text-left text-xs sm:text-sm leading-relaxed">
+                            {/* Gambar Above */}
                             {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "above" && (
                                 <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
-                                    <img src={selectedQuestionForPreview.image_url} alt="Gambar Soal" className="max-h-60 object-contain rounded-xl" />
+                                    <img src={selectedQuestionForPreview.image_url} alt="Gambar Soal" className="max-h-52 sm:max-h-60 object-contain rounded-xl max-w-full" />
                                 </div>
                             )}
 
                             {/* Wacana Stimulus */}
                             {selectedQuestionForPreview.stimulus && (
-                                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line">
-                                    <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-2 flex items-center gap-1.5">
+                                <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line overflow-x-auto">
+                                    <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-1.5 flex items-center gap-1.5">
                                         <FileText className="w-3.5 h-3.5" /> STIMULUS WACANA BACAAN / INFORMASI
                                     </div>
                                     <RenderLatex content={selectedQuestionForPreview.stimulus} />
@@ -628,19 +622,19 @@ export default function BankSoalAdminPage() {
                             )}
 
                             {/* Teks Pertanyaan */}
-                            <div className="font-bold text-slate-900 text-base leading-snug">
+                            <div className="font-bold text-slate-900 text-sm sm:text-base leading-snug overflow-x-auto py-0.5">
                                 <RenderLatex content={selectedQuestionForPreview.pertanyaan} />
                             </div>
 
-                            {/* Gambar (Jika Posisi Below) */}
+                            {/* Gambar Below */}
                             {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "below" && (
                                 <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
-                                    <img src={selectedQuestionForPreview.image_url} alt="Gambar Soal" className="max-h-60 object-contain rounded-xl" />
+                                    <img src={selectedQuestionForPreview.image_url} alt="Gambar Soal" className="max-h-52 sm:max-h-60 object-contain rounded-xl max-w-full" />
                                 </div>
                             )}
 
-                            {/* Daftar Pilihan A - E (DENGAN PENANGANAN ERROR DATA STRING) */}
-                            <div className="space-y-2.5 pt-1">
+                            {/* Daftar Pilihan A - E */}
+                            <div className="space-y-2 pt-1">
                                 {[
                                     { key: "A", text: selectedQuestionForPreview.opsi_a },
                                     { key: "B", text: selectedQuestionForPreview.opsi_b },
@@ -654,23 +648,23 @@ export default function BankSoalAdminPage() {
                                         return (
                                             <div
                                                 key={opt.key}
-                                                className={`p-3.5 rounded-2xl border text-xs sm:text-sm flex items-start gap-3 transition ${isKey
-                                                        ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-semibold shadow-xs"
-                                                        : "bg-white border-slate-200 text-slate-700"
+                                                className={`p-3 rounded-2xl border text-xs sm:text-sm flex items-start gap-2.5 sm:gap-3 transition ${isKey
+                                                    ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-semibold shadow-xs"
+                                                    : "bg-white border-slate-200 text-slate-700"
                                                     }`}
                                             >
                                                 <span
-                                                    className={`w-7 h-7 rounded-xl font-mono font-bold flex items-center justify-center shrink-0 ${isKey ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
+                                                    className={`w-6 h-6 sm:w-7 sm:h-7 rounded-xl font-mono font-bold flex items-center justify-center shrink-0 text-xs ${isKey ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
                                                         }`}
                                                 >
                                                     {opt.key}
                                                 </span>
-                                                <div className="flex-1 pt-0.5 leading-relaxed">
+                                                <div className="flex-1 pt-0.5 leading-relaxed overflow-x-auto">
                                                     <RenderLatex content={String(opt.text ?? "")} />
                                                 </div>
                                                 {isKey && (
-                                                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-mono text-[10px] font-bold uppercase shrink-0">
-                                                        KUNCI BENAR
+                                                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-mono text-[9.5px] sm:text-[10px] font-bold uppercase shrink-0">
+                                                        KUNCI
                                                     </span>
                                                 )}
                                             </div>
@@ -680,21 +674,21 @@ export default function BankSoalAdminPage() {
 
                             {/* Box Pembahasan */}
                             {selectedQuestionForPreview.pembahasan && (
-                                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 space-y-1">
+                                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 space-y-1">
                                     <div className="font-mono font-bold text-[10px] text-amber-800 uppercase">
                                         PEMBAHASAN SOAL:
                                     </div>
-                                    <div className="leading-relaxed">
+                                    <div className="leading-relaxed overflow-x-auto">
                                         <RenderLatex content={String(selectedQuestionForPreview.pembahasan ?? "")} />
                                     </div>
                                 </div>
                             )}
                         </div>
 
-                        <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-3xl">
+                        <div className="p-3.5 sm:p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-3xl">
                             <button
                                 onClick={() => setSelectedQuestionForPreview(null)}
-                                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
+                                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
                             >
                                 Tutup Pratinjau
                             </button>
@@ -703,20 +697,18 @@ export default function BankSoalAdminPage() {
                 </div>
             )}
 
-            {/* ============================================================== */}
-            {/* MODAL SALIN-TEMPEL DARI WORD (MODEL SNBT)                      */}
-            {/* ============================================================== */}
+            {/* MODAL SALIN-TEMPEL DARI WORD */}
             {showWordPasteModal && (
-                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl max-w-3xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95">
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+                    <div className="bg-white rounded-3xl max-w-3xl w-full p-4 sm:p-6 space-y-3.5 sm:space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[92vh] flex flex-col text-left">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-800 flex items-center justify-center font-bold">
                                     <ClipboardPaste className="w-4 h-4" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-sm text-slate-900">Salin-Tempel Teks Naskah Word (Model SNBT)</h3>
-                                    <p className="text-[11px] text-slate-500">Tempel teks naskah soal langsung dari dokumen Microsoft Word Anda.</p>
+                                    <h3 className="font-bold text-xs sm:text-sm text-slate-900">Salin-Tempel Teks Naskah Word</h3>
+                                    <p className="text-[10px] sm:text-[11px] text-slate-500">Tempel teks naskah soal langsung dari dokumen Microsoft Word Anda.</p>
                                 </div>
                             </div>
                             <button
@@ -727,17 +719,17 @@ export default function BankSoalAdminPage() {
                             </button>
                         </div>
 
-                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-900 space-y-1 leading-relaxed">
+                        <div className="p-2.5 sm:p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[10.5px] sm:text-[11px] text-blue-900 space-y-1 leading-relaxed">
                             <strong>Aturan Format Salin-Tempel:</strong>
                             <p>Gunakan tag <code>[SUBTES: BAHASA INDONESIA]</code> atau <code>[SUBTES: MATEMATIKA]</code>, tag wacana <code>[STIMULUS]...[/STIMULUS]</code>, nomor soal <code>1. Pertanyaan</code>, opsi <code>A.</code>, <code>B.</code>, dan baris <code>KUNCI: B</code>.</p>
                         </div>
 
                         <textarea
-                            rows={10}
+                            rows={8}
                             value={pasteText}
                             onChange={(e) => setPasteText(e.target.value)}
                             placeholder={`[SUBTES: BAHASA INDONESIA]\n[STIMULUS]\nHutan mangrove memiliki fungsi penting...\n[/STIMULUS]\n1. Fungsi utama mangrove adalah...\nA. Menahan intrusi\nB. Menyerap karbon 5x lebih tinggi\nC. Tempat bibit ikan\nD. Sumber kayu bakar\nKUNCI: B\nPEMBAHASAN: Karbon biru diserap secara masif oleh akar bakau.\n\n[SUBTES: MATEMATIKA]\n2. Nilai $x$ dari $2x + 6 = 16$ adalah...\nA. 3\nB. 5\nC. 7\nD. 9\nKUNCI: B`}
-                            className="w-full p-3.5 rounded-2xl border border-slate-200 font-mono text-xs outline-none focus:border-blue-600"
+                            className="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs outline-none focus:border-blue-600 flex-1 min-h-[160px]"
                         />
 
                         <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -751,7 +743,7 @@ export default function BankSoalAdminPage() {
                             <button
                                 type="button"
                                 onClick={handleParseWordPaste}
-                                className="px-5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                                className="px-4 sm:px-5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
                             >
                                 <Check className="w-4 h-4" />
                                 <span>Proses Masuk ke Bank Soal</span>

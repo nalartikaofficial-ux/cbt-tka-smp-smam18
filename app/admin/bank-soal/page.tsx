@@ -17,7 +17,10 @@ import {
     ClipboardPaste,
     Check,
     RefreshCw,
-    Database
+    Database,
+    LayoutList,
+    Table as TableIcon,
+    FileDown
 } from "lucide-react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
@@ -39,13 +42,13 @@ export interface QuestionCBT {
     opsi_c: string;
     opsi_d: string;
     opsi_e?: string;
-    kunci: string; // "A", "B", "C", "D", "E"
+    kunci: string;
     difficulty: number;
     tingkat_kesukaran?: string;
     pembahasan?: string;
 }
 
-// Komponen Render LaTeX dengan Pengaman Ekstra (Anti-Crash & Responsif HP)
+// Komponen Render LaTeX dengan Pengaman Ekstra
 function RenderLatex({ content }: { content?: any }) {
     const safeText = String(content ?? "").trim();
     if (!safeText) return null;
@@ -90,7 +93,7 @@ function RenderLatex({ content }: { content?: any }) {
     );
 }
 
-// Parser Baris CSV Robust (Menangani kutip dua & koma dalam kalimat)
+// Parser Baris CSV Robust
 function parseCSVLine(line: string): string[] {
     const result: string[] = [];
     let current = "";
@@ -116,7 +119,7 @@ function parseCSVLine(line: string): string[] {
     return result.map((item) => item.replace(/^"|"$/g, "").trim());
 }
 
-// Normalisasi Kode Subtes ke BINDO atau MTK
+// Normalisasi Kode Mapel ke BINDO atau MTK
 function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
     const upper = String(raw || "").toUpperCase().trim();
     if (
@@ -139,6 +142,9 @@ export default function BankSoalAdminPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSubtest, setSelectedSubtest] = useState<"ALL" | "BINDO" | "MTK">("ALL");
+
+    // Mode Tampilan Daftar Soal: "cards" (Tampil Utuh Semua Soal) vs "table" (Tabel Ringkas)
+    const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
     const [showWordPasteModal, setShowWordPasteModal] = useState(false);
     const [pasteText, setPasteText] = useState("");
@@ -231,7 +237,7 @@ export default function BankSoalAdminPage() {
         }
     };
 
-    // 3. Download Template CSV Resmi TKA SMP (14 Kolom: BINDO & MTK)
+    // 3A. Download Template CSV Resmi TKA SMP (14 Kolom: BINDO & MTK)
     const handleDownloadCsvTemplateM18 = () => {
         const headers =
             "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
@@ -243,6 +249,52 @@ export default function BankSoalAdminPage() {
         const link = document.createElement("a");
         link.href = url;
         link.setAttribute("download", "Template_Bank_Soal_TKA_SMP_M18.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    // 3B. Download Template Naskah Word (.doc) Siap Edit di MS Word
+    const handleDownloadWordTemplateM18 = () => {
+        const wordContent = `TEMPLATE NASKAH SOAL TRYOUT TKA SMP - SMA MUHAMMADIYAH 18 JAKARTA
+Petunjuk Penggunaan:
+1. Ganti bagian teks di bawah sesuai naskah soal Bapak/Ibu.
+2. Untuk berpindah mata pelajaran, gunakan tag [SUBTES: BINDO] atau [SUBTES: MTK].
+3. Jika soal memiliki wacana/bacaan panjang, apit dengan tag [STIMULUS] dan [/STIMULUS]. (Jika soal berikutnya tidak memakai wacana, tulis [STIMULUS][/STIMULUS]).
+4. Setelah selesai mengedit di Microsoft Word, blok semua (Ctrl+A), salin (Ctrl+C), lalu klik tombol "Impor Word" di web CBT dan tempel (Ctrl+V).
+
+====================================================================
+
+[SUBTES: BINDO]
+[STIMULUS]
+Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan. Selain sebagai benteng alami dari abrasi gelombang pasang, hutan bakau juga berfungsi sebagai penyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.
+[/STIMULUS]
+1. Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...
+A. Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.
+B. Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.
+C. Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.
+D. Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.
+KUNCI: B
+PEMBAHASAN: Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan sehingga efektif menekan emisi karbon penyebab perubahan iklim.
+
+[SUBTES: MTK]
+[STIMULUS]
+Menjelang tahun ajaran baru, koperasi sekolah memberikan diskon bertingkat untuk paket perlengkapan belajar. Setiap pembelian diberi diskon pertama sebesar 20%, dan khusus anggota koperasi mendapatkan tambahan diskon kedua sebesar 10% dari harga setelah diskon pertama.
+[/STIMULUS]
+2. Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal yang harus dibayarkan oleh siswa yang terdaftar sebagai anggota koperasi?
+A. Rp210.000
+B. Rp216.000
+C. Rp220.000
+D. Rp240.000
+KUNCI: B
+PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text{Rp}240.000$. Harga setelah diskon kedua (10%) = $240.000 \\times 90\\% = \\text{Rp}216.000$.
+`;
+
+        const blob = new Blob([wordContent], { type: "application/msword;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "Template_Naskah_Word_TKA_SMP_M18.doc");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -368,8 +420,8 @@ export default function BankSoalAdminPage() {
                 }
 
                 const stimMatch = block.match(/\[STIMULUS\]([\s\S]*?)\[\/STIMULUS\]/i);
-                if (stimMatch && stimMatch[1]) {
-                    currentStimulus = stimMatch[1].trim();
+                if (stimMatch) {
+                    currentStimulus = (stimMatch[1] || "").trim();
                 }
 
                 const qMatch = block.match(/\d+\.\s+([\s\S]*?)(?=(?:^[A-E]\.|\n[A-E]\.|\nKUNCI:))/m);
@@ -471,9 +523,9 @@ export default function BankSoalAdminPage() {
 
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 overflow-x-hidden">
-            {/* HEADER ATAS RESPONSIF HP & TABLET */}
+            {/* HEADER ATAS RESPONSIF */}
             <header className="bg-white border-b border-slate-200 py-3 sm:py-3.5 px-3 sm:px-6 lg:px-8 sticky top-0 z-30 shadow-xs">
-                <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                <div className="max-w-7xl mx-auto flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
                     {/* Baris Identitas Halaman */}
                     <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                         <Link
@@ -508,8 +560,8 @@ export default function BankSoalAdminPage() {
                         </div>
                     </div>
 
-                    {/* Toolbar Tombol Aksi (Grid 2 kolom di HP, Flex sejajar di Tablet/Desktop) */}
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                    {/* Toolbar Tombol Aksi */}
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full xl:w-auto justify-end">
                         <button
                             onClick={fetchQuestionsFromSupabase}
                             disabled={isLoading || isSaving}
@@ -524,8 +576,16 @@ export default function BankSoalAdminPage() {
                             onClick={handleDownloadCsvTemplateM18}
                             className="px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                         >
-                            <Download className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                            <Download className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                             <span className="truncate">Template CSV</span>
+                        </button>
+
+                        <button
+                            onClick={handleDownloadWordTemplateM18}
+                            className="px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                            <FileDown className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                            <span className="truncate">Template Word</span>
                         </button>
 
                         <button
@@ -568,7 +628,7 @@ export default function BankSoalAdminPage() {
                 </div>
             </header>
 
-            {/* KONTEN UTAMA RESPONSIF */}
+            {/* KONTEN UTAMA */}
             <main className="max-w-7xl w-full mx-auto p-3 sm:p-5 lg:p-6 space-y-4 sm:space-y-6">
                 {/* KARTU METRIK */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -602,17 +662,45 @@ export default function BankSoalAdminPage() {
 
                 {/* PANEL DAFTAR BANK SOAL */}
                 <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-4 text-left">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                         <div>
-                            <h2 className="text-sm sm:text-base font-black text-slate-900">Daftar Naskah Soal TKA SMP</h2>
+                            <h2 className="text-sm sm:text-base font-black text-slate-900">
+                                Daftar Naskah Soal TKA SMP ({filteredQuestions.length} Butir)
+                            </h2>
                             <p className="text-[11px] sm:text-xs text-slate-500">
-                                Ketuk ikon mata (Pratinjau) untuk memeriksa tampilan soal & rumus KaTeX seperti di layar ujian siswa.
+                                Periksa seluruh soal yang sudah terunggah secara utuh pada Mode Kartu Lengkap atau ringkas pada Mode Tabel.
                             </p>
                         </div>
 
-                        {/* Filter & Pencarian Responsif */}
+                        {/* Filter, Pencarian & Switch Mode Tampilan */}
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                            <div className="relative flex-1 sm:w-56">
+                            {/* Toggle Mode Tampilan */}
+                            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode("cards")}
+                                    className={`flex-1 sm:flex-none px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${viewMode === "cards"
+                                            ? "bg-white text-blue-700 shadow-2xs"
+                                            : "text-slate-600 hover:text-slate-900"
+                                        }`}
+                                >
+                                    <LayoutList className="w-3.5 h-3.5" />
+                                    <span>Kartu Lengkap</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode("table")}
+                                    className={`flex-1 sm:flex-none px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${viewMode === "table"
+                                            ? "bg-white text-blue-700 shadow-2xs"
+                                            : "text-slate-600 hover:text-slate-900"
+                                        }`}
+                                >
+                                    <TableIcon className="w-3.5 h-3.5" />
+                                    <span>Tabel</span>
+                                </button>
+                            </div>
+
+                            <div className="relative flex-1 sm:w-52">
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
                                     type="text"
@@ -635,32 +723,174 @@ export default function BankSoalAdminPage() {
                         </div>
                     </div>
 
-                    {/* Info Geser Tabel Khusus Layar HP */}
-                    <div className="sm:hidden text-[10px] font-mono text-slate-400 flex items-center justify-end">
-                        <span>← Geser tabel ke samping untuk melihat kunci & aksi →</span>
-                    </div>
+                    {/* KONTEN SOAL TERUNGGAH */}
+                    {isLoading ? (
+                        <div className="text-center py-12 text-slate-400 font-mono text-xs">
+                            Memuat bank soal dari Supabase...
+                        </div>
+                    ) : filteredQuestions.length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 font-medium space-y-2 px-4 border border-dashed border-slate-200 rounded-2xl">
+                            <FolderOpen className="w-8 h-8 mx-auto text-slate-300" />
+                            <p className="text-xs">
+                                Bank soal di Supabase masih kosong. Ketuk tombol <strong>Unggah CSV</strong> atau <strong>Impor Word</strong> untuk mengisi naskah.
+                            </p>
+                        </div>
+                    ) : viewMode === "cards" ? (
+                        /* MODE 1: KARTU LENGKAP (TAMPIL UTUH SEMUA SOAL, OPSI, KUNCI & PEMBAHASAN) */
+                        <div className="space-y-4">
+                            {filteredQuestions.map((q, idx) => {
+                                const code = normalizeSubtestCode(q.subtes_code);
+                                const isMath = code === "MTK";
+                                const optionsList = [
+                                    { key: "A", text: q.opsi_a },
+                                    { key: "B", text: q.opsi_b },
+                                    { key: "C", text: q.opsi_c },
+                                    { key: "D", text: q.opsi_d },
+                                    { key: "E", text: q.opsi_e }
+                                ].filter((opt) => opt.text !== undefined && opt.text !== null && String(opt.text).trim().length > 0);
 
-                    {/* Wrapper Tabel Horizontal Scroll Aman */}
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200 -mx-1 sm:mx-0">
-                        <table className="w-full text-left text-xs border-collapse min-w-[600px]">
-                            <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
-                                <tr>
-                                    <th className="p-3 w-12 text-center">No</th>
-                                    <th className="p-3 w-44">Mata Pelajaran</th>
-                                    <th className="p-3 min-w-[240px]">Konten Wacana / Pertanyaan</th>
-                                    <th className="p-3 w-16 sm:w-20 text-center">Kunci</th>
-                                    <th className="p-3 w-24 text-right">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 font-medium">
-                                {isLoading ? (
+                                return (
+                                    <div
+                                        key={q.id || idx}
+                                        className="p-4 sm:p-6 rounded-2xl border border-slate-200 bg-slate-50/40 hover:border-blue-300 transition space-y-3.5"
+                                    >
+                                        {/* Header Kartu Butir Soal */}
+                                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-mono text-xs font-black">
+                                                    NO. {q.no_soal || idx + 1}
+                                                </span>
+                                                <span
+                                                    className={`px-2.5 py-0.5 rounded-full font-mono text-[10.5px] font-bold border ${isMath
+                                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                            : "bg-blue-50 text-blue-800 border-blue-200"
+                                                        }`}
+                                                >
+                                                    {isMath ? "MTK • Matematika" : "BINDO • Bahasa Indonesia"}
+                                                </span>
+                                                {q.tingkat_kesukaran && (
+                                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] font-bold">
+                                                        {q.tingkat_kesukaran}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    onClick={() => setSelectedQuestionForPreview(q)}
+                                                    className="px-2.5 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                                    title="Buka Modal Pratinjau Layar Siswa"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                    <span>Layar Siswa</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteOne(q.id)}
+                                                    className="px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                                    title="Hapus Soal ini"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    <span>Hapus</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Gambar Above */}
+                                        {q.image_url && q.image_position === "above" && (
+                                            <div className="p-3 bg-white rounded-xl border border-slate-200 flex justify-center">
+                                                <img
+                                                    src={q.image_url}
+                                                    alt="Ilustrasi Soal"
+                                                    className="max-h-56 object-contain rounded-lg max-w-full"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Wacana Stimulus Utuh */}
+                                        {q.stimulus && (
+                                            <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line">
+                                                <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-1 flex items-center gap-1">
+                                                    <FileText className="w-3 h-3" /> Wacana / Stimulus:
+                                                </div>
+                                                <RenderLatex content={q.stimulus} />
+                                            </div>
+                                        )}
+
+                                        {/* Pertanyaan Utuh */}
+                                        <div className="font-bold text-slate-900 text-xs sm:text-sm leading-relaxed">
+                                            <RenderLatex content={q.pertanyaan} />
+                                        </div>
+
+                                        {/* Gambar Below */}
+                                        {q.image_url && q.image_position === "below" && (
+                                            <div className="p-3 bg-white rounded-xl border border-slate-200 flex justify-center">
+                                                <img
+                                                    src={q.image_url}
+                                                    alt="Ilustrasi Soal"
+                                                    className="max-h-56 object-contain rounded-lg max-w-full"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Opsi Jawaban A-E */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                                            {optionsList.map((opt) => {
+                                                const isKey = String(q.kunci || "").toUpperCase().trim() === opt.key;
+                                                return (
+                                                    <div
+                                                        key={opt.key}
+                                                        className={`p-2.5 sm:p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
+                                                                ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-bold"
+                                                                : "bg-white border-slate-200 text-slate-700"
+                                                            }`}
+                                                    >
+                                                        <span
+                                                            className={`w-6 h-6 rounded-lg font-mono font-bold flex items-center justify-center shrink-0 text-[11px] ${isKey ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
+                                                                }`}
+                                                        >
+                                                            {opt.key}
+                                                        </span>
+                                                        <div className="flex-1 pt-0.5 leading-relaxed">
+                                                            <RenderLatex content={opt.text} />
+                                                        </div>
+                                                        {isKey && (
+                                                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono text-[9px] font-bold uppercase shrink-0">
+                                                                KUNCI
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Pembahasan */}
+                                        {q.pembahasan && (
+                                            <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-xs text-amber-950">
+                                                <span className="font-mono font-bold text-[10px] text-amber-800 uppercase mr-1.5">
+                                                    Pembahasan:
+                                                </span>
+                                                <RenderLatex content={q.pembahasan} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        /* MODE 2: TABEL RINGKAS */
+                        <div className="overflow-x-auto rounded-2xl border border-slate-200 -mx-1 sm:mx-0">
+                            <table className="w-full text-left text-xs border-collapse min-w-[600px]">
+                                <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
                                     <tr>
-                                        <td colSpan={5} className="text-center py-10 text-slate-400 font-mono text-xs">
-                                            Memuat bank soal dari Supabase...
-                                        </td>
+                                        <th className="p-3 w-12 text-center">No</th>
+                                        <th className="p-3 w-44">Mata Pelajaran</th>
+                                        <th className="p-3 min-w-[240px]">Konten Wacana / Pertanyaan</th>
+                                        <th className="p-3 w-16 sm:w-20 text-center">Kunci</th>
+                                        <th className="p-3 w-24 text-right">Aksi</th>
                                     </tr>
-                                ) : (
-                                    filteredQuestions.map((q, idx) => {
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 font-medium">
+                                    {filteredQuestions.map((q, idx) => {
                                         const code = normalizeSubtestCode(q.subtes_code);
                                         const isMath = code === "MTK";
                                         return (
@@ -713,26 +943,15 @@ export default function BankSoalAdminPage() {
                                                 </td>
                                             </tr>
                                         );
-                                    })
-                                )}
-
-                                {!isLoading && filteredQuestions.length === 0 && (
-                                    <tr>
-                                        <td colSpan={5} className="text-center py-10 sm:py-12 text-slate-400 font-medium space-y-2 px-4">
-                                            <FolderOpen className="w-8 h-8 mx-auto text-slate-300" />
-                                            <p className="text-xs">
-                                                Bank soal di Supabase masih kosong. Ketuk tombol <strong>Unggah CSV</strong> atau <strong>Impor Word</strong> untuk mengisi naskah.
-                                            </p>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             </main>
 
-            {/* MODAL PRATINJAU SOAL RESPONSIF HP & TABLET */}
+            {/* MODAL PRATINJAU SOAL LAYAR SISWA */}
             {selectedQuestionForPreview && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl sm:rounded-3xl w-[96vw] sm:max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
@@ -754,7 +973,6 @@ export default function BankSoalAdminPage() {
                         </div>
 
                         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-left text-xs sm:text-sm leading-relaxed">
-                            {/* Gambar Above */}
                             {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "above" && (
                                 <div className="p-2.5 sm:p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
                                     <img
@@ -765,7 +983,6 @@ export default function BankSoalAdminPage() {
                                 </div>
                             )}
 
-                            {/* Wacana Stimulus */}
                             {selectedQuestionForPreview.stimulus && (
                                 <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line overflow-x-auto">
                                     <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-1.5 flex items-center gap-1.5">
@@ -775,12 +992,10 @@ export default function BankSoalAdminPage() {
                                 </div>
                             )}
 
-                            {/* Teks Pertanyaan */}
                             <div className="font-bold text-slate-900 text-sm sm:text-base leading-snug overflow-x-auto py-0.5">
                                 <RenderLatex content={selectedQuestionForPreview.pertanyaan} />
                             </div>
 
-                            {/* Gambar Below */}
                             {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "below" && (
                                 <div className="p-2.5 sm:p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
                                     <img
@@ -791,7 +1006,6 @@ export default function BankSoalAdminPage() {
                                 </div>
                             )}
 
-                            {/* Daftar Pilihan A - E */}
                             <div className="space-y-2 pt-1">
                                 {[
                                     { key: "A", text: selectedQuestionForPreview.opsi_a },
@@ -830,7 +1044,6 @@ export default function BankSoalAdminPage() {
                                     })}
                             </div>
 
-                            {/* Box Pembahasan */}
                             {selectedQuestionForPreview.pembahasan && (
                                 <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 space-y-1">
                                     <div className="font-mono font-bold text-[10px] text-amber-800 uppercase">
@@ -855,7 +1068,7 @@ export default function BankSoalAdminPage() {
                 </div>
             )}
 
-            {/* MODAL SALIN-TEMPEL DARI WORD RESPONSIF HP & TABLET */}
+            {/* MODAL SALIN-TEMPEL DARI WORD */}
             {showWordPasteModal && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
                     <div className="bg-white rounded-2xl sm:rounded-3xl w-[96vw] sm:max-w-3xl p-4 sm:p-6 space-y-3 sm:space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] flex flex-col text-left">
@@ -869,7 +1082,7 @@ export default function BankSoalAdminPage() {
                                         Salin-Tempel Teks Naskah Word (TKA SMP)
                                     </h3>
                                     <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-                                        Tempel teks naskah soal Bahasa Indonesia (BINDO) & Matematika (MTK) dari Word.
+                                        Unduh "Template Word" di bilah atas atau tempel langsung naskah soal Anda di bawah.
                                     </p>
                                 </div>
                             </div>
@@ -884,8 +1097,7 @@ export default function BankSoalAdminPage() {
                         <div className="p-2.5 sm:p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[10.5px] sm:text-[11px] text-blue-900 space-y-1 leading-relaxed shrink-0">
                             <strong>Aturan Format Salin-Tempel:</strong>
                             <p>
-                                Gunakan tag <code>[SUBTES: BINDO]</code> (atau <code>[SUBTES: BAHASA INDONESIA]</code>) dan{" "}
-                                <code>[SUBTES: MTK]</code> (atau <code>[SUBTES: MATEMATIKA]</code>), tag wacana{" "}
+                                Gunakan tag <code>[SUBTES: BINDO]</code> atau <code>[SUBTES: MTK]</code>, tag wacana{" "}
                                 <code>[STIMULUS]...[/STIMULUS]</code>, nomor soal <code>1. Pertanyaan</code>, opsi <code>A.</code>,{" "}
                                 <code>B.</code>, dan baris <code>KUNCI: B</code>.
                             </p>

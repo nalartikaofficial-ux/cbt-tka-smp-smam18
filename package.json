@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "kirim": "git add . && git commit -m \"Update CBT TKA SMP\" && git push origin main"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "clsx": "^2.1.1",
     "katex": "^0.18.10",
     "lucide-react": "^1.46.0",

@@ -38,6 +38,8 @@ import {
 const GOOGLE_SCRIPT_API_URL =
     "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
 
+const KKM_STANDARD = 75;
+
 export interface StudentItem {
     nisn: string;
     nama: string;
@@ -46,6 +48,8 @@ export interface StudentItem {
     status: string;
     violations: number;
     score: number;
+    bindoScore: number;
+    mtkScore: number;
     waktu_selesai?: string;
 }
 
@@ -75,14 +79,14 @@ export default function ProctorMasterDashboard() {
     const [filterKelas, setFilterKelas] = useState<string>("ALL");
     const [tokenCopied, setTokenCopied] = useState(false);
 
-    // Master Sesi Real-Time TKA SMP
+    // Master Sesi Real-Time Tryout TKA SMP
     const [masterSession, setMasterSession] = useState<MasterSession>({
         paket_aktif: "PAKET_1",
-        nama_paket: "Simulasi Terstandarisasi TKA SMP 2026",
+        nama_paket: "Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK) 2026",
         token_resmi: "TKA18",
         status_akses: "DIBUKA",
-        waktu_mulai: "2026-11-06T07:30",
-        waktu_selesai: "2026-11-06T11:30"
+        waktu_mulai: "2026-11-18T07:30",
+        waktu_selesai: "2026-11-18T11:30"
     });
     const [isSavingSchedule, setIsSavingSchedule] = useState(false);
     const [customMinutes, setCustomMinutes] = useState<number>(5);
@@ -104,8 +108,9 @@ export default function ProctorMasterDashboard() {
 
     const [bapData, setBapData] = useState({
         nomorSurat: "118/BAP-TKA-SMP/SMA-M18/2026",
-        ruangUjian: "Laboratorium Komputer CBT",
-        catatanKhusus: "Simulasi TKA SMP terlaksana tertib dan lancar. Sistem proteksi Kiosk anti-cheat aktif tanpa kendala latensi server.",
+        ruangUjian: "Laboratorium Komputer CBT SMA Muhammadiyah 18 Jakarta",
+        catatanKhusus:
+            "Pelaksanaan Tryout Tes Kemampuan Akademik (TKA) Jenjang SMP (Mata Pelajaran Bahasa Indonesia & Matematika) berjalan tertib dan lancar. Sistem proteksi Kiosk anti-cheat aktif tanpa kendala latensi server.",
         kepalaSekolahNama: "Drs. H. Ahmad Dahlan, M.Pd.",
         kepalaSekolahNbm: "882.118.001",
         pengawasNama: "Fadhillah Umar, S.Pd.",
@@ -126,8 +131,12 @@ export default function ProctorMasterDashboard() {
                 if (json.status === "success" && json.data) {
                     setMasterSession({
                         ...json.data,
-                        waktu_mulai: json.data.waktu_mulai ? String(json.data.waktu_mulai).substring(0, 16) : "2026-11-06T07:30",
-                        waktu_selesai: json.data.waktu_selesai ? String(json.data.waktu_selesai).substring(0, 16) : "2026-11-06T11:30"
+                        waktu_mulai: json.data.waktu_mulai
+                            ? String(json.data.waktu_mulai).substring(0, 16)
+                            : "2026-11-18T07:30",
+                        waktu_selesai: json.data.waktu_selesai
+                            ? String(json.data.waktu_selesai).substring(0, 16)
+                            : "2026-11-18T11:30"
                     });
                 }
             }
@@ -155,19 +164,27 @@ export default function ProctorMasterDashboard() {
                 const json = JSON.parse(rawText);
                 if (json.status === "success" && Array.isArray(json.data)) {
                     const cleanList: StudentItem[] = json.data.map((item: any) => {
-                        const rawScore = Number(item.score || item.skor_irt || item.totalScore || 0);
-                        const normalizedScore = rawScore > 100
-                            ? Math.min(100, Math.max(0, Math.round(((rawScore - 200) / 600) * 100)))
-                            : rawScore;
+                        const rawScore = Number(item.score ?? item.totalScore ?? item.skor_irt ?? 0);
+                        const normalizedScore =
+                            rawScore > 100
+                                ? Math.min(100, Math.max(0, Math.round(((rawScore - 200) / 600) * 100)))
+                                : Math.round(rawScore);
+
+                        const bindoVal = Math.round(Number(item.bindoScore ?? item.indoScore ?? normalizedScore));
+                        const mtkVal = Math.round(Number(item.mtkScore ?? item.mathScore ?? normalizedScore));
 
                         return {
-                            nisn: String(item.nisn || "").replace(/\D/g, "").trim(),
-                            nama: String(item.nama || item.nama_siswa || "").trim(),
+                            nisn: String(item.nisn || item.phone || "").replace(/\D/g, "").trim(),
+                            nama: String(item.nama || item.name || item.nama_siswa || "").trim(),
                             kelas: String(item.kelas || item.grade || "9").trim(),
                             asalSekolah: String(item.sekolah || item.school || "").trim(),
-                            status: String(item.status || item.status_ujian || "Belum Hadir").trim(),
+                            status: String(
+                                item.status || item.status_ujian || (normalizedScore > 0 ? "Selesai" : "Belum Hadir")
+                            ).trim(),
                             violations: Number(item.violations || item.pelanggaran || 0),
                             score: normalizedScore,
+                            bindoScore: bindoVal,
+                            mtkScore: mtkVal,
                             waktu_selesai: String(item.waktu_selesai || item.submittedAt || "-").trim()
                         };
                     });
@@ -208,7 +225,7 @@ export default function ProctorMasterDashboard() {
                 router.replace("/admin");
             }
         }
-    }, []);
+    }, [router]);
 
     useEffect(() => {
         if (!isAuthorized) return;
@@ -255,7 +272,7 @@ export default function ProctorMasterDashboard() {
             if (customPayload) {
                 setMasterSession((prev) => ({ ...prev, ...customPayload }));
             }
-            alert("Jadwal dan sesi ujian TKA SMP berhasil diperbarui ke server.");
+            alert("Jadwal dan sesi Tryout TKA SMP berhasil diperbarui ke server.");
         } catch {
             alert("Gagal menyimpan jadwal.");
         } finally {
@@ -349,7 +366,7 @@ export default function ProctorMasterDashboard() {
         setStudents((prev) =>
             prev.map((s) =>
                 s.nisn === student.nisn
-                    ? { ...s, status: "Belum Hadir", violations: 0, score: 0, waktu_selesai: "-" }
+                    ? { ...s, status: "Belum Hadir", violations: 0, score: 0, bindoScore: 0, mtkScore: 0, waktu_selesai: "-" }
                     : s
             )
         );
@@ -372,11 +389,11 @@ export default function ProctorMasterDashboard() {
         const cleanKelas = newKelas.trim().toUpperCase();
 
         if (!cleanNisn || cleanNisn.length < 8) {
-            alert("NISN wajib berupa angka resmi (8-10 digit)!");
+            alert("ID / No. WhatsApp / NISN wajib berupa angka resmi (minimal 8 digit)!");
             return;
         }
         if (!cleanNama || !cleanKelas) {
-            alert("Lengkapi Nama Siswa dan Kelas!");
+            alert("Lengkapi Nama Siswa dan Kelas / Asal SMP!");
             return;
         }
 
@@ -388,7 +405,9 @@ export default function ProctorMasterDashboard() {
             kelas: cleanKelas,
             status: "Belum Hadir",
             violations: 0,
-            score: 0
+            score: 0,
+            bindoScore: 0,
+            mtkScore: 0
         };
 
         setStudents((prev) => [...prev.filter((s) => s.nisn !== cleanNisn), localItem]);
@@ -439,7 +458,9 @@ export default function ProctorMasterDashboard() {
                             kelas: kelas.trim(),
                             status: "Belum Hadir",
                             violations: 0,
-                            score: 0
+                            score: 0,
+                            bindoScore: 0,
+                            mtkScore: 0
                         });
                     }
                 }
@@ -574,10 +595,12 @@ export default function ProctorMasterDashboard() {
 
     const filteredStudents = useMemo(() => {
         return students.filter((s) => {
+            const q = searchQuery.toLowerCase();
             const matchSearch =
-                s.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                s.nama.toLowerCase().includes(q) ||
                 s.nisn.includes(searchQuery) ||
-                s.kelas.toLowerCase().includes(searchQuery.toLowerCase());
+                s.kelas.toLowerCase().includes(q) ||
+                (s.asalSekolah && s.asalSekolah.toLowerCase().includes(q));
 
             let matchStatus = true;
             if (filterStatus !== "ALL") {
@@ -589,10 +612,11 @@ export default function ProctorMasterDashboard() {
         });
     }, [students, searchQuery, filterStatus, filterKelas]);
 
+    // Ambang Predikat Capaian Kompetensi (100% Identik dengan Exam & Result)
     const getCompetencyBadge = (score: number) => {
-        if (score >= 85) return { label: "MAHIR", color: "bg-emerald-100 text-emerald-800 border-emerald-300" };
-        if (score >= 70) return { label: "CAKAP", color: "bg-blue-100 text-blue-800 border-blue-300" };
-        if (score >= 54) return { label: "DASAR", color: "bg-amber-100 text-amber-800 border-amber-300" };
+        if (score >= 86) return { label: "MAHIR", color: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+        if (score >= 71) return { label: "CAKAP", color: "bg-blue-100 text-blue-800 border-blue-300" };
+        if (score >= 55) return { label: "DASAR", color: "bg-amber-100 text-amber-800 border-amber-300" };
         return { label: "INTERVENSI", color: "bg-rose-100 text-rose-800 border-rose-300" };
     };
 
@@ -601,7 +625,7 @@ export default function ProctorMasterDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-100 print:bg-white print:min-h-0 flex flex-col font-sans text-slate-800">
+        <div className="min-h-screen bg-slate-100 print:bg-white print:min-h-0 flex flex-col font-sans text-slate-800 overflow-x-hidden">
             {/* CSS CETAK RESMI STANDAR DINAS A4 */}
             <style
                 dangerouslySetInnerHTML={{
@@ -674,13 +698,13 @@ export default function ProctorMasterDashboard() {
                                 alt="Logo SMA Muhammadiyah 18 Jakarta"
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
-                                    (e.target as any).src = "/images/logo-smam18.png";
+                                    (e.target as HTMLElement).style.display = "none";
                                 }}
                             />
                         </div>
                         <div className="min-w-0">
                             <div className="text-xs sm:text-sm font-black text-slate-900 tracking-tight uppercase truncate">
-                                PUSAT KOMANDO PROKTOR &bull; TKA SMP
+                                PUSAT KOMANDO PROKTOR • TRYOUT TKA SMP
                             </div>
                             <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">
                                 Pengawas Aktif: <strong className="text-blue-700">{currentProctor.nama}</strong> ({currentProctor.role.toUpperCase()})
@@ -693,8 +717,8 @@ export default function ProctorMasterDashboard() {
                             type="button"
                             onClick={toggleSessionLock}
                             className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all ${masterSession.status_akses === "DIBUKA"
-                                ? "bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100"
-                                : "bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
+                                    ? "bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100"
+                                    : "bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
                                 }`}
                         >
                             {masterSession.status_akses === "DIBUKA" ? (
@@ -735,7 +759,6 @@ export default function ProctorMasterDashboard() {
             </header>
 
             <div className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6 print:p-0 print:m-0 print:space-y-0 print:w-full print:max-w-none text-left">
-
                 {/* 1. MASTER PANEL TOKEN & PENJADWALAN */}
                 <div className="print-hidden bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-3xl p-4 sm:p-7 text-white shadow-lg space-y-4 sm:space-y-5">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/10 pb-3 sm:pb-4">
@@ -745,17 +768,17 @@ export default function ProctorMasterDashboard() {
                             </div>
                             <div>
                                 <div className="text-[9.5px] sm:text-[10px] font-mono font-bold tracking-widest text-amber-300 uppercase">
-                                    PENGATURAN RUANG UJIAN TERPUSAT
+                                    PENGATURAN RUANG UJIAN TERPUSAT (BINDO & MTK)
                                 </div>
                                 <h2 className="text-base sm:text-xl font-black text-white">
-                                    Token Resmi Sesi TKA SMP
+                                    Token Resmi Sesi Tryout TKA SMP
                                 </h2>
                                 <p className="text-[11px] sm:text-xs text-blue-200">
                                     Status Sesi:{" "}
                                     <strong
                                         className={`px-2 py-0.5 rounded font-mono text-[10px] sm:text-[11px] ${masterSession.status_akses === "DIBUKA"
-                                            ? "bg-emerald-500/30 text-emerald-300 border border-emerald-400/40"
-                                            : "bg-rose-500/30 text-rose-300 border border-rose-400/40"
+                                                ? "bg-emerald-500/30 text-emerald-300 border border-emerald-400/40"
+                                                : "bg-rose-500/30 text-rose-300 border border-rose-400/40"
                                             }`}
                                     >
                                         {masterSession.status_akses}
@@ -806,13 +829,13 @@ export default function ProctorMasterDashboard() {
 
                     <form onSubmit={handleUpdateSchedule} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-3.5 text-xs">
                         <div className="sm:col-span-1 lg:col-span-3 space-y-1">
-                            <label className="text-[10.5px] sm:text-[11px] font-bold text-slate-300 font-mono">PAKET SOAL:</label>
+                            <label className="text-[10.5px] sm:text-[11px] font-bold text-slate-300 font-mono">PAKET SOAL TKA SMP:</label>
                             <select
                                 value={masterSession.paket_aktif}
                                 onChange={(e: any) => setMasterSession({ ...masterSession, paket_aktif: e.target.value })}
                                 className="w-full px-3 py-2 sm:py-2.5 rounded-xl bg-white/10 border border-white/20 text-white font-bold font-mono text-xs outline-none focus:bg-white/20 cursor-pointer"
                             >
-                                <option value="PAKET_1" className="text-slate-900">PAKET 1 (Reguler TKA SMP)</option>
+                                <option value="PAKET_1" className="text-slate-900">PAKET 1 (Reguler BINDO & MTK)</option>
                                 <option value="PAKET_2" className="text-slate-900">PAKET 2 (Alternatif)</option>
                                 <option value="PAKET_3" className="text-slate-900">PAKET 3 (Susulan)</option>
                             </select>
@@ -963,7 +986,7 @@ export default function ProctorMasterDashboard() {
                             }`}
                     >
                         <Award className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span className="truncate">Rekap Nilai Asesmen</span>
+                        <span className="truncate">Buku Nilai (0–100)</span>
                     </button>
                 </div>
 
@@ -973,9 +996,9 @@ export default function ProctorMasterDashboard() {
                         <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-5 shadow-sm">
                             <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                                 <div>
-                                    <h3 className="text-sm sm:text-base font-black text-slate-900">Input Peserta Simulasi TKA SMP</h3>
+                                    <h3 className="text-sm sm:text-base font-black text-slate-900">Input Peserta Tryout TKA SMP</h3>
                                     <p className="text-[11px] sm:text-xs text-slate-500">
-                                        Masukkan NISN (8–10 digit), Nama Lengkap, dan Tingkat Kelas/Asal SMP.
+                                        Masukkan ID / NISN / No. WA (8–14 digit), Nama Lengkap, dan Kelas / Asal SMP.
                                     </p>
                                 </div>
                                 <button
@@ -990,13 +1013,13 @@ export default function ProctorMasterDashboard() {
 
                             <form onSubmit={handleAddStudent} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-3.5 text-xs">
                                 <div className="sm:col-span-1 lg:col-span-4 space-y-1">
-                                    <label className="font-bold text-slate-700 font-mono text-[10.5px] sm:text-xs">NISN (8-10 DIGIT):</label>
+                                    <label className="font-bold text-slate-700 font-mono text-[10.5px] sm:text-xs">ID / NISN / NO. WA:</label>
                                     <input
                                         type="text"
                                         required
                                         inputMode="numeric"
-                                        maxLength={10}
-                                        placeholder="Contoh: 0098765432"
+                                        maxLength={14}
+                                        placeholder="Contoh: 0098765432 / 0812..."
                                         value={newNisn}
                                         onChange={(e) => setNewNisn(e.target.value.replace(/\D/g, ""))}
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-bold focus:border-blue-600 outline-none text-xs"
@@ -1059,7 +1082,7 @@ export default function ProctorMasterDashboard() {
                                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                         <input
                                             type="text"
-                                            placeholder="Cari NISN / Nama..."
+                                            placeholder="Cari ID / Nama..."
                                             value={searchQuery}
                                             onChange={(e) => setSearchQuery(e.target.value)}
                                             className="w-full sm:w-auto pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
@@ -1071,7 +1094,7 @@ export default function ProctorMasterDashboard() {
                                         onChange={(e) => setFilterKelas(e.target.value)}
                                         className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold outline-none bg-white cursor-pointer"
                                     >
-                                        <option value="ALL">Semua Kelas</option>
+                                        <option value="ALL">Semua Kelas / SMP</option>
                                         {availableClasses.map((cls) => (
                                             <option key={cls} value={cls}>
                                                 {cls}
@@ -1086,7 +1109,7 @@ export default function ProctorMasterDashboard() {
                                     <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
                                         <tr>
                                             <th className="p-3 w-12">No</th>
-                                            <th className="p-3">NISN</th>
+                                            <th className="p-3">ID / NISN / WA</th>
                                             <th className="p-3">Nama Lengkap</th>
                                             <th className="p-3">Kelas / Asal SMP</th>
                                             <th className="p-3">Status</th>
@@ -1099,16 +1122,18 @@ export default function ProctorMasterDashboard() {
                                                 <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
                                                 <td className="p-3 font-mono font-bold text-slate-800">{s.nisn}</td>
                                                 <td className="p-3 font-bold text-slate-900">{s.nama}</td>
-                                                <td className="p-3 font-mono font-bold text-blue-700">{s.kelas}</td>
+                                                <td className="p-3 font-mono font-bold text-blue-700">
+                                                    {s.asalSekolah ? `${s.asalSekolah} (${s.kelas})` : s.kelas}
+                                                </td>
                                                 <td className="p-3">
                                                     <span
                                                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${s.status.toLowerCase().includes("mengerjakan")
-                                                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                                            : s.status.toLowerCase().includes("selesai") || s.score > 0
-                                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                                : s.status.toLowerCase().includes("kunci") || s.violations >= 3
-                                                                    ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                                                    : "bg-slate-100 text-slate-600 border border-slate-200"
+                                                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                                                : s.status.toLowerCase().includes("selesai") || s.score > 0
+                                                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                                    : s.status.toLowerCase().includes("kunci") || s.violations >= 3
+                                                                        ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                                                        : "bg-slate-100 text-slate-600 border border-slate-200"
                                                             }`}
                                                     >
                                                         {s.status}
@@ -1171,7 +1196,7 @@ export default function ProctorMasterDashboard() {
                                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                     <input
                                         type="text"
-                                        placeholder="Cari NISN / Nama..."
+                                        placeholder="Cari ID / Nama..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full sm:w-auto pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
@@ -1195,9 +1220,9 @@ export default function ProctorMasterDashboard() {
                             <table className="w-full text-left text-xs border-collapse min-w-[720px]">
                                 <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
                                     <tr>
-                                        <th className="p-3">NISN</th>
+                                        <th className="p-3">ID / NISN / WA</th>
                                         <th className="p-3">Nama Peserta</th>
-                                        <th className="p-3">Kelas / SMP</th>
+                                        <th className="p-3">Kelas / Asal SMP</th>
                                         <th className="p-3">Status Pengerjaan</th>
                                         <th className="p-3">Pelanggaran Kiosk</th>
                                         <th className="p-3 text-right">Aksi Pengawas (Kendali Penuh)</th>
@@ -1213,7 +1238,9 @@ export default function ProctorMasterDashboard() {
                                             <tr key={s.nisn} className="hover:bg-slate-50/70">
                                                 <td className="p-3 font-mono font-bold text-slate-800">{s.nisn}</td>
                                                 <td className="p-3 font-bold text-slate-900">{s.nama}</td>
-                                                <td className="p-3 font-mono text-slate-600 font-semibold">{s.kelas}</td>
+                                                <td className="p-3 font-mono text-slate-600 font-semibold">
+                                                    {s.asalSekolah ? `${s.asalSekolah} (${s.kelas})` : s.kelas}
+                                                </td>
                                                 <td className="p-3">
                                                     {isWorking && (
                                                         <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[10px] inline-flex items-center gap-1.5 shadow-2xs">
@@ -1288,7 +1315,7 @@ export default function ProctorMasterDashboard() {
                     </div>
                 )}
 
-                {/* TAB 3: BERITA ACARA UJIAN (BAP TKA SMP) */}
+                {/* TAB 3: BERITA ACARA UJIAN (BAP TRYOUT TKA SMP) */}
                 {activeTab === "bap" && (
                     <div className="space-y-4 sm:space-y-6">
                         <div className="print-hidden bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 sm:space-y-5">
@@ -1299,7 +1326,7 @@ export default function ProctorMasterDashboard() {
                                         <span>Pengaturan Berita Acara Pelaksanaan (BAP)</span>
                                     </h3>
                                     <p className="text-[11px] sm:text-xs text-slate-500">
-                                        Kop surat, data statistik, dan penandatangan dokumen terisi otomatis sesuai format asesmen.
+                                        Kop surat, data statistik, dan penandatangan dokumen terisi otomatis sesuai format resmi Tryout TKA SMP.
                                     </p>
                                 </div>
                                 <button
@@ -1432,7 +1459,7 @@ export default function ProctorMasterDashboard() {
                                             alt="Logo SMA Muhammadiyah 18"
                                             className="w-full h-full object-contain"
                                             onError={(e) => {
-                                                (e.target as any).src = "/images/logo-smam18.png";
+                                                (e.target as HTMLElement).style.display = "none";
                                             }}
                                         />
                                     </div>
@@ -1447,7 +1474,7 @@ export default function ProctorMasterDashboard() {
                                             SMA MUHAMMADIYAH 18 JAKARTA
                                         </h1>
                                         <p className="text-[10px] sm:text-[11px] font-bold tracking-widest font-mono uppercase text-slate-700">
-                                            STATUS: TERAKREDITASI &quot;A&quot;
+                                            STATUS: TERAKREDITASI "A"
                                         </p>
                                         <p className="text-[9.5px] sm:text-[10px] text-slate-600 font-sans leading-tight">
                                             Jl. Panjang No. 19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp: (021) 7235544
@@ -1461,24 +1488,37 @@ export default function ProctorMasterDashboard() {
 
                             <div className="text-center space-y-1 pt-1 min-w-[560px] sm:min-w-0">
                                 <h2 className="text-sm sm:text-base font-bold underline uppercase tracking-wide">
-                                    BERITA ACARA PELAKSANAAN SIMULASI TES KEMAMPUAN AKADEMIK (TKA) SMP
+                                    BERITA ACARA PELAKSANAAN TRYOUT TES KEMAMPUAN AKADEMIK (TKA) JENJANG SMP
                                 </h2>
-                                <p className="text-xs font-mono font-bold">
-                                    Nomor: {bapData.nomorSurat}
-                                </p>
+                                <p className="text-xs font-mono font-bold">Nomor: {bapData.nomorSurat}</p>
                             </div>
 
                             <div className="text-xs leading-relaxed space-y-3.5 text-justify min-w-[560px] sm:min-w-0">
                                 <p>
-                                    Pada hari ini, <strong>{new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</strong>,
-                                    telah diselenggarakan Uji Coba Simulasi Terstandarisasi Tes Kemampuan Akademik (TKA) SMP Tahun Pelajaran 2026/2027 berbasis Computer-Based Test (CBT) di lingkungan <strong>SMA Muhammadiyah 18 Jakarta</strong> dengan ketentuan pelaksanaan sebagai berikut:
+                                    Pada hari ini,{" "}
+                                    <strong>
+                                        {new Date().toLocaleDateString("id-ID", {
+                                            weekday: "long",
+                                            day: "numeric",
+                                            month: "long",
+                                            year: "numeric"
+                                        })}
+                                    </strong>
+                                    , telah diselenggarakan Tryout Terstandarisasi Tes Kemampuan Akademik (TKA) Jenjang SMP (Mata Pelajaran Bahasa Indonesia & Matematika) Tahun Pelajaran 2026/2027 berbasis Computer-Based Test (CBT) di lingkungan{" "}
+                                    <strong>SMA Muhammadiyah 18 Jakarta</strong> dengan ketentuan pelaksanaan sebagai berikut:
                                 </p>
 
                                 <table className="print-table text-xs">
                                     <tbody>
                                         <tr>
                                             <td className="w-1/4 font-semibold">Paket Soal Ujian</td>
-                                            <td className="w-3/4 font-bold font-mono">{masterSession.paket_aktif} &mdash; {masterSession.nama_paket}</td>
+                                            <td className="w-3/4 font-bold font-mono">
+                                                {masterSession.paket_aktif} — {masterSession.nama_paket}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td className="font-semibold">Mata Pelajaran Uji</td>
+                                            <td>1. Bahasa Indonesia (BINDO) • 2. Matematika (MTK)</td>
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Ruang / Tempat Ujian</td>
@@ -1486,7 +1526,9 @@ export default function ProctorMasterDashboard() {
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Waktu Pelaksanaan</td>
-                                            <td>{masterSession.waktu_mulai.replace("T", " ")} s.d. {masterSession.waktu_selesai.replace("T", " ")} WIB</td>
+                                            <td>
+                                                {masterSession.waktu_mulai.replace("T", " ")} s.d. {masterSession.waktu_selesai.replace("T", " ")} WIB
+                                            </td>
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Token Resmi Sesi</td>
@@ -1514,7 +1556,7 @@ export default function ProctorMasterDashboard() {
                                 <div>
                                     <p className="font-bold mb-1">Catatan Khusus Selama Pelaksanaan Ujian:</p>
                                     <div className="p-3 border border-black min-h-[45px] text-xs italic">
-                                        &ldquo;{bapData.catatanKhusus}&rdquo;
+                                        “{bapData.catatanKhusus}”
                                     </div>
                                 </div>
 
@@ -1544,14 +1586,18 @@ export default function ProctorMasterDashboard() {
                     </div>
                 )}
 
-                {/* TAB 4: REKAPITULASI NILAI STANDAR NASIONAL (0–100) */}
+                {/* TAB 4: REKAPITULASI NILAI TKA SMP (SKALA 0–100) */}
                 {activeTab === "scores" && (
                     <div className="space-y-4 sm:space-y-6">
                         <div className="print-hidden bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-7 space-y-4 shadow-sm">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
                                 <div>
-                                    <h3 className="text-sm sm:text-base font-black text-slate-900">Buku Nilai Rekapitulasi TKA SMP</h3>
-                                    <p className="text-[11px] sm:text-xs text-slate-500">Skala capaian kompetensi standar nasional: 0 s.d. 100.</p>
+                                    <h3 className="text-sm sm:text-base font-black text-slate-900">
+                                        Buku Nilai Rekapitulasi Tryout TKA SMP
+                                    </h3>
+                                    <p className="text-[11px] sm:text-xs text-slate-500">
+                                        Skala nilai terstandar 0–100 (KKM {KKM_STANDARD}) mencakup Bahasa Indonesia (BINDO) & Matematika (MTK).
+                                    </p>
                                 </div>
                                 <button
                                     onClick={() => window.print()}
@@ -1563,17 +1609,19 @@ export default function ProctorMasterDashboard() {
                             </div>
 
                             <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                                <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                                <table className="w-full text-left text-xs border-collapse min-w-[780px]">
                                     <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
                                         <tr>
-                                            <th className="p-3">Peringkat</th>
-                                            <th className="p-3">NISN</th>
+                                            <th className="p-3">Rank</th>
+                                            <th className="p-3">ID / NISN</th>
                                             <th className="p-3">Nama Peserta</th>
-                                            <th className="p-3">Kelas / Asal SMP</th>
-                                            <th className="p-3 text-center">Skor (0–100)</th>
-                                            <th className="p-3 text-center">Tingkat Kompetensi</th>
-                                            <th className="p-3">Integritas</th>
-                                            <th className="p-3 text-center">Waktu Selesai</th>
+                                            <th className="p-3">Kelas / SMP</th>
+                                            <th className="p-3 text-center">BINDO</th>
+                                            <th className="p-3 text-center">MTK</th>
+                                            <th className="p-3 text-center">Nilai Akhir</th>
+                                            <th className="p-3 text-center">KKM ({KKM_STANDARD})</th>
+                                            <th className="p-3 text-center">Predikat</th>
+                                            <th className="p-3 text-center">Waktu</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 font-medium">
@@ -1581,25 +1629,32 @@ export default function ProctorMasterDashboard() {
                                             .filter((s) => s.status.toLowerCase().includes("selesai") || Number(s.score) > 0)
                                             .sort((a, b) => Number(b.score) - Number(a.score))
                                             .map((s, idx) => {
-                                                const scoreVal = Number(s.score || 0);
+                                                const scoreVal = Math.round(Number(s.score || 0));
                                                 const comp = getCompetencyBadge(scoreVal);
+                                                const isTuntas = scoreVal >= KKM_STANDARD;
 
                                                 return (
                                                     <tr key={s.nisn} className="hover:bg-slate-50">
                                                         <td className="p-3 font-mono font-bold text-blue-700">#{idx + 1}</td>
                                                         <td className="p-3 font-mono font-bold">{s.nisn}</td>
                                                         <td className="p-3 font-bold text-slate-900">{s.nama}</td>
-                                                        <td className="p-3 font-mono text-slate-600">{s.kelas}</td>
+                                                        <td className="p-3 font-mono text-slate-600">
+                                                            {s.asalSekolah ? `${s.asalSekolah} (${s.kelas})` : s.kelas}
+                                                        </td>
+                                                        <td className="p-3 font-mono text-center text-slate-700">{s.bindoScore}</td>
+                                                        <td className="p-3 font-mono text-center text-slate-700">{s.mtkScore}</td>
                                                         <td className="p-3 font-mono font-black text-xs sm:text-sm text-blue-800 text-center">
-                                                            {scoreVal.toFixed(0)}
+                                                            {scoreVal}
+                                                        </td>
+                                                        <td className="p-3 text-center font-bold text-[10.5px]">
+                                                            <span className={isTuntas ? "text-emerald-700" : "text-rose-700"}>
+                                                                {isTuntas ? "Tuntas" : "Belum Tuntas"}
+                                                            </span>
                                                         </td>
                                                         <td className="p-3 text-center">
                                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${comp.color}`}>
                                                                 {comp.label}
                                                             </span>
-                                                        </td>
-                                                        <td className="p-3 text-emerald-700 font-bold">
-                                                            {s.violations === 0 ? "Tertib (0)" : `${s.violations}x Pelanggaran`}
                                                         </td>
                                                         <td className="p-3 font-mono text-center text-slate-500">
                                                             {s.waktu_selesai || "-"}
@@ -1607,13 +1662,14 @@ export default function ProctorMasterDashboard() {
                                                     </tr>
                                                 );
                                             })}
-                                        {students.filter((s) => s.status.toLowerCase().includes("selesai") || Number(s.score) > 0).length === 0 && (
-                                            <tr>
-                                                <td colSpan={8} className="text-center py-6 text-slate-400 font-medium">
-                                                    Belum ada peserta yang menyelesaikan simulasi pada sesi ini.
-                                                </td>
-                                            </tr>
-                                        )}
+                                        {students.filter((s) => s.status.toLowerCase().includes("selesai") || Number(s.score) > 0).length ===
+                                            0 && (
+                                                <tr>
+                                                    <td colSpan={10} className="text-center py-6 text-slate-400 font-medium">
+                                                        Belum ada peserta yang menyelesaikan Tryout TKA SMP pada sesi ini.
+                                                    </td>
+                                                </tr>
+                                            )}
                                     </tbody>
                                 </table>
                             </div>
@@ -1629,7 +1685,7 @@ export default function ProctorMasterDashboard() {
                                             alt="Logo SMA Muhammadiyah 18"
                                             className="w-full h-full object-contain"
                                             onError={(e) => {
-                                                (e.target as any).src = "/images/logo-smam18.png";
+                                                (e.target as HTMLElement).style.display = "none";
                                             }}
                                         />
                                     </div>
@@ -1641,7 +1697,7 @@ export default function ProctorMasterDashboard() {
                                             SMA MUHAMMADIYAH 18 JAKARTA
                                         </h1>
                                         <p className="text-[10px] text-slate-600">
-                                            REKAPITULASI HASIL ASESMEN SIMULASI TKA SMP TAHUN PELAJARAN 2026/2027
+                                            REKAPITULASI HASIL TRYOUT TES KEMAMPUAN AKADEMIK (TKA) JENJANG SMP TAHUN PELAJARAN 2026/2027
                                         </p>
                                     </div>
                                     <div className="w-16 shrink-0" />
@@ -1653,14 +1709,15 @@ export default function ProctorMasterDashboard() {
                             <table className="print-table text-xs mt-3">
                                 <thead>
                                     <tr>
-                                        <th style={{ width: "35px" }}>No</th>
-                                        <th style={{ width: "95px" }}>NISN</th>
+                                        <th style={{ width: "32px" }}>No</th>
+                                        <th style={{ width: "85px" }}>ID / NISN</th>
                                         <th>Nama Lengkap Peserta</th>
-                                        <th style={{ width: "85px" }}>Kelas / SMP</th>
-                                        <th style={{ width: "80px" }}>Skor (0-100)</th>
-                                        <th style={{ width: "95px" }}>Kompetensi</th>
-                                        <th style={{ width: "85px" }}>Integritas</th>
-                                        <th style={{ width: "70px" }}>Waktu</th>
+                                        <th style={{ width: "95px" }}>Kelas / SMP</th>
+                                        <th style={{ width: "50px" }}>BINDO</th>
+                                        <th style={{ width: "50px" }}>MTK</th>
+                                        <th style={{ width: "60px" }}>Nilai</th>
+                                        <th style={{ width: "75px" }}>KKM ({KKM_STANDARD})</th>
+                                        <th style={{ width: "80px" }}>Predikat</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1668,19 +1725,23 @@ export default function ProctorMasterDashboard() {
                                         .filter((s) => s.status.toLowerCase().includes("selesai") || Number(s.score) > 0)
                                         .sort((a, b) => Number(b.score) - Number(a.score))
                                         .map((s, idx) => {
-                                            const scoreVal = Number(s.score || 0);
+                                            const scoreVal = Math.round(Number(s.score || 0));
                                             const comp = getCompetencyBadge(scoreVal);
+                                            const isTuntas = scoreVal >= KKM_STANDARD;
 
                                             return (
                                                 <tr key={s.nisn}>
                                                     <td style={{ textAlign: "center" }}>{idx + 1}</td>
                                                     <td style={{ fontFamily: "monospace", textAlign: "center" }}>{s.nisn}</td>
                                                     <td style={{ fontWeight: "bold" }}>{s.nama}</td>
-                                                    <td style={{ textAlign: "center" }}>{s.kelas}</td>
-                                                    <td style={{ textAlign: "center", fontWeight: "bold" }}>{scoreVal.toFixed(0)}</td>
+                                                    <td style={{ textAlign: "center" }}>
+                                                        {s.asalSekolah ? `${s.asalSekolah} (${s.kelas})` : s.kelas}
+                                                    </td>
+                                                    <td style={{ textAlign: "center" }}>{s.bindoScore}</td>
+                                                    <td style={{ textAlign: "center" }}>{s.mtkScore}</td>
+                                                    <td style={{ textAlign: "center", fontWeight: "bold" }}>{scoreVal}</td>
+                                                    <td style={{ textAlign: "center" }}>{isTuntas ? "Tuntas" : "Belum"}</td>
                                                     <td style={{ textAlign: "center" }}>{comp.label}</td>
-                                                    <td style={{ textAlign: "center" }}>{s.violations === 0 ? "Tertib" : `${s.violations}x`}</td>
-                                                    <td style={{ textAlign: "center" }}>{s.waktu_selesai || "-"}</td>
                                                 </tr>
                                             );
                                         })}
@@ -1706,7 +1767,6 @@ export default function ProctorMasterDashboard() {
                         </div>
                     </div>
                 )}
-
             </div>
 
             {/* MODAL BULK EXCEL RESPONSIF */}
@@ -1723,14 +1783,21 @@ export default function ProctorMasterDashboard() {
                             rows={8}
                             value={bulkRawText}
                             onChange={(e) => setBulkRawText(e.target.value)}
-                            placeholder="NISN [Tab] Nama [Tab] Kelas"
+                            placeholder="ID/NISN/WA [Tab] Nama [Tab] Kelas/Asal SMP"
                             className="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs outline-none focus:border-blue-600"
                         />
                         <div className="flex justify-end gap-2 pt-1">
-                            <button onClick={() => setShowBulkModal(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">
+                            <button
+                                onClick={() => setShowBulkModal(false)}
+                                className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                            >
                                 Batal
                             </button>
-                            <button onClick={handleBulkImportStudents} disabled={isBulkImporting} className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md disabled:opacity-50">
+                            <button
+                                onClick={handleBulkImportStudents}
+                                disabled={isBulkImporting}
+                                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md disabled:opacity-50"
+                            >
                                 {isBulkImporting ? "Memproses..." : "Daftarkan Siswa"}
                             </button>
                         </div>
@@ -1750,7 +1817,7 @@ export default function ProctorMasterDashboard() {
                         </div>
                         <form onSubmit={handleSaveEditStudent} className="space-y-3 text-xs">
                             <div className="space-y-1">
-                                <label className="font-bold text-slate-700 font-mono text-[10.5px]">NISN:</label>
+                                <label className="font-bold text-slate-700 font-mono text-[10.5px]">ID / NISN / NO. WA:</label>
                                 <input
                                     type="text"
                                     value={editNisn}
@@ -1777,10 +1844,18 @@ export default function ProctorMasterDashboard() {
                                 />
                             </div>
                             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                                <button type="button" onClick={() => setEditingStudent(null)} className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingStudent(null)}
+                                    className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                                >
                                     Batal
                                 </button>
-                                <button type="submit" disabled={isUpdatingStudent} className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl cursor-pointer shadow-md disabled:opacity-50">
+                                <button
+                                    type="submit"
+                                    disabled={isUpdatingStudent}
+                                    className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl cursor-pointer shadow-md disabled:opacity-50"
+                                >
                                     {isUpdatingStudent ? "Menyimpan..." : "Simpan Perubahan"}
                                 </button>
                             </div>

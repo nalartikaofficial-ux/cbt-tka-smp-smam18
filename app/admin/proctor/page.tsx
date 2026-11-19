@@ -34,9 +34,7 @@ import {
     LockKeyholeOpen,
     Ban
 } from "lucide-react";
-
-const GOOGLE_SCRIPT_API_URL =
-    "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
+import { supabase } from "@/lib/supabase";
 
 const KKM_STANDARD = 75;
 
@@ -79,14 +77,14 @@ export default function ProctorMasterDashboard() {
     const [filterKelas, setFilterKelas] = useState<string>("ALL");
     const [tokenCopied, setTokenCopied] = useState(false);
 
-    // Master Sesi Real-Time Tryout TKA SMP
+    // Master Sesi Real-Time Tryout TKA SMP (Supabase: tka_sessions)
     const [masterSession, setMasterSession] = useState<MasterSession>({
         paket_aktif: "PAKET_1",
         nama_paket: "Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK) 2026",
         token_resmi: "TKA18",
         status_akses: "DIBUKA",
-        waktu_mulai: "2026-11-18T07:30",
-        waktu_selesai: "2026-11-18T11:30"
+        waktu_mulai: "2026-11-19T07:30",
+        waktu_selesai: "2026-11-19T11:30"
     });
     const [isSavingSchedule, setIsSavingSchedule] = useState(false);
     const [customMinutes, setCustomMinutes] = useState<number>(5);
@@ -120,31 +118,31 @@ export default function ProctorMasterDashboard() {
         manualTidakHadir: 0
     });
 
+    // 1. Ambil Sesi Aktif dari Supabase (tka_sessions)
     const fetchMasterSession = async () => {
         try {
-            const res = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=get_active_session&_t=${Date.now()}`, {
-                cache: "no-store"
-            });
-            const rawText = await res.text();
-            if (!rawText.trim().startsWith("<")) {
-                const json = JSON.parse(rawText);
-                if (json.status === "success" && json.data) {
-                    setMasterSession({
-                        ...json.data,
-                        waktu_mulai: json.data.waktu_mulai
-                            ? String(json.data.waktu_mulai).substring(0, 16)
-                            : "2026-11-18T07:30",
-                        waktu_selesai: json.data.waktu_selesai
-                            ? String(json.data.waktu_selesai).substring(0, 16)
-                            : "2026-11-18T11:30"
-                    });
-                }
+            const { data, error } = await supabase
+                .from("tka_sessions")
+                .select("*")
+                .eq("id", 1)
+                .single();
+
+            if (!error && data) {
+                setMasterSession({
+                    paket_aktif: (data.paket_aktif as any) || "PAKET_1",
+                    nama_paket: data.nama_paket || "Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK) 2026",
+                    token_resmi: data.token_resmi || "TKA18",
+                    status_akses: (data.status_akses as any) || "DIBUKA",
+                    waktu_mulai: data.waktu_mulai ? String(data.waktu_mulai).substring(0, 16) : "2026-11-19T07:30",
+                    waktu_selesai: data.waktu_selesai ? String(data.waktu_selesai).substring(0, 16) : "2026-11-19T11:30"
+                });
             }
         } catch (err) {
-            console.error("Gagal ambil jadwal:", err);
+            console.error("Gagal ambil jadwal dari Supabase:", err);
         }
     };
 
+    // 2. Ambil Data Peserta dari Supabase (tka_students)
     const fetchStudents = async () => {
         setIsLoading(true);
         try {
@@ -156,43 +154,34 @@ export default function ProctorMasterDashboard() {
 
     const fetchStudentsSilently = async () => {
         try {
-            const res = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=get_students&_t=${Date.now()}`, {
-                cache: "no-store"
-            });
-            const rawText = await res.text();
-            if (!rawText.trim().startsWith("<")) {
-                const json = JSON.parse(rawText);
-                if (json.status === "success" && Array.isArray(json.data)) {
-                    const cleanList: StudentItem[] = json.data.map((item: any) => {
-                        const rawScore = Number(item.score ?? item.totalScore ?? item.skor_irt ?? 0);
-                        const normalizedScore =
-                            rawScore > 100
-                                ? Math.min(100, Math.max(0, Math.round(((rawScore - 200) / 600) * 100)))
-                                : Math.round(rawScore);
+            const { data, error } = await supabase
+                .from("tka_students")
+                .select("*")
+                .order("created_at", { ascending: false });
 
-                        const bindoVal = Math.round(Number(item.bindoScore ?? item.indoScore ?? normalizedScore));
-                        const mtkVal = Math.round(Number(item.mtkScore ?? item.mathScore ?? normalizedScore));
+            if (!error && Array.isArray(data)) {
+                const cleanList: StudentItem[] = data.map((item: any) => {
+                    const scoreVal = Math.round(Number(item.score ?? 0));
+                    const bindoVal = Math.round(Number(item.bindo_score ?? scoreVal));
+                    const mtkVal = Math.round(Number(item.mtk_score ?? scoreVal));
 
-                        return {
-                            nisn: String(item.nisn || item.phone || "").replace(/\D/g, "").trim(),
-                            nama: String(item.nama || item.name || item.nama_siswa || "").trim(),
-                            kelas: String(item.kelas || item.grade || "9").trim(),
-                            asalSekolah: String(item.sekolah || item.school || "").trim(),
-                            status: String(
-                                item.status || item.status_ujian || (normalizedScore > 0 ? "Selesai" : "Belum Hadir")
-                            ).trim(),
-                            violations: Number(item.violations || item.pelanggaran || 0),
-                            score: normalizedScore,
-                            bindoScore: bindoVal,
-                            mtkScore: mtkVal,
-                            waktu_selesai: String(item.waktu_selesai || item.submittedAt || "-").trim()
-                        };
-                    });
-                    setStudents(cleanList);
-                }
+                    return {
+                        nisn: String(item.phone || "").replace(/\D/g, "").trim(),
+                        nama: String(item.name || "").trim(),
+                        kelas: String(item.grade || "9").trim(),
+                        asalSekolah: String(item.school || "").trim(),
+                        status: String(item.status || (scoreVal > 0 ? "Selesai" : "Belum Hadir")).trim(),
+                        violations: Number(item.violations || 0),
+                        score: scoreVal,
+                        bindoScore: bindoVal,
+                        mtkScore: mtkVal,
+                        waktu_selesai: String(item.waktu_selesai || "-").trim()
+                    };
+                });
+                setStudents(cleanList);
             }
         } catch (err) {
-            console.error("Gagal polling data siswa:", err);
+            console.error("Gagal polling data siswa dari Supabase:", err);
         }
     };
 
@@ -251,30 +240,38 @@ export default function ProctorMasterDashboard() {
         setTimeout(() => setTokenCopied(false), 2000);
     };
 
+    // 3. Simpan Jadwal & Token ke Supabase (tka_sessions)
     const handleUpdateSchedule = async (e?: React.FormEvent, customPayload?: Partial<MasterSession>) => {
         if (e) e.preventDefault();
         setIsSavingSchedule(true);
 
-        const payload = {
-            action: "update_schedule",
+        const updatedSession = {
             ...masterSession,
             ...customPayload,
             token_resmi: (customPayload?.token_resmi || masterSession.token_resmi).toUpperCase()
         };
 
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify(payload)
-            });
-            if (customPayload) {
-                setMasterSession((prev) => ({ ...prev, ...customPayload }));
-            }
-            alert("Jadwal dan sesi Tryout TKA SMP berhasil diperbarui ke server.");
-        } catch {
-            alert("Gagal menyimpan jadwal.");
+            const { error } = await supabase.from("tka_sessions").upsert(
+                {
+                    id: 1,
+                    paket_aktif: updatedSession.paket_aktif,
+                    nama_paket: updatedSession.nama_paket,
+                    token_resmi: updatedSession.token_resmi,
+                    status_akses: updatedSession.status_akses,
+                    waktu_mulai: updatedSession.waktu_mulai,
+                    waktu_selesai: updatedSession.waktu_selesai,
+                    updated_at: new Date().toISOString()
+                },
+                { onConflict: "id" }
+            );
+
+            if (error) throw error;
+
+            setMasterSession(updatedSession);
+            alert("Jadwal dan sesi Tryout TKA SMP berhasil diperbarui di Supabase!");
+        } catch (err: any) {
+            alert("Gagal menyimpan jadwal ke Supabase: " + (err?.message || "Kesalahan server"));
         } finally {
             setIsSavingSchedule(false);
         }
@@ -286,26 +283,27 @@ export default function ProctorMasterDashboard() {
         handleUpdateSchedule(undefined, { status_akses: nextStatus });
     };
 
+    // 4. Tambah Kompensasi Waktu di Supabase
     const handleAddCompensationTime = async (minutes: number) => {
         if (!confirm(`Tambahkan waktu darurat ${minutes} menit untuk seluruh peserta secara serentak?`)) return;
 
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({
-                    action: "add_time_compensation",
-                    minutes: minutes
-                })
-            });
-            alert(`Batas waktu sesi berhasil ditambah ${minutes} menit.`);
-            fetchMasterSession();
+            const currentEnd = new Date(masterSession.waktu_selesai);
+            const baseTime = isNaN(currentEnd.getTime()) ? new Date() : currentEnd;
+            baseTime.setMinutes(baseTime.getMinutes() + minutes);
+
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const newEndStr = `${baseTime.getFullYear()}-${pad(baseTime.getMonth() + 1)}-${pad(baseTime.getDate())}T${pad(
+                baseTime.getHours()
+            )}:${pad(baseTime.getMinutes())}`;
+
+            await handleUpdateSchedule(undefined, { waktu_selesai: newEndStr });
         } catch {
             alert("Gagal menambahkan kompensasi waktu.");
         }
     };
 
+    // 5. Kendali Peserta Individual di Supabase (Buka Akses, Blokir, Reset)
     const handleUnlockResumeStudent = async (student: StudentItem) => {
         const stLower = student.status.toLowerCase();
 
@@ -324,15 +322,15 @@ export default function ProctorMasterDashboard() {
         );
 
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({ action: "unlock_student", nisn: student.nisn })
-            });
+            const { error } = await supabase
+                .from("tka_students")
+                .update({ status: "Sedang Mengerjakan" })
+                .eq("phone", student.nisn);
+
+            if (error) throw error;
             alert(`Akses pengerjaan ${student.nama} berhasil dibuka kembali.`);
-        } catch {
-            alert("Gagal membuka akses pengerjaan.");
+        } catch (err: any) {
+            alert("Gagal membuka akses pengerjaan: " + (err?.message || "Kesalahan server"));
         }
     };
 
@@ -344,19 +342,15 @@ export default function ProctorMasterDashboard() {
         );
 
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({
-                    action: "block_student",
-                    nisn: student.nisn,
-                    violations: student.violations
-                })
-            });
+            const { error } = await supabase
+                .from("tka_students")
+                .update({ status: "Terkunci", violations: student.violations })
+                .eq("phone", student.nisn);
+
+            if (error) throw error;
             alert(`Peserta ${student.nama} berhasil diblokir.`);
-        } catch {
-            alert("Gagal memblokir peserta.");
+        } catch (err: any) {
+            alert("Gagal memblokir peserta: " + (err?.message || "Kesalahan server"));
         }
     };
 
@@ -372,16 +366,26 @@ export default function ProctorMasterDashboard() {
         );
 
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({ action: "reset_status", nisn: student.nisn })
-            });
+            const { error } = await supabase
+                .from("tka_students")
+                .update({
+                    status: "Belum Hadir",
+                    violations: 0,
+                    score: 0,
+                    bindo_score: 0,
+                    mtk_score: 0,
+                    waktu_selesai: null
+                })
+                .eq("phone", student.nisn);
+
+            if (error) throw error;
             alert(`Peserta ${student.nama} berhasil direset.`);
-        } catch { }
+        } catch (err: any) {
+            alert("Gagal mereset peserta: " + (err?.message || "Kesalahan server"));
+        }
     };
 
+    // 6. Tambah Peserta Satuan ke Supabase
     const handleAddStudent = async (e: React.FormEvent) => {
         e.preventDefault();
         const cleanNisn = newNisn.replace(/\D/g, "").trim();
@@ -399,105 +403,86 @@ export default function ProctorMasterDashboard() {
 
         setIsSubmittingStudent(true);
 
-        const localItem: StudentItem = {
-            nisn: cleanNisn,
-            nama: cleanNama,
-            kelas: cleanKelas,
-            status: "Belum Hadir",
-            violations: 0,
-            score: 0,
-            bindoScore: 0,
-            mtkScore: 0
-        };
-
-        setStudents((prev) => [...prev.filter((s) => s.nisn !== cleanNisn), localItem]);
-
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({
-                    action: "add_student",
-                    nisn: cleanNisn,
-                    nama: cleanNama,
-                    kelas: cleanKelas
-                })
-            });
+            const { error } = await supabase.from("tka_students").upsert(
+                {
+                    phone: cleanNisn,
+                    name: cleanNama,
+                    school: cleanKelas,
+                    grade: "9",
+                    status: "Belum Hadir",
+                    violations: 0,
+                    score: 0,
+                    bindo_score: 0,
+                    mtk_score: 0
+                },
+                { onConflict: "phone" }
+            );
+
+            if (error) throw error;
 
             setNewNisn("");
             setNewNama("");
             setNewKelas("");
-            setTimeout(fetchStudents, 2500);
-        } catch {
-            alert("Gagal menyimpan data siswa.");
+            await fetchStudentsSilently();
+            alert(`Peserta ${cleanNama} berhasil disimpan ke Supabase!`);
+        } catch (err: any) {
+            alert("Gagal menyimpan data siswa: " + (err?.message || "Kesalahan server"));
         } finally {
             setIsSubmittingStudent(false);
         }
     };
 
+    // 7. Impor Massal Excel ke Supabase
     const handleBulkImportStudents = async () => {
         if (!bulkRawText.trim()) return;
         setIsBulkImporting(true);
 
         try {
             const lines = bulkRawText.split(/\r?\n/).filter((l) => l.trim() !== "");
-            const newItems: StudentItem[] = [];
+            const rowsToUpsert: any[] = [];
 
             lines.forEach((line) => {
                 const parts = line.split(/\t|,|;|\|/).map((p) => p.trim());
                 if (parts.length >= 2) {
                     const rawNisn = parts[0].replace(/\D/g, "");
                     const nama = parts[1];
-                    const kelas = (parts[2] || "9").toUpperCase();
+                    const kelas = (parts[2] || "SMP / MTs").toUpperCase();
 
                     if (rawNisn && nama) {
-                        newItems.push({
-                            nisn: rawNisn,
-                            nama: nama,
-                            kelas: kelas.trim(),
+                        rowsToUpsert.push({
+                            phone: rawNisn,
+                            name: nama,
+                            school: kelas.trim(),
+                            grade: "9",
                             status: "Belum Hadir",
                             violations: 0,
                             score: 0,
-                            bindoScore: 0,
-                            mtkScore: 0
+                            bindo_score: 0,
+                            mtk_score: 0
                         });
                     }
                 }
             });
 
-            if (newItems.length === 0) {
+            if (rowsToUpsert.length === 0) {
                 alert("Format data tidak sesuai.");
                 setIsBulkImporting(false);
                 return;
             }
 
-            setStudents((prev) => {
-                const merged = [...prev];
-                newItems.forEach((item) => {
-                    const idx = merged.findIndex((m) => m.nisn === item.nisn);
-                    if (idx >= 0) merged[idx] = item;
-                    else merged.push(item);
-                });
-                return merged;
-            });
+            const { error } = await supabase
+                .from("tka_students")
+                .upsert(rowsToUpsert, { onConflict: "phone" });
 
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({
-                    action: "bulk_add_students",
-                    students: newItems
-                })
-            });
+            if (error) throw error;
 
-            alert(`Berhasil mendaftarkan ${newItems.length} siswa.`);
+            alert(`Berhasil mendaftarkan ${rowsToUpsert.length} siswa ke Supabase!`);
             setBulkRawText("");
             setShowBulkModal(false);
-            setTimeout(fetchStudents, 3000);
-        } catch {
-            alert("Gagal mengimpor data massal.");
+            await fetchStudentsSilently();
+        } catch (err: any) {
+            alert("Gagal mengimpor data massal: " + (err?.message || "Kesalahan server"));
         } finally {
             setIsBulkImporting(false);
         }
@@ -507,9 +492,10 @@ export default function ProctorMasterDashboard() {
         setEditingStudent(student);
         setEditNisn(student.nisn);
         setEditNama(student.nama);
-        setEditKelas(student.kelas);
+        setEditKelas(student.asalSekolah || student.kelas);
     };
 
+    // 8. Edit Data Peserta di Supabase
     const handleSaveEditStudent = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingStudent) return;
@@ -523,50 +509,39 @@ export default function ProctorMasterDashboard() {
 
         setIsUpdatingStudent(true);
 
-        setStudents((prev) =>
-            prev.map((s) =>
-                String(s.nisn).trim() === oldNisn
-                    ? { ...s, nisn: cleanNisn, nama: cleanNama, kelas: cleanKelas }
-                    : s
-            )
-        );
-
-        setEditingStudent(null);
-        setSearchQuery("");
-
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({
-                    action: "edit_student",
-                    old_nisn: oldNisn,
-                    nisn: cleanNisn,
-                    nama: cleanNama,
-                    kelas: cleanKelas
+            const { error } = await supabase
+                .from("tka_students")
+                .update({
+                    phone: cleanNisn,
+                    name: cleanNama,
+                    school: cleanKelas
                 })
-            });
-            setTimeout(fetchStudents, 3000);
-        } catch {
-            alert("Gagal memperbarui data siswa.");
+                .eq("phone", oldNisn);
+
+            if (error) throw error;
+
+            setEditingStudent(null);
+            setSearchQuery("");
+            await fetchStudentsSilently();
+        } catch (err: any) {
+            alert("Gagal memperbarui data siswa: " + (err?.message || "Kesalahan server"));
         } finally {
             setIsUpdatingStudent(false);
         }
     };
 
+    // 9. Hapus Peserta di Supabase
     const handleDeleteStudent = async (nisn: string, nama: string) => {
-        if (!confirm(`Hapus peserta ${nama} (${nisn})?`)) return;
+        if (!confirm(`Hapus peserta ${nama} (${nisn}) dari Supabase?`)) return;
         setStudents((prev) => prev.filter((s) => s.nisn !== nisn));
 
         try {
-            await fetch(GOOGLE_SCRIPT_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({ action: "delete_student", nisn })
-            });
-        } catch { }
+            const { error } = await supabase.from("tka_students").delete().eq("phone", nisn);
+            if (error) throw error;
+        } catch (err: any) {
+            alert("Gagal menghapus peserta: " + (err?.message || "Kesalahan server"));
+        }
     };
 
     const handleLogout = () => {
@@ -579,7 +554,8 @@ export default function ProctorMasterDashboard() {
     const availableClasses = useMemo(() => {
         const setClasses = new Set<string>();
         students.forEach((s) => {
-            if (s.kelas && s.kelas.trim()) setClasses.add(s.kelas.trim());
+            const label = s.asalSekolah || s.kelas;
+            if (label && label.trim()) setClasses.add(label.trim());
         });
         return Array.from(setClasses).sort();
     }, [students]);
@@ -607,12 +583,12 @@ export default function ProctorMasterDashboard() {
                 matchStatus = s.status.toLowerCase().includes(filterStatus.toLowerCase());
             }
 
-            const matchKelas = filterKelas === "ALL" || s.kelas === filterKelas;
+            const schoolOrClass = s.asalSekolah || s.kelas;
+            const matchKelas = filterKelas === "ALL" || schoolOrClass === filterKelas;
             return matchSearch && matchStatus && matchKelas;
         });
     }, [students, searchQuery, filterStatus, filterKelas]);
 
-    // Ambang Predikat Capaian Kompetensi (100% Identik dengan Exam & Result)
     const getCompetencyBadge = (score: number) => {
         if (score >= 86) return { label: "MAHIR", color: "bg-emerald-100 text-emerald-800 border-emerald-300" };
         if (score >= 71) return { label: "CAKAP", color: "bg-blue-100 text-blue-800 border-blue-300" };
@@ -951,7 +927,7 @@ export default function ProctorMasterDashboard() {
                     </div>
                 </div>
 
-                {/* 3. TAB NAVIGASI RUANG PROKTOR (RESPONSIF TABLET & HP) */}
+                {/* 3. TAB NAVIGASI RUANG PROKTOR */}
                 <div className="print-hidden flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 bg-slate-200/80 p-1 rounded-2xl border border-slate-300">
                     <button
                         onClick={() => setActiveTab("students")}
@@ -1043,7 +1019,7 @@ export default function ProctorMasterDashboard() {
                                     <input
                                         type="text"
                                         required
-                                        placeholder="Contoh: 9A / SMPN 161"
+                                        placeholder="Contoh: SMPN 161 (9A)"
                                         value={newKelas}
                                         onChange={(e) => setNewKelas(e.target.value)}
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold uppercase focus:border-blue-600 outline-none text-xs"
@@ -1052,7 +1028,7 @@ export default function ProctorMasterDashboard() {
 
                                 <div className="sm:col-span-2 lg:col-span-12 pt-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                                     <span className="text-[10.5px] sm:text-[11px] text-slate-400 italic">
-                                        *Data otomatis disinkronkan ke Google Sheets database pendaftaran.
+                                        *Data otomatis tersimpan langsung ke Supabase database peserta.
                                     </span>
                                     <button
                                         type="submit"
@@ -1060,7 +1036,7 @@ export default function ProctorMasterDashboard() {
                                         className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50 transition-all text-xs"
                                     >
                                         <PlusCircle className="w-4 h-4" />
-                                        <span>{isSubmittingStudent ? "Menyimpan ke Server..." : "Simpan Peserta"}</span>
+                                        <span>{isSubmittingStudent ? "Menyimpan..." : "Simpan Peserta"}</span>
                                     </button>
                                 </div>
                             </form>
@@ -1276,7 +1252,6 @@ export default function ProctorMasterDashboard() {
                                                     )}
                                                 </td>
                                                 <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
-                                                    {/* 1. BUKA AKSES */}
                                                     <button
                                                         onClick={() => handleUnlockResumeStudent(s)}
                                                         className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 shadow-2xs transition-all active:scale-95"
@@ -1286,7 +1261,6 @@ export default function ProctorMasterDashboard() {
                                                         <span>Buka Akses</span>
                                                     </button>
 
-                                                    {/* 2. BLOKIR */}
                                                     <button
                                                         onClick={() => handleBlockStudent(s)}
                                                         className="px-2.5 py-1.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 transition-all active:scale-95"
@@ -1296,7 +1270,6 @@ export default function ProctorMasterDashboard() {
                                                         <span>Kunci</span>
                                                     </button>
 
-                                                    {/* 3. RESET */}
                                                     <button
                                                         onClick={() => handleResetStudent(s)}
                                                         className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 transition-all active:scale-95"
@@ -1309,6 +1282,13 @@ export default function ProctorMasterDashboard() {
                                             </tr>
                                         );
                                     })}
+                                    {filteredStudents.length === 0 && (
+                                        <tr>
+                                            <td colSpan={6} className="text-center py-8 text-slate-400 font-medium">
+                                                Belum ada peserta yang sesuai dengan filter pemantauan.
+                                            </td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>

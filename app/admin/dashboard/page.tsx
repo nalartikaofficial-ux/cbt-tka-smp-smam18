@@ -20,10 +20,7 @@ import {
     Phone,
     BarChart3
 } from "lucide-react";
-
-// Webhook Google Sheets Khusus Data Leads & Hasil Tryout TKA SMP
-const GOOGLE_SCRIPT_API_URL =
-    "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
+import { supabase } from "@/lib/supabase";
 
 const KKM_STANDARD = 75;
 
@@ -103,46 +100,45 @@ export default function AdminAnalyticsTkaSmpPage() {
     // Modal Cetak Rapor Individual 1 Murid Terpilih
     const [selectedStudentForReport, setSelectedStudentForReport] = useState<TkaStudentResult | null>(null);
 
-    // Ambil data nilai & leads real-time dari Google Sheets
+    // Ambil data nilai & leads real-time dari Supabase PostgreSQL (tka_students)
     const fetchStudents = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=get_students&_t=${Date.now()}`, {
-                cache: "no-store"
-            });
-            const text = await res.text();
-            if (!text.trim().startsWith("<")) {
-                const json = JSON.parse(text);
-                if (json.status === "success" && Array.isArray(json.data)) {
-                    const normalized: TkaStudentResult[] = json.data.map((item: any) => {
-                        const rawScore = Number(item.score ?? item.totalScore ?? 0);
-                        const cleanScore =
-                            rawScore > 100
-                                ? Math.min(100, Math.max(0, Math.round(((rawScore - 200) / 600) * 100)))
-                                : Math.round(rawScore);
+            const { data, error } = await supabase
+                .from("tka_students")
+                .select("*")
+                .order("score", { ascending: false });
 
-                        const bindoVal = Math.round(Number(item.bindoScore ?? item.indoScore ?? cleanScore));
-                        const mtkVal = Math.round(Number(item.mtkScore ?? item.mathScore ?? cleanScore));
+            if (error) {
+                console.error("Supabase fetch error:", error);
+                alert("Gagal memuat data dari Supabase: " + error.message);
+                return;
+            }
 
-                        return {
-                            phone: String(item.phone || item.nisn || "-"),
-                            name: String(item.name || item.nama || "Peserta Simulasi"),
-                            school: String(item.school || item.asal_sekolah || "SMP / MTs"),
-                            grade: String(item.grade || "9"),
-                            interest: String(item.interest || item.peminatan || "Sains & Teknologi (STEM)"),
-                            status: String(item.status || (cleanScore > 0 ? "Selesai" : "Terdaftar")),
-                            violations: Number(item.violations || 0),
-                            score: cleanScore,
-                            bindoScore: bindoVal,
-                            mtkScore: mtkVal,
-                            waktu_selesai: item.waktu_selesai || ""
-                        };
-                    });
-                    setStudents(normalized);
-                }
+            if (Array.isArray(data)) {
+                const normalized: TkaStudentResult[] = data.map((item: any) => {
+                    const cleanScore = Math.round(Number(item.score ?? 0));
+                    const bindoVal = Math.round(Number(item.bindo_score ?? cleanScore));
+                    const mtkVal = Math.round(Number(item.mtk_score ?? cleanScore));
+
+                    return {
+                        phone: String(item.phone || "-"),
+                        name: String(item.name || "Peserta Simulasi"),
+                        school: String(item.school || "SMP / MTs"),
+                        grade: String(item.grade || "9"),
+                        interest: String(item.interest || "Sains & Teknologi (STEM)"),
+                        status: String(item.status || (cleanScore > 0 ? "Selesai" : "Terdaftar")),
+                        violations: Number(item.violations || 0),
+                        score: cleanScore,
+                        bindoScore: bindoVal,
+                        mtkScore: mtkVal,
+                        waktu_selesai: item.waktu_selesai || ""
+                    };
+                });
+                setStudents(normalized);
             }
         } catch (err) {
-            console.error("Gagal memuat data peserta TKA SMP:", err);
+            console.error("Gagal memuat data peserta TKA SMP dari Supabase:", err);
         } finally {
             setIsLoading(false);
         }
@@ -679,7 +675,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                     <tr>
                                         <td colSpan={10} className="text-center py-10 text-slate-400 font-medium px-4">
                                             {students.length === 0
-                                                ? "Belum ada data peserta Tryout TKA SMP di server. Klik 'Sinkronkan Data' atau pastikan siswa telah mengisi formulir pendaftaran."
+                                                ? "Belum ada data peserta Tryout TKA SMP di Supabase. Klik 'Sinkronkan Data' atau pastikan siswa telah mengisi formulir pendaftaran."
                                                 : "Tidak ada peserta yang sesuai dengan filter pencarian ini."}
                                         </td>
                                     </tr>

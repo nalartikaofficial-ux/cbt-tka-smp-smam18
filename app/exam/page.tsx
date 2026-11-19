@@ -17,17 +17,12 @@ import {
     Award,
     CheckSquare,
     Check,
-    BookOpen,
-    Calculator,
     ArrowRight,
     ShieldCheck
 } from "lucide-react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-
-// Webhook Google Sheets Hasil Ujian Siswa
-const GOOGLE_SCRIPT_API_URL =
-    "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
+import { supabase } from "@/lib/supabase";
 
 // 2 MATA PELAJARAN UTAMA TKA SMP
 const TKA_SMP_SUBJECTS = [
@@ -113,7 +108,6 @@ function normalizeQuestionItem(q: any, index: number) {
     const subject = code === "MTK" ? "Matematika" : "Bahasa Indonesia";
     const materi = q.materi || q.competency || (code === "MTK" ? "Numerasi & Aljabar SMP" : "Literasi Membaca SMP");
 
-    // Gabungkan opsi dari format CSV (opsi_a..opsi_e) atau array options
     let optionsList: string[] = [];
     if (Array.isArray(q.options) && q.options.length > 0) {
         optionsList = q.options.map((opt: any) => (typeof opt === "string" ? opt : String(opt?.text ?? "")));
@@ -123,7 +117,6 @@ function normalizeQuestionItem(q: any, index: number) {
             .map((val) => String(val));
     }
 
-    // Normalisasi singleAnswer ke index numerik 0..4
     let singleAnswerIdx = 0;
     if (typeof q.singleAnswer === "number") {
         singleAnswerIdx = q.singleAnswer;
@@ -200,7 +193,6 @@ export function calculateTkaSmpScore(questionsList: any[], currentAnswers: Recor
     const bindoScore = bindoCount > 0 ? Math.round((bindoScoreSum / (bindoWeightSum || 1)) * 100) : 0;
     const mtkScore = mtkCount > 0 ? Math.round((mtkScoreSum / (mtkWeightSum || 1)) * 100) : 0;
 
-    // Rerata seimbang antara BINDO dan MTK (jika salah satu kosong, ambil yang ada)
     let totalScore = 0;
     if (bindoCount > 0 && mtkCount > 0) {
         totalScore = Math.round((bindoScore + mtkScore) / 2);
@@ -234,6 +226,7 @@ export default function OfficialExamChamberPage() {
     const [allQuestionsList, setAllQuestionsList] = useState<any[]>(() =>
         (defaultQuestions || []).map((q, idx) => normalizeQuestionItem(q, idx))
     );
+    const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
 
     const [currentSubtestIndex, setCurrentSubtestIndex] = useState(0);
     const [currentQIndexInSubtest, setCurrentQIndexInSubtest] = useState(0);
@@ -256,7 +249,6 @@ export default function OfficialExamChamberPage() {
     const [showViolationModal, setShowViolationModal] = useState(false);
     const [finalSavedReport, setFinalSavedReport] = useState<any>(null);
 
-    // Sinkronkan Ref setiap kali state berubah
     useEffect(() => {
         answersRef.current = answers;
     }, [answers]);
@@ -265,7 +257,7 @@ export default function OfficialExamChamberPage() {
         violationsRef.current = violationCount;
     }, [violationCount]);
 
-    // 1. Verifikasi Kredensial Siswa & Muat Bank Soal Dinamis
+    // 1. Verifikasi Kredensial Siswa, Tarik Bank Soal dari Supabase & Preload Gambar
     useEffect(() => {
         if (typeof window === "undefined") return;
 
@@ -287,16 +279,48 @@ export default function OfficialExamChamberPage() {
             return;
         }
 
-        // Prioritaskan bank soal yang diunggah Admin (tka_bank_soal_cbt / tka_bank_soal)
-        const rawBank = localStorage.getItem("tka_bank_soal_cbt") || localStorage.getItem("tka_bank_soal");
-        if (rawBank) {
-            try {
-                const parsedBank = JSON.parse(rawBank);
-                if (Array.isArray(parsedBank) && parsedBank.length > 0) {
-                    setAllQuestionsList(parsedBank.map((q, idx) => normalizeQuestionItem(q, idx)));
+        const preloadImages = (list: any[]) => {
+            list.forEach((item) => {
+                if (item.image_url && String(item.image_url).trim().startsWith("http")) {
+                    const img = new window.Image();
+                    img.src = String(item.image_url).trim();
                 }
-            } catch { }
-        }
+            });
+        };
+
+        const loadQuestionsFromCloud = async () => {
+            setIsLoadingQuestions(true);
+            try {
+                const { data, error } = await supabase
+                    .from("tka_questions")
+                    .select("*")
+                    .order("subtes_code", { ascending: true })
+                    .order("no_soal", { ascending: true });
+
+                if (!error && Array.isArray(data) && data.length > 0) {
+                    const normalized = data.map((q, idx) => normalizeQuestionItem(q, idx));
+                    setAllQuestionsList(normalized);
+                    preloadImages(normalized);
+                } else {
+                    // Fallback ke localStorage jika Supabase masih kosong
+                    const rawBank = localStorage.getItem("tka_bank_soal_cbt") || localStorage.getItem("tka_bank_soal");
+                    if (rawBank) {
+                        const parsedBank = JSON.parse(rawBank);
+                        if (Array.isArray(parsedBank) && parsedBank.length > 0) {
+                            const normalized = parsedBank.map((q, idx) => normalizeQuestionItem(q, idx));
+                            setAllQuestionsList(normalized);
+                            preloadImages(normalized);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Gagal memuat soal dari Supabase:", err);
+            } finally {
+                setIsLoadingQuestions(false);
+            }
+        };
+
+        loadQuestionsFromCloud();
     }, [router]);
 
     const activeSubtest = TKA_SMP_SUBJECTS[currentSubtestIndex];
@@ -310,26 +334,51 @@ export default function OfficialExamChamberPage() {
     const currentQ = currentSubtestQuestions[currentQIndexInSubtest] || currentSubtestQuestions[0];
     const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${currentQIndexInSubtest}`;
 
-    // 3. Masuk Bilik Ujian & Kunci Layar Penuh (Kiosk Mode)
-    const enterExamChamber = () => {
+    // 3. Masuk Bilik Ujian, Kunci Layar Penuh & Tandai Status Aktif di Supabase
+    const enterExamChamber = async () => {
         setIsInExam(true);
         try {
             if (typeof document !== "undefined" && document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(() => { });
             }
         } catch { }
+
+        const cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "");
+        if (cleanPhone) {
+            await supabase.from("tka_students").upsert(
+                {
+                    phone: cleanPhone,
+                    name: studentSession?.name,
+                    school: studentSession?.school || "SMP / MTs",
+                    grade: studentSession?.grade || "9",
+                    interest: studentSession?.interest || "Sains & Teknologi (STEM)",
+                    status: "Sedang Mengerjakan"
+                },
+                { onConflict: "phone" }
+            );
+        }
     };
 
-    // 4. Sensor Anti-Cheat Kiosk (Deteksi Pindah Tab / Keluar Layar Penuh)
+    // 4. Sensor Anti-Cheat Kiosk & Sinkron Pelanggaran ke Supabase
     const recordViolation = useCallback(() => {
         if (!isInExam || isExamCompleted || isIntermission) return;
         setViolationCount((prev) => {
             const next = prev + 1;
             violationsRef.current = next;
+            const cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "");
+            if (cleanPhone) {
+                supabase
+                    .from("tka_students")
+                    .update({
+                        violations: next,
+                        status: next >= 3 ? "Terkunci" : "Sedang Mengerjakan"
+                    })
+                    .eq("phone", cleanPhone);
+            }
             return next;
         });
         setShowViolationModal(true);
-    }, [isInExam, isExamCompleted, isIntermission]);
+    }, [isInExam, isExamCompleted, isIntermission, studentSession]);
 
     useEffect(() => {
         if (!isInExam || isExamCompleted || isIntermission) return;
@@ -350,7 +399,7 @@ export default function OfficialExamChamberPage() {
         };
     }, [isInExam, isExamCompleted, isIntermission, recordViolation]);
 
-    // 5. Pengiriman Nilai Akhir dengan Snapshot Ref (100% Akurat)
+    // 5. Pengiriman Nilai Akhir dengan Snapshot Ref ke Supabase (tka_students & tka_results)
     const executeFinalSubmission = useCallback(async () => {
         setShowSubtestConfirmModal(false);
         setIsIntermission(false);
@@ -359,13 +408,13 @@ export default function OfficialExamChamberPage() {
         const snapshotAnswers = { ...answersRef.current };
         const snapshotViolations = violationsRef.current;
         const computed = calculateTkaSmpScore(allQuestionsList, snapshotAnswers);
+        const finishTime = new Date().toLocaleTimeString("id-ID");
 
         const finalReport = {
             student: studentSession,
             totalScore: computed.totalScore,
             bindoScore: computed.bindoScore,
             mtkScore: computed.mtkScore,
-            // Alias kompatibilitas dengan komponen lain
             indoScore: computed.bindoScore,
             mathScore: computed.mtkScore,
             predicate: computed.predicate,
@@ -383,29 +432,37 @@ export default function OfficialExamChamberPage() {
         const cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "");
         if (cleanPhone) {
             try {
-                await fetch(GOOGLE_SCRIPT_API_URL, {
-                    method: "POST",
-                    mode: "no-cors",
-                    headers: { "Content-Type": "text/plain;charset=utf-8" },
-                    body: JSON.stringify({
-                        action: "submit_exam_score",
+                await supabase.from("tka_students").upsert(
+                    {
                         phone: cleanPhone,
                         name: studentSession?.name,
-                        school: studentSession?.school,
-                        grade: studentSession?.grade,
-                        interest: studentSession?.interest,
-                        score: computed.totalScore,
-                        bindoScore: computed.bindoScore,
-                        mtkScore: computed.mtkScore,
-                        indoScore: computed.bindoScore,
-                        mathScore: computed.mtkScore,
-                        predicate: computed.predicate,
+                        school: studentSession?.school || "SMP / MTs",
+                        grade: studentSession?.grade || "9",
+                        interest: studentSession?.interest || "Sains & Teknologi (STEM)",
+                        status: "Selesai",
                         violations: snapshotViolations,
-                        waktu_selesai: new Date().toLocaleTimeString("id-ID")
-                    })
+                        score: computed.totalScore,
+                        bindo_score: computed.bindoScore,
+                        mtk_score: computed.mtkScore,
+                        waktu_selesai: finishTime
+                    },
+                    { onConflict: "phone" }
+                );
+
+                await supabase.from("tka_results").insert({
+                    phone: cleanPhone,
+                    student_name: studentSession?.name,
+                    school: studentSession?.school || "SMP / MTs",
+                    total_score: computed.totalScore,
+                    bindo_score: computed.bindoScore,
+                    mtk_score: computed.mtkScore,
+                    predicate: computed.predicate,
+                    is_tuntas_kkm: computed.isTuntasKkm,
+                    violations: snapshotViolations,
+                    answers: snapshotAnswers
                 });
             } catch (e) {
-                console.error("Gagal sinkronisasi skor ke server:", e);
+                console.error("Gagal sinkronisasi skor ke Supabase:", e);
             }
         }
 
@@ -534,32 +591,39 @@ export default function OfficialExamChamberPage() {
                             <span>Struktur Mata Pelajaran (2 Mapel):</span>
                             <span className="text-blue-700 font-black">Skala 0–100 (KKM {KKM_STANDARD})</span>
                         </div>
-                        <div className="space-y-2 text-[11px] text-slate-600">
-                            <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
-                                <div>
-                                    <div className="font-bold text-slate-900">1. Bahasa Indonesia (BINDO)</div>
-                                    <div className="text-[10px] text-slate-500">Literasi Membaca Wacana Informasi & Sastra</div>
-                                </div>
-                                <span className="font-mono font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded">
-                                    {bindoCount} Soal
-                                </span>
+                        {isLoadingQuestions ? (
+                            <div className="py-4 text-center font-mono text-slate-400">
+                                Menyinkronkan paket soal dari Supabase...
                             </div>
+                        ) : (
+                            <div className="space-y-2 text-[11px] text-slate-600">
+                                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
+                                    <div>
+                                        <div className="font-bold text-slate-900">1. Bahasa Indonesia (BINDO)</div>
+                                        <div className="text-[10px] text-slate-500">Literasi Membaca Wacana Informasi & Sastra</div>
+                                    </div>
+                                    <span className="font-mono font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded">
+                                        {bindoCount} Soal
+                                    </span>
+                                </div>
 
-                            <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
-                                <div>
-                                    <div className="font-bold text-slate-900">2. Matematika (MTK)</div>
-                                    <div className="text-[10px] text-slate-500">Numerasi, Aljabar, Geometri & Data Peluang</div>
+                                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
+                                    <div>
+                                        <div className="font-bold text-slate-900">2. Matematika (MTK)</div>
+                                        <div className="text-[10px] text-slate-500">Numerasi, Aljabar, Geometri & Data Peluang</div>
+                                    </div>
+                                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
+                                        {mtkCount} Soal
+                                    </span>
                                 </div>
-                                <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
-                                    {mtkCount} Soal
-                                </span>
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     <button
                         onClick={enterExamChamber}
-                        className="w-full py-3.5 px-6 rounded-2xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        disabled={isLoadingQuestions}
+                        className="w-full py-3.5 px-6 rounded-2xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
                         <Maximize2 className="w-4 h-4" />
                         <span>Kunci Layar Penuh & Mulai Bahasa Indonesia</span>
@@ -601,7 +665,9 @@ export default function OfficialExamChamberPage() {
                         </div>
                         <div className="flex items-center justify-between">
                             <div>
-                                <div className="text-base font-black text-white">{nextSubject.name} ({nextSubject.code})</div>
+                                <div className="text-base font-black text-white">
+                                    {nextSubject.name} ({nextSubject.code})
+                                </div>
                                 <div className="text-[11px] text-slate-400">{nextSubject.domain}</div>
                             </div>
                             <div className="text-right font-mono">
@@ -659,8 +725,12 @@ export default function OfficialExamChamberPage() {
                             {finalSavedReport.isTuntasKkm ? `Tuntas KKM (${KKM_STANDARD})` : `Belum Tuntas KKM (${KKM_STANDARD})`}
                         </div>
                         <div className="grid grid-cols-2 gap-2 pt-3 border-t border-blue-800/80 text-xs font-mono">
-                            <div>Bahasa Indonesia: <strong>{finalSavedReport.bindoScore}</strong></div>
-                            <div>Matematika: <strong>{finalSavedReport.mtkScore}</strong></div>
+                            <div>
+                                Bahasa Indonesia: <strong>{finalSavedReport.bindoScore}</strong>
+                            </div>
+                            <div>
+                                Matematika: <strong>{finalSavedReport.mtkScore}</strong>
+                            </div>
                         </div>
                     </div>
 
@@ -703,7 +773,8 @@ export default function OfficialExamChamberPage() {
                     </div>
                     <div className="min-w-0">
                         <div className="text-xs sm:text-sm font-black text-slate-900 truncate max-w-[160px] sm:max-w-md">
-                            {studentSession?.name} • <span className="text-slate-600 font-medium">{studentSession?.school}</span>
+                            {studentSession?.name} •{" "}
+                            <span className="text-slate-600 font-medium">{studentSession?.school}</span>
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5 truncate">
                             <span>TKA SMP KELAS {studentSession?.grade || "9"}</span>
@@ -794,10 +865,6 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* ============================================================== */}
-                    {/* RENDER MODEL OPSI JAWABAN (3 MODEL PUSMENDIK)                  */}
-                    {/* ============================================================== */}
-
                     {/* 1. Pilihan Ganda Tunggal */}
                     {(!currentQ?.type || currentQ?.type === "PG_SEDERHANA") && currentQ?.options && (
                         <div className="space-y-2.5 sm:space-y-3 pt-1">
@@ -830,7 +897,7 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* 2. Pilihan Ganda Kompleks MCMA (Centang Lebih dari Satu) */}
+                    {/* 2. Pilihan Ganda Kompleks MCMA */}
                     {currentQ?.type === "PGK_MCMA" && currentQ?.options && (
                         <div className="space-y-3 pt-1">
                             <div className="text-[11px] text-blue-800 font-semibold italic bg-blue-50/70 p-2.5 rounded-xl border border-blue-200/60 flex items-center gap-1.5">
@@ -866,7 +933,7 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* 3. Pilihan Ganda Kompleks Matriks Kategori (Benar / Salah) */}
+                    {/* 3. Pilihan Ganda Kompleks Matriks Kategori */}
                     {currentQ?.type === "PGK_KATEGORI" && currentQ?.statements && (
                         <div className="pt-1 overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[440px]">
@@ -880,8 +947,10 @@ export default function OfficialExamChamberPage() {
                                 <tbody className="divide-y divide-slate-100">
                                     {currentQ.statements.map((st: any) => {
                                         const currentVal = answers[currentQKey]?.[st.id];
-                                        const labelYes = st.correctCategory === "Benar" || st.correctCategory === "Salah" ? "Benar" : "Sesuai";
-                                        const labelNo = st.correctCategory === "Benar" || st.correctCategory === "Salah" ? "Salah" : "Tidak Sesuai";
+                                        const labelYes =
+                                            st.correctCategory === "Benar" || st.correctCategory === "Salah" ? "Benar" : "Sesuai";
+                                        const labelNo =
+                                            st.correctCategory === "Benar" || st.correctCategory === "Salah" ? "Salah" : "Tidak Sesuai";
                                         const isYes = currentVal === labelYes;
                                         const isNo = currentVal === labelNo;
 
@@ -1070,7 +1139,8 @@ export default function OfficialExamChamberPage() {
                         </div>
                         <h3 className="font-black text-lg text-slate-900">Peringatan Integritas Bilik Ujian!</h3>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            Sistem mendeteksi Anda keluar dari mode layar penuh atau berpindah jendela/tab aplikasi lain. Pelanggaran terekam: <strong className="text-rose-600">{violationCount}x</strong>.
+                            Sistem mendeteksi Anda keluar dari mode layar penuh atau berpindah jendela/tab aplikasi lain. Pelanggaran terekam:{" "}
+                            <strong className="text-rose-600">{violationCount}x</strong>.
                         </p>
                         <button
                             type="button"

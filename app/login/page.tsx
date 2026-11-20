@@ -16,13 +16,14 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// Normalisasi nomor HP agar seragam berawalan 08...
-function normalizePhoneID(raw: string): string {
+// Membersihkan input agar hanya menyimpan digit setelah +62 (contoh: 81234567890)
+function sanitizeSuffixPhoneID(raw: string): string {
     let digits = raw.replace(/\D/g, "");
     if (digits.startsWith("62")) {
-        digits = "0" + digits.slice(2);
+        digits = digits.slice(2);
     }
-    return digits;
+    digits = digits.replace(/^0+/, "");
+    return digits.slice(0, 12);
 }
 
 export default function StudentLoginPage() {
@@ -32,7 +33,7 @@ export default function StudentLoginPage() {
         name: "",
         school: "",
         grade: "9",
-        phone: "",
+        phoneSuffix: "", // Digit setelah +62 (misal: 81234567890)
         token: ""
     });
 
@@ -43,12 +44,19 @@ export default function StudentLoginPage() {
         e.preventDefault();
         setErrorMsg("");
 
-        const cleanPhone = normalizePhoneID(formData.phone);
-        if (cleanPhone.length < 10 || cleanPhone.length > 14 || !cleanPhone.startsWith("08")) {
-            setErrorMsg("Nomor WhatsApp tidak valid! Gunakan format aktif 08xxxxxxxxxx (10–14 digit).");
+        const suffix = sanitizeSuffixPhoneID(formData.phoneSuffix);
+        if (!suffix) {
+            setErrorMsg("Nomor WhatsApp wajib diisi untuk melanjutkan ujian!");
             return;
         }
 
+        // Standar nomor seluler Indonesia: setelah +62 wajib diawali '8' dan panjang 9-12 digit (setara 08 + 8-11 digit = 10-13 digit)
+        if (!suffix.startsWith("8") || suffix.length < 9 || suffix.length > 12) {
+            setErrorMsg("Nomor WhatsApp tidak valid! Masukkan 9–12 digit nomor HP Indonesia setelah +62 (diawali angka 8).");
+            return;
+        }
+
+        const cleanPhone = "0" + suffix; // Disimpan seragam sebagai 08xxxxxxxxxx di Supabase
         const cleanName = formData.name.toUpperCase().replace(/\s+/g, " ").trim();
         const cleanSchool = formData.school.toUpperCase().replace(/\s+/g, " ").trim();
 
@@ -257,24 +265,31 @@ export default function StudentLoginPage() {
                             </div>
                         </div>
 
-                        {/* No WA & Token (Otomatis Kapital) */}
+                        {/* No WA (+62 Terkunci) & Token (Otomatis Kapital) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                             <div className="space-y-1">
                                 <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
                                     <Phone className="w-3.5 h-3.5 text-emerald-600" /> NO. WHATSAPP (AKTIF):
                                 </label>
-                                <input
-                                    type="text"
-                                    required
-                                    inputMode="numeric"
-                                    maxLength={14}
-                                    placeholder="081234567890"
-                                    value={formData.phone}
-                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, "") })}
-                                    className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 focus:border-blue-600 outline-none text-xs"
-                                />
+                                <div className="flex items-stretch rounded-xl border border-slate-300 focus-within:border-blue-600 overflow-hidden bg-white">
+                                    <span className="px-3 py-2.5 bg-slate-100 border-r border-slate-300 font-mono font-black text-slate-700 text-xs flex items-center select-none shrink-0">
+                                        +62
+                                    </span>
+                                    <input
+                                        type="text"
+                                        required
+                                        inputMode="numeric"
+                                        maxLength={12}
+                                        placeholder="81234567890"
+                                        value={formData.phoneSuffix}
+                                        onChange={(e) =>
+                                            setFormData({ ...formData, phoneSuffix: sanitizeSuffixPhoneID(e.target.value) })
+                                        }
+                                        className="w-full px-3 py-2.5 font-mono font-bold text-slate-900 outline-none text-xs"
+                                    />
+                                </div>
                                 <span className="text-[9.5px] sm:text-[10px] text-slate-400 block">
-                                    *Hasil Rapor & voucher dikirim ke nomor ini
+                                    *Langsung ketik mulai angka 8 (9–12 digit)
                                 </span>
                             </div>
 

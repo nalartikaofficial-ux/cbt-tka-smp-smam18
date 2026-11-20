@@ -16,6 +16,15 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+// Normalisasi nomor HP agar seragam berawalan 08...
+function normalizePhoneID(raw: string): string {
+    let digits = raw.replace(/\D/g, "");
+    if (digits.startsWith("62")) {
+        digits = "0" + digits.slice(2);
+    }
+    return digits;
+}
+
 export default function StudentLoginPage() {
     const router = useRouter();
 
@@ -24,7 +33,6 @@ export default function StudentLoginPage() {
         school: "",
         grade: "9",
         phone: "",
-        interest: "Sains, Kedokteran & Rekayasa STEM",
         token: ""
     });
 
@@ -35,14 +43,17 @@ export default function StudentLoginPage() {
         e.preventDefault();
         setErrorMsg("");
 
-        const cleanPhone = formData.phone.replace(/\D/g, "");
-        if (cleanPhone.length < 10) {
-            setErrorMsg("Nomor WhatsApp tidak valid (minimal 10 digit angka)!");
+        const cleanPhone = normalizePhoneID(formData.phone);
+        if (cleanPhone.length < 10 || cleanPhone.length > 14 || !cleanPhone.startsWith("08")) {
+            setErrorMsg("Nomor WhatsApp tidak valid! Gunakan format aktif 08xxxxxxxxxx (10–14 digit).");
             return;
         }
 
-        if (!formData.name.trim() || !formData.school.trim()) {
-            setErrorMsg("Nama Lengkap dan Asal SMP wajib diisi!");
+        const cleanName = formData.name.toUpperCase().replace(/\s+/g, " ").trim();
+        const cleanSchool = formData.school.toUpperCase().replace(/\s+/g, " ").trim();
+
+        if (!cleanName || !cleanSchool) {
+            setErrorMsg("Nama Lengkap Siswa dan Asal Sekolah (SMP/MTs) wajib diisi!");
             return;
         }
 
@@ -95,11 +106,11 @@ export default function StudentLoginPage() {
 
             const studentPayload = {
                 nisn: cleanPhone,
-                name: formData.name.trim(),
-                school: formData.school.trim(),
+                name: cleanName,
+                school: cleanSchool,
                 grade: formData.grade,
                 phone: cleanPhone,
-                interest: formData.interest,
+                interest: "Umum",
                 token: inputToken,
                 timestamp: new Date().toISOString()
             };
@@ -199,7 +210,7 @@ export default function StudentLoginPage() {
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4 text-xs text-left">
-                        {/* Nama Siswa */}
+                        {/* Nama Siswa (Otomatis Kapital) */}
                         <div className="space-y-1">
                             <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
                                 <UserCheck className="w-3.5 h-3.5 text-blue-700" /> NAMA LENGKAP SISWA:
@@ -207,14 +218,14 @@ export default function StudentLoginPage() {
                             <input
                                 type="text"
                                 required
-                                placeholder="Contoh: Muhammad Rizki Pratama"
+                                placeholder="CONTOH: MUHAMMAD RIZKI PRATAMA"
                                 value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs"
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
+                                className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs uppercase"
                             />
                         </div>
 
-                        {/* Asal Sekolah & Tingkat Kelas */}
+                        {/* Asal Sekolah (Otomatis Kapital) & Tingkat Kelas */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                             <div className="space-y-1">
                                 <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
@@ -223,10 +234,10 @@ export default function StudentLoginPage() {
                                 <input
                                     type="text"
                                     required
-                                    placeholder="Contoh: SMPN 161 Jakarta"
+                                    placeholder="CONTOH: SMPN 161 JAKARTA"
                                     value={formData.school}
-                                    onChange={(e) => setFormData({ ...formData, school: e.target.value })}
-                                    className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-medium text-slate-900 focus:border-blue-600 outline-none text-xs"
+                                    onChange={(e) => setFormData({ ...formData, school: e.target.value.toUpperCase() })}
+                                    className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs uppercase"
                                 />
                             </div>
 
@@ -237,16 +248,16 @@ export default function StudentLoginPage() {
                                 <select
                                     value={formData.grade}
                                     onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
-                                    className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs bg-white"
+                                    className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs bg-white cursor-pointer"
                                 >
-                                    <option value="9">Kelas 9 (Calon Siswa SMA)</option>
-                                    <option value="8">Kelas 8 (Persiapan Awal)</option>
+                                    <option value="9">Kelas 9</option>
+                                    <option value="8">Kelas 8</option>
                                     <option value="7">Kelas 7</option>
                                 </select>
                             </div>
                         </div>
 
-                        {/* No WA & Token */}
+                        {/* No WA & Token (Otomatis Kapital) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                             <div className="space-y-1">
                                 <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
@@ -256,6 +267,7 @@ export default function StudentLoginPage() {
                                     type="text"
                                     required
                                     inputMode="numeric"
+                                    maxLength={14}
                                     placeholder="081234567890"
                                     value={formData.phone}
                                     onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, "") })}
@@ -273,29 +285,12 @@ export default function StudentLoginPage() {
                                 <input
                                     type="text"
                                     required
-                                    placeholder="Contoh: TKA18"
+                                    placeholder="CONTOH: TKA18"
                                     value={formData.token}
                                     onChange={(e) => setFormData({ ...formData, token: e.target.value.toUpperCase() })}
                                     className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-black text-slate-900 focus:border-blue-600 outline-none text-xs text-center uppercase"
                                 />
                             </div>
-                        </div>
-
-                        {/* Peminatan Karir */}
-                        <div className="space-y-1">
-                            <label className="font-bold text-slate-700 font-mono text-[10.5px] sm:text-xs">
-                                PEMINATAN KARIR / JALUR KELAS SMA YANG DIMINATI:
-                            </label>
-                            <select
-                                value={formData.interest}
-                                onChange={(e) => setFormData({ ...formData, interest: e.target.value })}
-                                className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-semibold text-slate-900 focus:border-blue-600 outline-none text-xs bg-white truncate"
-                            >
-                                <option value="Sains, Kedokteran & Rekayasa STEM">Sains, Kedokteran & Rekayasa STEM</option>
-                                <option value="Bisnis Digital, Akuntansi & Manajemen">Bisnis Digital, Akuntansi & Manajemen</option>
-                                <option value="Ilmu Hukum, Sosial & Komunikasi">Ilmu Hukum, Sosial & Komunikasi</option>
-                                <option value="Desain Kreatif, Multimedia & IT">Desain Kreatif, Multimedia & IT</option>
-                            </select>
                         </div>
 
                         {/* Tombol Submit */}
@@ -317,7 +312,7 @@ export default function StudentLoginPage() {
             </main>
 
             <footer className="py-3 sm:py-4 text-center text-[10px] sm:text-xs text-slate-400 font-medium px-4">
-                © 2026 SMA Muhammadiyah 18 Jakarta Selatan • Jl. Panjang No. 19, Cipulir
+                © 2026 SMA Muhammadiyah 18 Jakarta
             </footer>
         </div>
     );

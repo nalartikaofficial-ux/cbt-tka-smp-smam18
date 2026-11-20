@@ -14,10 +14,7 @@ import {
     School,
     Lock
 } from "lucide-react";
-
-// Webhook Google Sheets Khusus Data Leads PPDB TO TKA SMP
-const LEADS_SHEET_API_URL =
-    "https://script.google.com/macros/s/AKfycbwqhjrwgEsTgA9_Aop9RFBu3Mrht9w4N2SPayyB3z6AtzuP7gmiSpZEioBKwmd7PHaFfw/exec";
+import { supabase } from "@/lib/supabase";
 
 export default function StudentLoginPage() {
     const router = useRouter();
@@ -49,37 +46,95 @@ export default function StudentLoginPage() {
             return;
         }
 
-        setIsSubmitting(true);
-
-        const studentPayload = {
-            action: "register_lead_student",
-            nisn: cleanPhone, // Menggunakan nomor WA sebagai identifier unik siswa
-            name: formData.name.trim(),
-            school: formData.school.trim(),
-            grade: formData.grade,
-            phone: cleanPhone,
-            interest: formData.interest,
-            token: formData.token.toUpperCase().trim(),
-            timestamp: new Date().toISOString()
-        };
-
-        // 1. Simpan ke LocalStorage agar langsung terbaca di bilik ujian & rapor
-        localStorage.setItem("tka_student", JSON.stringify(studentPayload));
-
-        // 2. Kirim data prospek ke Google Sheets Panitia SPMB
-        try {
-            await fetch(LEADS_SHEET_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify(studentPayload)
-            });
-        } catch (err) {
-            console.warn("Gagal mengirim leads ke server, melanjutkan sesi lokal:", err);
+        const inputToken = formData.token.toUpperCase().trim();
+        if (!inputToken) {
+            setErrorMsg("Token Sesi wajib diisi sesuai arahan panitia / pengawas ujian!");
+            return;
         }
 
-        setIsSubmitting(false);
-        router.push("/exam");
+        setIsSubmitting(true);
+
+        try {
+            // 1. Cek Status Sesi & Token Resmi di Supabase (tka_sessions)
+            const { data: sessionData, error: sessionErr } = await supabase
+                .from("tka_sessions")
+                .select("*")
+                .eq("id", 1)
+                .single();
+
+            if (!sessionErr && sessionData) {
+                if (sessionData.status_akses && sessionData.status_akses !== "DIBUKA") {
+                    setErrorMsg("Akses bilik ujian saat ini sedang DIKUNCI oleh Proktor. Silakan tunggu instruksi pembukaan sesi.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                const officialToken = String(sessionData.token_resmi || "TKA18").toUpperCase().trim();
+                if (inputToken !== officialToken) {
+                    setErrorMsg("Token Sesi tidak sesuai! Silakan periksa kembali token aktif dari panitia.");
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
+            // 2. Cek apakah siswa sudah terdaftar / terkunci sebelumnya di tka_students
+            const { data: existingStudent } = await supabase
+                .from("tka_students")
+                .select("*")
+                .eq("phone", cleanPhone)
+                .maybeSingle();
+
+            if (existingStudent) {
+                const stLower = String(existingStudent.status || "").toLowerCase();
+                if (stLower.includes("kunci")) {
+                    setErrorMsg("Akun ujian Anda berstatus TERKUNCI oleh sistem Kiosk. Silakan hubungi Proktor untuk membuka akses.");
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
+            const studentPayload = {
+                nisn: cleanPhone,
+                name: formData.name.trim(),
+                school: formData.school.trim(),
+                grade: formData.grade,
+                phone: cleanPhone,
+                interest: formData.interest,
+                token: inputToken,
+                timestamp: new Date().toISOString()
+            };
+
+            // 3. Simpan / Perbarui Data Prospek Siswa Mandiri ke Supabase (tka_students)
+            const { error: upsertErr } = await supabase.from("tka_students").upsert(
+                {
+                    phone: cleanPhone,
+                    name: studentPayload.name,
+                    school: studentPayload.school,
+                    grade: studentPayload.grade,
+                    interest: studentPayload.interest,
+                    status: existingStudent?.status === "Selesai" ? "Selesai" : "Siap Ujian",
+                    violations: existingStudent?.violations ?? 0,
+                    score: existingStudent?.score ?? 0,
+                    bindo_score: existingStudent?.bindo_score ?? 0,
+                    mtk_score: existingStudent?.mtk_score ?? 0
+                },
+                { onConflict: "phone" }
+            );
+
+            if (upsertErr) {
+                console.warn("Supabase upsert warning:", upsertErr.message);
+            }
+
+            // 4. Simpan ke LocalStorage agar langsung terbaca di bilik ujian & rapor
+            localStorage.setItem("tka_student", JSON.stringify(studentPayload));
+
+            router.push("/exam");
+        } catch (err) {
+            console.error("Gagal memproses registrasi siswa:", err);
+            setErrorMsg("Terjadi gangguan koneksi ke server. Silakan coba beberapa saat lagi.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -206,15 +261,18 @@ export default function StudentLoginPage() {
                                     onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, "") })}
                                     className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 focus:border-blue-600 outline-none text-xs"
                                 />
-                                <span className="text-[9.5px] sm:text-[10px] text-slate-400 block">*Hasil Rapor &amp; voucher dikirim ke nomor ini</span>
+                                <span className="text-[9.5px] sm:text-[10px] text-slate-400 block">
+                                    *Hasil Rapor & voucher dikirim ke nomor ini
+                                </span>
                             </div>
 
                             <div className="space-y-1">
                                 <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
-                                    <Lock className="w-3.5 h-3.5 text-amber-500" /> TOKEN SESI (OPSIONAL):
+                                    <Lock className="w-3.5 h-3.5 text-amber-500" /> TOKEN SESI:
                                 </label>
                                 <input
                                     type="text"
+                                    required
                                     placeholder="Contoh: TKA18"
                                     value={formData.token}
                                     onChange={(e) => setFormData({ ...formData, token: e.target.value.toUpperCase() })}
@@ -233,10 +291,10 @@ export default function StudentLoginPage() {
                                 onChange={(e) => setFormData({ ...formData, interest: e.target.value })}
                                 className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-semibold text-slate-900 focus:border-blue-600 outline-none text-xs bg-white truncate"
                             >
-                                <option value="Sains, Kedokteran & Rekayasa STEM">Sains, Kedokteran &amp; Rekayasa STEM</option>
-                                <option value="Bisnis Digital, Akuntansi & Manajemen">Bisnis Digital, Akuntansi &amp; Manajemen</option>
-                                <option value="Ilmu Hukum, Sosial & Komunikasi">Ilmu Hukum, Sosial &amp; Komunikasi</option>
-                                <option value="Desain Kreatif, Multimedia & IT">Desain Kreatif, Multimedia &amp; IT</option>
+                                <option value="Sains, Kedokteran & Rekayasa STEM">Sains, Kedokteran & Rekayasa STEM</option>
+                                <option value="Bisnis Digital, Akuntansi & Manajemen">Bisnis Digital, Akuntansi & Manajemen</option>
+                                <option value="Ilmu Hukum, Sosial & Komunikasi">Ilmu Hukum, Sosial & Komunikasi</option>
+                                <option value="Desain Kreatif, Multimedia & IT">Desain Kreatif, Multimedia & IT</option>
                             </select>
                         </div>
 
@@ -246,7 +304,7 @@ export default function StudentLoginPage() {
                             disabled={isSubmitting}
                             className="w-full py-3 sm:py-3.5 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-blue-700/20 transition flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
                         >
-                            <span>{isSubmitting ? "Menyimpan Data..." : "Mulai Simulasi Ujian Sekarang"}</span>
+                            <span>{isSubmitting ? "Memverifikasi & Menyimpan..." : "Mulai Simulasi Ujian Sekarang"}</span>
                             <ArrowRight className="w-4 h-4" />
                         </button>
                     </form>
@@ -259,7 +317,7 @@ export default function StudentLoginPage() {
             </main>
 
             <footer className="py-3 sm:py-4 text-center text-[10px] sm:text-xs text-slate-400 font-medium px-4">
-                &copy; 2026 SMA Muhammadiyah 18 Jakarta Selatan &bull; Jl. Panjang No. 19, Cipulir
+                © 2026 SMA Muhammadiyah 18 Jakarta Selatan • Jl. Panjang No. 19, Cipulir
             </footer>
         </div>
     );

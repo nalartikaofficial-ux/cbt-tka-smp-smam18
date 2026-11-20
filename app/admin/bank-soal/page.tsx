@@ -8,22 +8,21 @@ import {
     BookOpen,
     Calculator,
     Trash2,
-    FileText,
     FolderOpen,
     Download,
-    Eye,
-    X,
     FileSpreadsheet,
     ClipboardPaste,
     Check,
     RefreshCw,
     Database,
-    LayoutList,
-    Table as TableIcon,
-    FileDown
+    Upload,
+    FileUp,
+    Layers,
+    FileText
 } from "lucide-react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import mammoth from "mammoth";
 import { supabase } from "@/lib/supabase";
 
 export interface QuestionCBT {
@@ -48,7 +47,6 @@ export interface QuestionCBT {
     pembahasan?: string;
 }
 
-// Komponen Render LaTeX dengan Pengaman Ekstra
 function RenderLatex({ content }: { content?: any }) {
     const safeText = String(content ?? "").trim();
     if (!safeText) return null;
@@ -93,7 +91,6 @@ function RenderLatex({ content }: { content?: any }) {
     );
 }
 
-// Parser Baris CSV Robust
 function parseCSVLine(line: string): string[] {
     const result: string[] = [];
     let current = "";
@@ -119,7 +116,6 @@ function parseCSVLine(line: string): string[] {
     return result.map((item) => item.replace(/^"|"$/g, "").trim());
 }
 
-// Normalisasi Kode Mapel ke BINDO atau MTK
 function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
     const upper = String(raw || "").toUpperCase().trim();
     if (
@@ -134,23 +130,90 @@ function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
     return "BINDO";
 }
 
+function parseRawWordBlocks(rawText: string) {
+    const blocks = rawText.split(/(?=\d+\.\s+)/g).filter((b) => b.trim().length > 0);
+    const rowsToInsert: any[] = [];
+
+    let currentSubCode: "BINDO" | "MTK" = "BINDO";
+    let currentStimulus = "";
+
+    blocks.forEach((block, idx) => {
+        const upperBlock = block.toUpperCase();
+        if (
+            upperBlock.includes("[SUBTES: MATEMATIKA]") ||
+            upperBlock.includes("[SUBTES: MTK]") ||
+            upperBlock.includes("[SUBTES: PM]") ||
+            upperBlock.includes("[MAPEL: MATEMATIKA]")
+        ) {
+            currentSubCode = "MTK";
+        } else if (
+            upperBlock.includes("[SUBTES: BAHASA INDONESIA]") ||
+            upperBlock.includes("[SUBTES: BINDO]") ||
+            upperBlock.includes("[SUBTES: LIT_INDO]") ||
+            upperBlock.includes("[MAPEL: BAHASA INDONESIA]")
+        ) {
+            currentSubCode = "BINDO";
+        }
+
+        const stimMatch = block.match(/\[STIMULUS\]([\s\S]*?)\[\/STIMULUS\]/i);
+        if (stimMatch) {
+            currentStimulus = (stimMatch[1] || "").trim();
+        }
+
+        const qMatch = block.match(/\d+\.\s+([\s\S]*?)(?=(?:^[A-E]\.|\n[A-E]\.|\nKUNCI:))/m);
+        const pertanyaan = qMatch ? qMatch[1].trim() : "";
+
+        const opsi_a = block.match(/(?:^|\n)A\.\s*([\s\S]*?)(?=(?:\n[B-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+        const opsi_b = block.match(/(?:^|\n)B\.\s*([\s\S]*?)(?=(?:\n[C-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+        const opsi_c = block.match(/(?:^|\n)C\.\s*([\s\S]*?)(?=(?:\n[D-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+        const opsi_d = block.match(/(?:^|\n)D\.\s*([\s\S]*?)(?=(?:\nE\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+        const opsi_e = block.match(/(?:^|\n)E\.\s*([\s\S]*?)(?=(?:\nKUNCI:|$))/)?.[1]?.trim() || "";
+
+        const keyMatch = block.match(/KUNCI:\s*([A-E])/i);
+        const kunci = keyMatch ? keyMatch[1].toUpperCase() : "A";
+
+        const expMatch = block.match(/PEMBAHASAN:\s*([\s\S]*?)$/i);
+        const pembahasan = expMatch ? expMatch[1].trim() : "";
+
+        if (pertanyaan && opsi_a && opsi_b) {
+            rowsToInsert.push({
+                no_soal: idx + 1,
+                subtes_code: currentSubCode,
+                subject: currentSubCode === "MTK" ? "Matematika" : "Bahasa Indonesia",
+                materi: currentSubCode === "MTK" ? "Numerasi SMP" : "Literasi Membaca",
+                type: "PG_SEDERHANA",
+                stimulus: currentStimulus,
+                pertanyaan,
+                opsi_a,
+                opsi_b,
+                opsi_c,
+                opsi_d,
+                opsi_e,
+                kunci,
+                difficulty: 2,
+                tingkat_kesukaran: "Sedang",
+                pembahasan
+            });
+        }
+    });
+
+    return rowsToInsert;
+}
+
 export default function BankSoalAdminPage() {
     const csvInputRef = useRef<HTMLInputElement>(null);
+    const docxInputRef = useRef<HTMLInputElement>(null);
 
     const [questions, setQuestions] = useState<QuestionCBT[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+
+    const [activeTab, setActiveTab] = useState<"koleksi" | "word" | "csv">("koleksi");
+
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSubtest, setSelectedSubtest] = useState<"ALL" | "BINDO" | "MTK">("ALL");
-
-    // Mode Tampilan Daftar Soal: "cards" (Tampil Utuh Semua Soal) vs "table" (Tabel Ringkas)
-    const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
-
-    const [showWordPasteModal, setShowWordPasteModal] = useState(false);
     const [pasteText, setPasteText] = useState("");
-    const [selectedQuestionForPreview, setSelectedQuestionForPreview] = useState<QuestionCBT | null>(null);
 
-    // 1. Tarik Soal dari Supabase PostgreSQL (tka_questions)
     const fetchQuestionsFromSupabase = async () => {
         setIsLoading(true);
         try {
@@ -205,11 +268,10 @@ export default function BankSoalAdminPage() {
         fetchQuestionsFromSupabase();
     }, []);
 
-    // 2. Kosongkan Semua Soal di Supabase
     const handleClearAllQuestions = async () => {
         if (
             !confirm(
-                "Apakah Anda yakin ingin MENGHAPUS SEMUA SOAL di database Supabase? Bank soal akan bersih dan siap diunggah ulang."
+                "Apakah Anda yakin ingin MENGHAPUS SEMUA SOAL di database Supabase? Tindakan ini tidak dapat dibatalkan."
             )
         ) {
             return;
@@ -229,68 +291,84 @@ export default function BankSoalAdminPage() {
                 localStorage.removeItem("tka_bank_soal_cbt");
                 localStorage.removeItem("tka_bank_soal");
             }
-            alert("Seluruh soal di Supabase berhasil dikosongkan.");
+            alert("Seluruh koleksi soal di Supabase berhasil dihapus.");
         } catch (err: any) {
-            alert("Gagal mengosongkan soal: " + (err?.message || "Kesalahan server"));
+            alert("Gagal menghapus semua soal: " + (err?.message || "Kesalahan server"));
         } finally {
             setIsSaving(false);
         }
     };
 
-    // 3A. Download Template CSV Resmi TKA SMP (14 Kolom: BINDO & MTK)
-    const handleDownloadCsvTemplateM18 = () => {
-        const headers =
-            "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
-        const row1 = `1,"BINDO","Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan yang kian mengkhawatirkan...","","above","Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...","Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.","Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.","Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.","Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.","","B","Mudah","Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan."\n`;
-        const row2 = `2,"MTK","Menjelang tahun ajaran baru, sebuah koperasi pendidikan memberikan promosi diskon bertingkat untuk paket seragam dan alat tulis. Setiap pembelian paket seragam diberi diskon 20%, dan jika pembeli adalah anggota koperasi, akan mendapatkan potongan harga tambahan sebesar 10% dari harga setelah diskon pertama.","","above","Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal rupiah yang harus dibayarkan oleh seorang siswa yang terdaftar sebagai anggota koperasi?","Rp 210.000","Rp 216.000","Rp 220.000","Rp 240.000","","B","Sedang","Diskon 1 (20%): Rp300.000 x 0.8 = Rp240.000. Diskon 2 (10%): Rp240.000 x 0.9 = Rp216.000."\n`;
+    const handleDeleteOne = async (id: string) => {
+        if (!confirm("Hapus butir soal ini dari koleksi Supabase?")) return;
 
-        const blob = new Blob([headers + row1 + row2], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", "Template_Bank_Soal_TKA_SMP_M18.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsSaving(true);
+        try {
+            const { error } = await supabase.from("tka_questions").delete().eq("id", id);
+            if (error) throw error;
+
+            const updated = questions.filter((q) => q.id !== id);
+            setQuestions(updated);
+            if (typeof window !== "undefined") {
+                localStorage.setItem("tka_bank_soal_cbt", JSON.stringify(updated));
+                localStorage.setItem("tka_bank_soal", JSON.stringify(updated));
+            }
+        } catch (err: any) {
+            alert("Gagal menghapus soal: " + (err?.message || "Kesalahan server"));
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    // 3B. Download Template Naskah Word (.doc) Siap Edit di MS Word
     const handleDownloadWordTemplateM18 = () => {
-        const wordContent = `TEMPLATE NASKAH SOAL TRYOUT TKA SMP - SMA MUHAMMADIYAH 18 JAKARTA
-Petunjuk Penggunaan:
-1. Ganti bagian teks di bawah sesuai naskah soal Bapak/Ibu.
-2. Untuk berpindah mata pelajaran, gunakan tag [SUBTES: BINDO] atau [SUBTES: MTK].
-3. Jika soal memiliki wacana/bacaan panjang, apit dengan tag [STIMULUS] dan [/STIMULUS]. (Jika soal berikutnya tidak memakai wacana, tulis [STIMULUS][/STIMULUS]).
-4. Setelah selesai mengedit di Microsoft Word, blok semua (Ctrl+A), salin (Ctrl+C), lalu klik tombol "Impor Word" di web CBT dan tempel (Ctrl+V).
+        const htmlDoc = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>Template Naskah Soal TKA SMP</title>
+      <style>
+        body { font-family: 'Calibri', sans-serif; font-size: 11pt; line-height: 1.5; }
+        .header { font-weight: bold; font-size: 13pt; color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 4px; margin-bottom: 10px; }
+        .guide { background: #f1f5f9; padding: 10px; border-left: 4px solid #2563eb; margin-bottom: 16px; font-size: 10pt; }
+        .tag { font-weight: bold; color: #0f172a; }
+      </style>
+      </head>
+      <body>
+        <div class="header">TEMPLATE NASKAH SOAL TRYOUT TKA SMP • SMA MUHAMMADIYAH 18 JAKARTA</div>
+        <div class="guide">
+          <b>Petunjuk Penyusunan Naskah:</b><br/>
+          1. Tandai pergantian mata pelajaran dengan <b>[SUBTES: BINDO]</b> atau <b>[SUBTES: MTK]</b>.<br/>
+          2. Jika soal memakai wacana bacaan, apit di antara <b>[STIMULUS]</b> dan <b>[/STIMULUS]</b>.<br/>
+          3. Setelah selesai, simpan file sebagai <b>.docx</b> lalu unggah langsung di menu <i>Import Naskah Word (.docx)</i>.
+        </div>
 
-====================================================================
+        <p class="tag">[SUBTES: BINDO]</p>
+        <p class="tag">[STIMULUS]</p>
+        <p>Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan. Selain sebagai benteng alami dari abrasi gelombang pasang, hutan bakau juga berfungsi sebagai penyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.</p>
+        <p class="tag">[/STIMULUS]</p>
+        <p>1. Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...</p>
+        <p>A. Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.</p>
+        <p>B. Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.</p>
+        <p>C. Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.</p>
+        <p>D. Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.</p>
+        <p>KUNCI: B</p>
+        <p>PEMBAHASAN: Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.</p>
 
-[SUBTES: BINDO]
-[STIMULUS]
-Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan. Selain sebagai benteng alami dari abrasi gelombang pasang, hutan bakau juga berfungsi sebagai penyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.
-[/STIMULUS]
-1. Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...
-A. Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.
-B. Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.
-C. Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.
-D. Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.
-KUNCI: B
-PEMBAHASAN: Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan sehingga efektif menekan emisi karbon penyebab perubahan iklim.
+        <br/>
+        <p class="tag">[SUBTES: MTK]</p>
+        <p class="tag">[STIMULUS]</p>
+        <p>Menjelang tahun ajaran baru, koperasi sekolah memberikan diskon bertingkat untuk paket perlengkapan belajar. Setiap pembelian diberi diskon pertama sebesar 20%, dan khusus anggota koperasi mendapatkan tambahan diskon kedua sebesar 10% dari harga setelah diskon pertama.</p>
+        <p class="tag">[/STIMULUS]</p>
+        <p>2. Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal yang harus dibayarkan oleh siswa yang terdaftar sebagai anggota koperasi?</p>
+        <p>A. Rp210.000</p>
+        <p>B. Rp216.000</p>
+        <p>C. Rp220.000</p>
+        <p>D. Rp240.000</p>
+        <p>KUNCI: B</p>
+        <p>PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text{Rp}240.000$. Harga setelah diskon kedua (10%) = $240.000 \\times 90\\% = \\text{Rp}216.000$.</p>
+      </body>
+      </html>
+    `;
 
-[SUBTES: MTK]
-[STIMULUS]
-Menjelang tahun ajaran baru, koperasi sekolah memberikan diskon bertingkat untuk paket perlengkapan belajar. Setiap pembelian diberi diskon pertama sebesar 20%, dan khusus anggota koperasi mendapatkan tambahan diskon kedua sebesar 10% dari harga setelah diskon pertama.
-[/STIMULUS]
-2. Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal yang harus dibayarkan oleh siswa yang terdaftar sebagai anggota koperasi?
-A. Rp210.000
-B. Rp216.000
-C. Rp220.000
-D. Rp240.000
-KUNCI: B
-PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text{Rp}240.000$. Harga setelah diskon kedua (10%) = $240.000 \\times 90\\% = \\text{Rp}216.000$.
-`;
-
-        const blob = new Blob([wordContent], { type: "application/msword;charset=utf-8;" });
+        const blob = new Blob(["\ufeff", htmlDoc], { type: "application/msword;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -300,7 +378,120 @@ PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text
         document.body.removeChild(link);
     };
 
-    // 4. Unggah CSV & Simpan Langsung ke Supabase
+    const handleUploadDocxDirect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsSaving(true);
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            const extractedText = result.value || "";
+
+            const rowsToInsert = parseRawWordBlocks(extractedText);
+            if (rowsToInsert.length === 0) {
+                alert(
+                    "Tidak ada butir soal yang terdeteksi dari file .docx. Pastikan format penomoran (1. Pertanyaan, A. Opsi, KUNCI: B) sudah sesuai template."
+                );
+                return;
+            }
+
+            const { error } = await supabase.from("tka_questions").insert(rowsToInsert);
+            if (error) throw error;
+
+            await fetchQuestionsFromSupabase();
+            setActiveTab("koleksi");
+            alert(`Berhasil mengimpor ${rowsToInsert.length} butir soal dari file ${file.name} ke Supabase!`);
+        } catch (err: any) {
+            console.error(err);
+            alert("Gagal membaca file .docx: " + (err?.message || "Pastikan file berformat .docx (Word 2007+)"));
+        } finally {
+            setIsSaving(false);
+            e.target.value = "";
+        }
+    };
+
+    const handleParseWordPaste = async () => {
+        if (!pasteText.trim()) {
+            alert("Kotak teks naskah masih kosong!");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const rowsToInsert = parseRawWordBlocks(pasteText);
+            if (rowsToInsert.length === 0) {
+                alert("Format teks tidak terdeteksi. Gunakan format: 1. Pertanyaan, A. Opsi, B. Opsi, KUNCI: X");
+                return;
+            }
+
+            const { error } = await supabase.from("tka_questions").insert(rowsToInsert);
+            if (error) throw error;
+
+            await fetchQuestionsFromSupabase();
+            setPasteText("");
+            setActiveTab("koleksi");
+            alert(`Berhasil menyimpan ${rowsToInsert.length} butir soal TKA SMP ke Supabase!`);
+        } catch (err: any) {
+            alert("Gagal menyimpan naskah Word ke Supabase: " + (err?.message || "Kesalahan server"));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDownloadCsvTemplateM18 = () => {
+        const headers =
+            "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
+        const row1 = `1,"BINDO","Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan...","","above","Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...","Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.","Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.","Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.","Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.","","B","Mudah","Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan."\n`;
+        const row2 = `2,"MTK","Menjelang tahun ajaran baru, koperasi pendidikan memberikan promosi diskon bertingkat untuk paket seragam...","","above","Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal rupiah yang harus dibayarkan oleh siswa anggota koperasi?","Rp 210.000","Rp 216.000","Rp 220.000","Rp 240.000","","B","Sedang","Diskon 1 (20%): Rp300.000 x 0.8 = Rp240.000. Diskon 2 (10%): Rp240.000 x 0.9 = Rp216.000."\n`;
+
+        const blob = new Blob(["\ufeff", headers + row1 + row2], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "Template_Bank_Soal_TKA_SMP_M18.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleExportCurrentCsv = () => {
+        if (questions.length === 0) return;
+        const headers =
+            "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
+        const esc = (val?: string) => `"${String(val || "").replace(/"/g, '""')}"`;
+
+        const body = questions
+            .map((q, idx) =>
+                [
+                    q.no_soal || idx + 1,
+                    esc(q.subtes_code),
+                    esc(q.stimulus),
+                    esc(q.image_url),
+                    esc(q.image_position || "above"),
+                    esc(q.pertanyaan),
+                    esc(q.opsi_a),
+                    esc(q.opsi_b),
+                    esc(q.opsi_c),
+                    esc(q.opsi_d),
+                    esc(q.opsi_e),
+                    esc(q.kunci),
+                    esc(q.tingkat_kesukaran || "Sedang"),
+                    esc(q.pembahasan)
+                ].join(",")
+            )
+            .join("\n");
+
+        const blob = new Blob(["\ufeff", headers + body], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", `Koleksi_Bank_Soal_TKA_SMP_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const handleUploadCsvM18 = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -372,6 +563,7 @@ PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text
                     if (error) throw error;
 
                     await fetchQuestionsFromSupabase();
+                    setActiveTab("koleksi");
                     alert(`Berhasil menyimpan ${rowsToInsert.length} butir soal TKA SMP ke database Supabase!`);
                 } else {
                     alert("Gagal membaca butir soal. Pastikan kolom sesuai urutan template.");
@@ -385,121 +577,6 @@ PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text
         };
         reader.readAsText(file);
         e.target.value = "";
-    };
-
-    // 5. Impor Salin-Tempel dari Naskah Word & Simpan ke Supabase
-    const handleParseWordPaste = async () => {
-        if (!pasteText.trim()) {
-            alert("Kotak teks naskah masih kosong!");
-            return;
-        }
-
-        try {
-            const blocks = pasteText.split(/(?=\d+\.\s+)/g).filter((b) => b.trim().length > 0);
-            const rowsToInsert: any[] = [];
-
-            let currentSubCode: "BINDO" | "MTK" = "BINDO";
-            let currentStimulus = "";
-
-            blocks.forEach((block, idx) => {
-                const upperBlock = block.toUpperCase();
-                if (
-                    upperBlock.includes("[SUBTES: MATEMATIKA]") ||
-                    upperBlock.includes("[SUBTES: MTK]") ||
-                    upperBlock.includes("[SUBTES: PM]") ||
-                    upperBlock.includes("[MAPEL: MATEMATIKA]")
-                ) {
-                    currentSubCode = "MTK";
-                } else if (
-                    upperBlock.includes("[SUBTES: BAHASA INDONESIA]") ||
-                    upperBlock.includes("[SUBTES: BINDO]") ||
-                    upperBlock.includes("[SUBTES: LIT_INDO]") ||
-                    upperBlock.includes("[MAPEL: BAHASA INDONESIA]")
-                ) {
-                    currentSubCode = "BINDO";
-                }
-
-                const stimMatch = block.match(/\[STIMULUS\]([\s\S]*?)\[\/STIMULUS\]/i);
-                if (stimMatch) {
-                    currentStimulus = (stimMatch[1] || "").trim();
-                }
-
-                const qMatch = block.match(/\d+\.\s+([\s\S]*?)(?=(?:^[A-E]\.|\n[A-E]\.|\nKUNCI:))/m);
-                const pertanyaan = qMatch ? qMatch[1].trim() : "";
-
-                const opsi_a = block.match(/(?:^|\n)A\.\s*([\s\S]*?)(?=(?:\n[B-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-                const opsi_b = block.match(/(?:^|\n)B\.\s*([\s\S]*?)(?=(?:\n[C-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-                const opsi_c = block.match(/(?:^|\n)C\.\s*([\s\S]*?)(?=(?:\n[D-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-                const opsi_d = block.match(/(?:^|\n)D\.\s*([\s\S]*?)(?=(?:\nE\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-                const opsi_e = block.match(/(?:^|\n)E\.\s*([\s\S]*?)(?=(?:\nKUNCI:|$))/)?.[1]?.trim() || "";
-
-                const keyMatch = block.match(/KUNCI:\s*([A-E])/i);
-                const kunci = keyMatch ? keyMatch[1].toUpperCase() : "A";
-
-                const expMatch = block.match(/PEMBAHASAN:\s*([\s\S]*?)$/i);
-                const pembahasan = expMatch ? expMatch[1].trim() : "";
-
-                if (pertanyaan && opsi_a && opsi_b) {
-                    rowsToInsert.push({
-                        no_soal: idx + 1,
-                        subtes_code: currentSubCode,
-                        subject: currentSubCode === "MTK" ? "Matematika" : "Bahasa Indonesia",
-                        materi: currentSubCode === "MTK" ? "Numerasi SMP" : "Literasi Membaca",
-                        type: "PG_SEDERHANA",
-                        stimulus: currentStimulus,
-                        pertanyaan,
-                        opsi_a,
-                        opsi_b,
-                        opsi_c,
-                        opsi_d,
-                        opsi_e,
-                        kunci,
-                        difficulty: 2,
-                        tingkat_kesukaran: "Sedang",
-                        pembahasan
-                    });
-                }
-            });
-
-            if (rowsToInsert.length > 0) {
-                setIsSaving(true);
-                const { error } = await supabase.from("tka_questions").insert(rowsToInsert);
-                if (error) throw error;
-
-                await fetchQuestionsFromSupabase();
-                setShowWordPasteModal(false);
-                setPasteText("");
-                alert(`Berhasil menyimpan ${rowsToInsert.length} butir soal TKA SMP ke database Supabase!`);
-            } else {
-                alert("Format teks tidak terdeteksi. Gunakan format: 1. Pertanyaan, A. Opsi, B. Opsi, KUNCI: X");
-            }
-        } catch (err: any) {
-            alert("Gagal menyimpan naskah Word ke Supabase: " + (err?.message || "Kesalahan server"));
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    // 6. Hapus Butir Soal di Supabase
-    const handleDeleteOne = async (id: string) => {
-        if (!confirm("Hapus butir soal ini dari database Supabase?")) return;
-
-        setIsSaving(true);
-        try {
-            const { error } = await supabase.from("tka_questions").delete().eq("id", id);
-            if (error) throw error;
-
-            const updated = questions.filter((q) => q.id !== id);
-            setQuestions(updated);
-            if (typeof window !== "undefined") {
-                localStorage.setItem("tka_bank_soal_cbt", JSON.stringify(updated));
-                localStorage.setItem("tka_bank_soal", JSON.stringify(updated));
-            }
-        } catch (err: any) {
-            alert("Gagal menghapus soal: " + (err?.message || "Kesalahan server"));
-        } finally {
-            setIsSaving(false);
-        }
     };
 
     const filteredQuestions = useMemo(() => {
@@ -522,15 +599,14 @@ PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text
     }, [questions]);
 
     return (
-        <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 overflow-x-hidden">
-            {/* HEADER ATAS RESPONSIF */}
-            <header className="bg-white border-b border-slate-200 py-3 sm:py-3.5 px-3 sm:px-6 lg:px-8 sticky top-0 z-30 shadow-xs">
-                <div className="max-w-7xl mx-auto flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
-                    {/* Baris Identitas Halaman */}
-                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div className="min-h-screen bg-[#F1F5F9] flex flex-col font-sans text-slate-800 overflow-x-hidden">
+            {/* HEADER ATAS BERGAYA CBT SNBT */}
+            <header className="bg-white border-b border-slate-200 py-3 px-4 sm:px-8 sticky top-0 z-30 shadow-2xs">
+                <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                         <Link
                             href="/admin"
-                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-600 transition shrink-0 cursor-pointer"
+                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition shrink-0 cursor-pointer"
                             title="Kembali ke Bilik Admin"
                         >
                             <ChevronLeft className="w-4 h-4" />
@@ -545,593 +621,457 @@ PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text
                                 }}
                             />
                         </div>
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-xs sm:text-sm md:text-base font-black text-slate-900 tracking-tight uppercase truncate">
-                                    BANK SOAL TRYOUT TKA SMP
-                                </h1>
-                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[9.5px] font-bold">
-                                    <Database className="w-2.5 h-2.5" /> Supabase Cloud
-                                </span>
-                            </div>
-                            <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-                                Bahasa Indonesia (BINDO) & Matematika (MTK) • SMA Muhammadiyah 18 Jakarta
+                        <div className="min-w-0">
+                            <h1 className="text-xs sm:text-sm md:text-base font-black text-slate-900 tracking-tight uppercase truncate">
+                                BANK SOAL • SMA MUHAMMADIYAH 18
+                            </h1>
+                            <p className="text-[10.5px] sm:text-[11px] text-slate-500 truncate">
+                                Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK)
                             </p>
                         </div>
                     </div>
 
-                    {/* Toolbar Tombol Aksi */}
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full xl:w-auto justify-end">
-                        <button
-                            onClick={fetchQuestionsFromSupabase}
-                            disabled={isLoading || isSaving}
-                            className="px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                            title="Muat ulang dari Supabase"
-                        >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-blue-600" : ""}`} />
-                            <span>Sync</span>
-                        </button>
-
-                        <button
-                            onClick={handleDownloadCsvTemplateM18}
-                            className="px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                        >
-                            <Download className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                            <span className="truncate">Template CSV</span>
-                        </button>
-
-                        <button
-                            onClick={handleDownloadWordTemplateM18}
-                            className="px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                        >
-                            <FileDown className="w-3.5 h-3.5 text-blue-700 shrink-0" />
-                            <span className="truncate">Template Word</span>
-                        </button>
-
-                        <button
-                            onClick={() => csvInputRef.current?.click()}
-                            disabled={isSaving}
-                            className="px-3 py-2 sm:py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-800 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
-                        >
-                            <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate">{isSaving ? "Menyimpan..." : "Unggah CSV"}</span>
-                        </button>
-                        <input
-                            type="file"
-                            ref={csvInputRef}
-                            onChange={handleUploadCsvM18}
-                            accept=".csv"
-                            className="hidden"
-                        />
-
-                        <button
-                            onClick={() => setShowWordPasteModal(true)}
-                            disabled={isSaving}
-                            className="px-3 py-2 sm:py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-800 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
-                        >
-                            <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate">Impor Word</span>
-                        </button>
-
-                        {questions.length > 0 && (
-                            <button
-                                onClick={handleClearAllQuestions}
-                                disabled={isSaving}
-                                className="col-span-2 sm:col-span-1 px-3 py-2 sm:py-1.5 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs disabled:opacity-50"
-                                title="Kosongkan seluruh soal di Supabase"
-                            >
-                                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                                <span className="truncate">Kosongkan</span>
-                            </button>
-                        )}
-                    </div>
+                    <button
+                        onClick={fetchQuestionsFromSupabase}
+                        disabled={isLoading || isSaving}
+                        className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-blue-600" : ""}`} />
+                        <span>Refresh Data</span>
+                    </button>
                 </div>
             </header>
 
-            {/* KONTEN UTAMA */}
-            <main className="max-w-7xl w-full mx-auto p-3 sm:p-5 lg:p-6 space-y-4 sm:space-y-6">
-                {/* KARTU METRIK */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                    <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-1 text-left">
-                        <div className="flex items-center justify-between text-slate-400 font-mono text-[10px] font-bold uppercase">
-                            <span>TOTAL BANK SOAL CLOUD</span>
-                            <FolderOpen className="w-4 h-4 text-slate-500 shrink-0" />
+            <main className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-5 text-left">
+                {/* 1. BANNER STATUS PENYIMPANAN CLOUD SUPABASE */}
+                <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
+                            <Database className="w-5 h-5" />
                         </div>
-                        <div className="text-2xl sm:text-3xl font-black text-slate-900 font-mono">{stats.total}</div>
-                        <p className="text-[11px] text-slate-500">Tersinkron langsung ke perangkat siswa</p>
+                        <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-black text-xs sm:text-sm text-slate-900">
+                                    Penyimpanan Cloud Supabase PostgreSQL (2 Mapel TKA SMP)
+                                </span>
+                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[10px] font-bold">
+                                    Aktif • {stats.total} Butir Soal
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                Paket Aktif: <strong className="text-blue-700 font-mono">PAKET 1</strong> • Tersinkron otomatis ke seluruh perangkat siswa
+                            </p>
+                        </div>
                     </div>
 
-                    <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-1 text-left">
-                        <div className="flex items-center justify-between text-blue-600 font-mono text-[10px] font-bold uppercase">
-                            <span className="truncate pr-2">BAHASA INDONESIA (BINDO)</span>
-                            <BookOpen className="w-4 h-4 text-blue-600 shrink-0" />
-                        </div>
-                        <div className="text-2xl sm:text-3xl font-black text-blue-700 font-mono">{stats.bindo}</div>
-                        <p className="text-[11px] text-slate-500">Pemetaan Literasi Membaca SMP</p>
-                    </div>
-
-                    <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-1 text-left">
-                        <div className="flex items-center justify-between text-emerald-600 font-mono text-[10px] font-bold uppercase">
-                            <span className="truncate pr-2">MATEMATIKA (MTK)</span>
-                            <Calculator className="w-4 h-4 text-emerald-600 shrink-0" />
-                        </div>
-                        <div className="text-2xl sm:text-3xl font-black text-emerald-700 font-mono">{stats.mtk}</div>
-                        <p className="text-[11px] text-slate-500">Pemetaan Numerasi & Aljabar SMP</p>
+                    <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                        <span className="px-3 py-1.5 rounded-xl bg-blue-700 text-white font-mono text-[11px] font-bold shadow-2xs">
+                            PAKET 1 (BINDO & MTK)
+                        </span>
                     </div>
                 </div>
 
-                {/* PANEL DAFTAR BANK SOAL */}
-                <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-4 text-left">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                        <div>
-                            <h2 className="text-sm sm:text-base font-black text-slate-900">
-                                Daftar Naskah Soal TKA SMP ({filteredQuestions.length} Butir)
-                            </h2>
-                            <p className="text-[11px] sm:text-xs text-slate-500">
-                                Periksa seluruh soal yang sudah terunggah secara utuh pada Mode Kartu Lengkap atau ringkas pada Mode Tabel.
-                            </p>
+                {/* 2. KARTU RINGKASAN PER MATA PELAJARAN (BINDO & MTK) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSelectedSubtest("BINDO");
+                            setActiveTab("koleksi");
+                        }}
+                        className={`p-4 sm:p-5 rounded-3xl border text-left transition cursor-pointer bg-white shadow-2xs hover:border-blue-400 ${selectedSubtest === "BINDO" ? "border-blue-600 ring-2 ring-blue-600/15" : "border-slate-200"
+                            }`}
+                    >
+                        <div className="flex items-center justify-between mb-1.5">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10px] font-black">
+                                BINDO
+                            </span>
+                            <BookOpen className="w-4 h-4 text-blue-600" />
                         </div>
+                        <div className="font-bold text-xs sm:text-sm text-slate-900">Bahasa Indonesia (Literasi Membaca)</div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                            <span className="text-xl sm:text-2xl font-black font-mono text-blue-700">{stats.bindo}</span>
+                            <span className="text-[11px] font-mono text-slate-400">Butir Soal</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
+                            <div
+                                className="h-full bg-blue-600 rounded-full"
+                                style={{ width: `${stats.total > 0 ? Math.round((stats.bindo / stats.total) * 100) : 0}%` }}
+                            />
+                        </div>
+                    </button>
 
-                        {/* Filter, Pencarian & Switch Mode Tampilan */}
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                            {/* Toggle Mode Tampilan */}
-                            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setViewMode("cards")}
-                                    className={`flex-1 sm:flex-none px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${viewMode === "cards"
-                                            ? "bg-white text-blue-700 shadow-2xs"
-                                            : "text-slate-600 hover:text-slate-900"
-                                        }`}
-                                >
-                                    <LayoutList className="w-3.5 h-3.5" />
-                                    <span>Kartu Lengkap</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setViewMode("table")}
-                                    className={`flex-1 sm:flex-none px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${viewMode === "table"
-                                            ? "bg-white text-blue-700 shadow-2xs"
-                                            : "text-slate-600 hover:text-slate-900"
-                                        }`}
-                                >
-                                    <TableIcon className="w-3.5 h-3.5" />
-                                    <span>Tabel</span>
-                                </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSelectedSubtest("MTK");
+                            setActiveTab("koleksi");
+                        }}
+                        className={`p-4 sm:p-5 rounded-3xl border text-left transition cursor-pointer bg-white shadow-2xs hover:border-emerald-400 ${selectedSubtest === "MTK" ? "border-emerald-600 ring-2 ring-emerald-600/15" : "border-slate-200"
+                            }`}
+                    >
+                        <div className="flex items-center justify-between mb-1.5">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[10px] font-black">
+                                MTK
+                            </span>
+                            <Calculator className="w-4 h-4 text-emerald-600" />
+                        </div>
+                        <div className="font-bold text-xs sm:text-sm text-slate-900">Matematika (Numerasi & Aljabar SMP)</div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                            <span className="text-xl sm:text-2xl font-black font-mono text-emerald-700">{stats.mtk}</span>
+                            <span className="text-[11px] font-mono text-slate-400">Butir Soal</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
+                            <div
+                                className="h-full bg-emerald-600 rounded-full"
+                                style={{ width: `${stats.total > 0 ? Math.round((stats.mtk / stats.total) * 100) : 0}%` }}
+                            />
+                        </div>
+                    </button>
+                </div>
+
+                {/* 3. BAR NAVIGASI 3 TAB UTAMA (PERSIS CBT SNBT) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-200/80 p-1.5 rounded-2xl border border-slate-300">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("koleksi")}
+                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "koleksi"
+                                ? "bg-white text-blue-800 shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                    >
+                        <Layers className="w-4 h-4 text-blue-600" />
+                        <span>Koleksi Soal ({stats.total})</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("word")}
+                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "word"
+                                ? "bg-white text-blue-800 shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                    >
+                        <FileText className="w-4 h-4 text-indigo-600" />
+                        <span>Import Naskah Word (.docx)</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("csv")}
+                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "csv"
+                                ? "bg-white text-blue-800 shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                    >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                        <span>Import Massal CSV / Excel</span>
+                    </button>
+                </div>
+
+                {/* TAB 1: KOLEKSI SOAL LENGKAP */}
+                {activeTab === "koleksi" && (
+                    <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-7 shadow-2xs space-y-5">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div>
+                                <h2 className="text-sm sm:text-base font-black text-slate-900">
+                                    Koleksi Soal Tryout TKA SMP ({filteredQuestions.length} Butir)
+                                </h2>
+                                <p className="text-[11px] text-slate-500">
+                                    Menampilkan seluruh naskah soal, wacana, opsi jawaban, dan kunci aktif di server Supabase.
+                                </p>
                             </div>
 
-                            <div className="relative flex-1 sm:w-52">
-                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                <input
-                                    type="text"
-                                    placeholder="Cari kata kunci soal..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
-                                />
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative flex-1 sm:w-48">
+                                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <input
+                                        type="text"
+                                        placeholder="Cari soal..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
+                                    />
+                                </div>
+
+                                <select
+                                    value={selectedSubtest}
+                                    onChange={(e) => setSelectedSubtest(e.target.value as any)}
+                                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none cursor-pointer"
+                                >
+                                    <option value="ALL">Semua Mapel ({stats.total})</option>
+                                    <option value="BINDO">BINDO ({stats.bindo})</option>
+                                    <option value="MTK">MTK ({stats.mtk})</option>
+                                </select>
+
+                                {questions.length > 0 && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={handleExportCurrentCsv}
+                                            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                        >
+                                            <Download className="w-3.5 h-3.5" />
+                                            <span>Download CSV</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={handleClearAllQuestions}
+                                            disabled={isSaving}
+                                            className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <span>Hapus Semua</span>
+                                        </button>
+                                    </>
+                                )}
                             </div>
-
-                            <select
-                                value={selectedSubtest}
-                                onChange={(e) => setSelectedSubtest(e.target.value as any)}
-                                className="px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white outline-none cursor-pointer"
-                            >
-                                <option value="ALL">Semua Mapel (BINDO & MTK)</option>
-                                <option value="BINDO">Bahasa Indonesia (BINDO)</option>
-                                <option value="MTK">Matematika (MTK)</option>
-                            </select>
                         </div>
-                    </div>
 
-                    {/* KONTEN SOAL TERUNGGAH */}
-                    {isLoading ? (
-                        <div className="text-center py-12 text-slate-400 font-mono text-xs">
-                            Memuat bank soal dari Supabase...
-                        </div>
-                    ) : filteredQuestions.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400 font-medium space-y-2 px-4 border border-dashed border-slate-200 rounded-2xl">
-                            <FolderOpen className="w-8 h-8 mx-auto text-slate-300" />
-                            <p className="text-xs">
-                                Bank soal di Supabase masih kosong. Ketuk tombol <strong>Unggah CSV</strong> atau <strong>Impor Word</strong> untuk mengisi naskah.
-                            </p>
-                        </div>
-                    ) : viewMode === "cards" ? (
-                        /* MODE 1: KARTU LENGKAP (TAMPIL UTUH SEMUA SOAL, OPSI, KUNCI & PEMBAHASAN) */
-                        <div className="space-y-4">
-                            {filteredQuestions.map((q, idx) => {
-                                const code = normalizeSubtestCode(q.subtes_code);
-                                const isMath = code === "MTK";
-                                const optionsList = [
-                                    { key: "A", text: q.opsi_a },
-                                    { key: "B", text: q.opsi_b },
-                                    { key: "C", text: q.opsi_c },
-                                    { key: "D", text: q.opsi_d },
-                                    { key: "E", text: q.opsi_e }
-                                ].filter((opt) => opt.text !== undefined && opt.text !== null && String(opt.text).trim().length > 0);
+                        {isLoading ? (
+                            <div className="py-12 text-center font-mono text-xs text-slate-400">
+                                Memuat koleksi soal dari Supabase...
+                            </div>
+                        ) : filteredQuestions.length === 0 ? (
+                            <div className="py-14 text-center space-y-3 border border-dashed border-slate-200 rounded-2xl px-4">
+                                <FolderOpen className="w-9 h-9 mx-auto text-slate-300" />
+                                <div className="text-xs text-slate-500">
+                                    Koleksi soal masih kosong. Silakan pilih tab <strong>Import Naskah Word (.docx)</strong> atau{" "}
+                                    <strong>Import Massal CSV / Excel</strong> untuk mengunggah soal.
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {filteredQuestions.map((q, idx) => {
+                                    const code = normalizeSubtestCode(q.subtes_code);
+                                    const isMath = code === "MTK";
+                                    const optionsList = [
+                                        { key: "A", text: q.opsi_a },
+                                        { key: "B", text: q.opsi_b },
+                                        { key: "C", text: q.opsi_c },
+                                        { key: "D", text: q.opsi_d },
+                                        { key: "E", text: q.opsi_e }
+                                    ].filter((opt) => opt.text !== undefined && opt.text !== null && String(opt.text).trim().length > 0);
 
-                                return (
-                                    <div
-                                        key={q.id || idx}
-                                        className="p-4 sm:p-6 rounded-2xl border border-slate-200 bg-slate-50/40 hover:border-blue-300 transition space-y-3.5"
-                                    >
-                                        {/* Header Kartu Butir Soal */}
-                                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-mono text-xs font-black">
-                                                    NO. {q.no_soal || idx + 1}
-                                                </span>
-                                                <span
-                                                    className={`px-2.5 py-0.5 rounded-full font-mono text-[10.5px] font-bold border ${isMath
-                                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                                            : "bg-blue-50 text-blue-800 border-blue-200"
-                                                        }`}
-                                                >
-                                                    {isMath ? "MTK • Matematika" : "BINDO • Bahasa Indonesia"}
-                                                </span>
-                                                {q.tingkat_kesukaran && (
-                                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] font-bold">
-                                                        {q.tingkat_kesukaran}
+                                    return (
+                                        <div
+                                            key={q.id || idx}
+                                            className="p-4 sm:p-6 rounded-2xl border border-slate-200 bg-white hover:border-blue-300 transition space-y-4 shadow-2xs"
+                                        >
+                                            <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="px-2.5 py-1 rounded-lg bg-[#1e3a8a] text-white font-mono text-[11px] font-black">
+                                                        NO. {q.no_soal || idx + 1}
                                                     </span>
-                                                )}
-                                            </div>
-
-                                            <div className="flex items-center gap-1.5">
-                                                <button
-                                                    onClick={() => setSelectedQuestionForPreview(q)}
-                                                    className="px-2.5 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                                                    title="Buka Modal Pratinjau Layar Siswa"
-                                                >
-                                                    <Eye className="w-3.5 h-3.5" />
-                                                    <span>Layar Siswa</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteOne(q.id)}
-                                                    className="px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                                                    title="Hapus Soal ini"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                    <span>Hapus</span>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Gambar Above */}
-                                        {q.image_url && q.image_position === "above" && (
-                                            <div className="p-3 bg-white rounded-xl border border-slate-200 flex justify-center">
-                                                <img
-                                                    src={q.image_url}
-                                                    alt="Ilustrasi Soal"
-                                                    className="max-h-56 object-contain rounded-lg max-w-full"
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Wacana Stimulus Utuh */}
-                                        {q.stimulus && (
-                                            <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line">
-                                                <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-1 flex items-center gap-1">
-                                                    <FileText className="w-3 h-3" /> Wacana / Stimulus:
-                                                </div>
-                                                <RenderLatex content={q.stimulus} />
-                                            </div>
-                                        )}
-
-                                        {/* Pertanyaan Utuh */}
-                                        <div className="font-bold text-slate-900 text-xs sm:text-sm leading-relaxed">
-                                            <RenderLatex content={q.pertanyaan} />
-                                        </div>
-
-                                        {/* Gambar Below */}
-                                        {q.image_url && q.image_position === "below" && (
-                                            <div className="p-3 bg-white rounded-xl border border-slate-200 flex justify-center">
-                                                <img
-                                                    src={q.image_url}
-                                                    alt="Ilustrasi Soal"
-                                                    className="max-h-56 object-contain rounded-lg max-w-full"
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Opsi Jawaban A-E */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
-                                            {optionsList.map((opt) => {
-                                                const isKey = String(q.kunci || "").toUpperCase().trim() === opt.key;
-                                                return (
-                                                    <div
-                                                        key={opt.key}
-                                                        className={`p-2.5 sm:p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
-                                                                ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-bold"
-                                                                : "bg-white border-slate-200 text-slate-700"
+                                                    <span
+                                                        className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold border ${isMath
+                                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                                : "bg-slate-100 text-slate-700 border-slate-200"
                                                             }`}
                                                     >
-                                                        <span
-                                                            className={`w-6 h-6 rounded-lg font-mono font-bold flex items-center justify-center shrink-0 text-[11px] ${isKey ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
+                                                        Subtes: {code}
+                                                    </span>
+                                                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[11px] font-black">
+                                                        KUNCI: {q.kunci}
+                                                    </span>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteOne(q.id)}
+                                                    className="p-2 rounded-xl border border-slate-200 hover:bg-rose-50 hover:border-rose-200 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                                    title="Hapus butir soal ini"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+
+                                            {q.image_url && q.image_position === "above" && (
+                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-center">
+                                                    <img
+                                                        src={q.image_url}
+                                                        alt="Gambar Soal"
+                                                        className="max-h-56 object-contain rounded-lg max-w-full"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {q.stimulus && (
+                                                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line">
+                                                    <RenderLatex content={q.stimulus} />
+                                                </div>
+                                            )}
+
+                                            <div className="font-bold text-slate-900 text-xs sm:text-sm leading-relaxed">
+                                                <RenderLatex content={q.pertanyaan} />
+                                            </div>
+
+                                            {q.image_url && q.image_position === "below" && (
+                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-center">
+                                                    <img
+                                                        src={q.image_url}
+                                                        alt="Gambar Soal"
+                                                        className="max-h-56 object-contain rounded-lg max-w-full"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                                                {optionsList.map((opt) => {
+                                                    const isKey = String(q.kunci || "").toUpperCase().trim() === opt.key;
+                                                    return (
+                                                        <div
+                                                            key={opt.key}
+                                                            className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
+                                                                    ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
+                                                                    : "bg-slate-50/60 border-slate-200 text-slate-700"
                                                                 }`}
                                                         >
-                                                            {opt.key}
-                                                        </span>
-                                                        <div className="flex-1 pt-0.5 leading-relaxed">
-                                                            <RenderLatex content={opt.text} />
+                                                            <span className="font-mono font-black text-slate-600 shrink-0">{opt.key}.</span>
+                                                            <div className="flex-1 leading-relaxed">
+                                                                <RenderLatex content={opt.text} />
+                                                            </div>
                                                         </div>
-                                                        {isKey && (
-                                                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono text-[9px] font-bold uppercase shrink-0">
-                                                                KUNCI
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {/* Pembahasan */}
-                                        {q.pembahasan && (
-                                            <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-xs text-amber-950">
-                                                <span className="font-mono font-bold text-[10px] text-amber-800 uppercase mr-1.5">
-                                                    Pembahasan:
-                                                </span>
-                                                <RenderLatex content={q.pembahasan} />
+                                                    );
+                                                })}
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        /* MODE 2: TABEL RINGKAS */
-                        <div className="overflow-x-auto rounded-2xl border border-slate-200 -mx-1 sm:mx-0">
-                            <table className="w-full text-left text-xs border-collapse min-w-[600px]">
-                                <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
-                                    <tr>
-                                        <th className="p-3 w-12 text-center">No</th>
-                                        <th className="p-3 w-44">Mata Pelajaran</th>
-                                        <th className="p-3 min-w-[240px]">Konten Wacana / Pertanyaan</th>
-                                        <th className="p-3 w-16 sm:w-20 text-center">Kunci</th>
-                                        <th className="p-3 w-24 text-right">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 font-medium">
-                                    {filteredQuestions.map((q, idx) => {
-                                        const code = normalizeSubtestCode(q.subtes_code);
-                                        const isMath = code === "MTK";
-                                        return (
-                                            <tr key={q.id || idx} className="hover:bg-slate-50/80 transition">
-                                                <td className="p-3 text-center font-mono font-bold text-blue-700 align-top">
-                                                    #{q.no_soal || idx + 1}
-                                                </td>
-                                                <td className="p-3 align-top">
-                                                    <span
-                                                        className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border inline-block whitespace-nowrap ${isMath
-                                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                                                : "bg-blue-50 text-blue-800 border-blue-200"
-                                                            }`}
-                                                    >
-                                                        {isMath ? "MTK • Matematika" : "BINDO • B. Indonesia"}
-                                                    </span>
-                                                </td>
-                                                <td className="p-3 space-y-1 align-top">
-                                                    {q.stimulus && (
-                                                        <div className="text-[11px] text-slate-500 italic line-clamp-1 bg-slate-50 p-1 px-2 rounded-lg border border-slate-100">
-                                                            <strong>Wacana:</strong> {q.stimulus}
-                                                        </div>
-                                                    )}
-                                                    <div className="font-semibold text-slate-900 leading-relaxed text-xs sm:text-[12.5px] line-clamp-3">
-                                                        <RenderLatex content={q.pertanyaan} />
-                                                    </div>
-                                                </td>
-                                                <td className="p-3 text-center align-top">
-                                                    <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono font-black text-xs inline-flex items-center justify-center shadow-2xs">
-                                                        {q.kunci}
-                                                    </span>
-                                                </td>
-                                                <td className="p-3 text-right align-top">
-                                                    <div className="flex items-center justify-end gap-1.5">
-                                                        <button
-                                                            onClick={() => setSelectedQuestionForPreview(q)}
-                                                            className="p-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-700 transition cursor-pointer"
-                                                            title="Buka Pratinjau Penuh"
-                                                        >
-                                                            <Eye className="w-4 h-4" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteOne(q.id)}
-                                                            className="p-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 transition cursor-pointer"
-                                                            title="Hapus Soal"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            </main>
 
-            {/* MODAL PRATINJAU SOAL LAYAR SISWA */}
-            {selectedQuestionForPreview && (
-                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl sm:rounded-3xl w-[96vw] sm:max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 my-auto animate-in zoom-in-95">
-                        <div className="p-3.5 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl sm:rounded-t-3xl shrink-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-mono text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 truncate">
-                                    SOAL NO. {selectedQuestionForPreview.no_soal} • {normalizeSubtestCode(selectedQuestionForPreview.subtes_code)}
-                                </span>
-                                <span className="text-[11px] sm:text-xs text-slate-500 font-medium hidden sm:inline">
-                                    Pratinjau Layar Siswa TKA SMP
-                                </span>
-                            </div>
-                            <button
-                                onClick={() => setSelectedQuestionForPreview(null)}
-                                className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-200 text-slate-500 cursor-pointer shrink-0"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-left text-xs sm:text-sm leading-relaxed">
-                            {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "above" && (
-                                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
-                                    <img
-                                        src={selectedQuestionForPreview.image_url}
-                                        alt="Gambar Soal"
-                                        className="max-h-48 sm:max-h-60 object-contain rounded-xl max-w-full"
-                                    />
-                                </div>
-                            )}
-
-                            {selectedQuestionForPreview.stimulus && (
-                                <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line overflow-x-auto">
-                                    <div className="text-[10px] font-mono font-bold text-blue-700 uppercase mb-1.5 flex items-center gap-1.5">
-                                        <FileText className="w-3.5 h-3.5 shrink-0" /> STIMULUS WACANA BACAAN / INFORMASI
-                                    </div>
-                                    <RenderLatex content={selectedQuestionForPreview.stimulus} />
-                                </div>
-                            )}
-
-                            <div className="font-bold text-slate-900 text-sm sm:text-base leading-snug overflow-x-auto py-0.5">
-                                <RenderLatex content={selectedQuestionForPreview.pertanyaan} />
-                            </div>
-
-                            {selectedQuestionForPreview.image_url && selectedQuestionForPreview.image_position === "below" && (
-                                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
-                                    <img
-                                        src={selectedQuestionForPreview.image_url}
-                                        alt="Gambar Soal"
-                                        className="max-h-48 sm:max-h-60 object-contain rounded-xl max-w-full"
-                                    />
-                                </div>
-                            )}
-
-                            <div className="space-y-2 pt-1">
-                                {[
-                                    { key: "A", text: selectedQuestionForPreview.opsi_a },
-                                    { key: "B", text: selectedQuestionForPreview.opsi_b },
-                                    { key: "C", text: selectedQuestionForPreview.opsi_c },
-                                    { key: "D", text: selectedQuestionForPreview.opsi_d },
-                                    { key: "E", text: selectedQuestionForPreview.opsi_e }
-                                ]
-                                    .filter((opt) => opt.text !== undefined && opt.text !== null && String(opt.text).trim().length > 0)
-                                    .map((opt) => {
-                                        const isKey = String(selectedQuestionForPreview.kunci || "").toUpperCase().trim() === opt.key;
-                                        return (
-                                            <div
-                                                key={opt.key}
-                                                className={`p-3 rounded-2xl border text-xs sm:text-sm flex items-start gap-2.5 sm:gap-3 transition ${isKey
-                                                        ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-semibold shadow-xs"
-                                                        : "bg-white border-slate-200 text-slate-700"
-                                                    }`}
-                                            >
-                                                <span
-                                                    className={`w-6 h-6 sm:w-7 sm:h-7 rounded-xl font-mono font-bold flex items-center justify-center shrink-0 text-xs ${isKey ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
-                                                        }`}
-                                                >
-                                                    {opt.key}
-                                                </span>
-                                                <div className="flex-1 pt-0.5 leading-relaxed overflow-x-auto">
-                                                    <RenderLatex content={String(opt.text ?? "")} />
+                                            {q.pembahasan && (
+                                                <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950">
+                                                    <strong className="font-mono text-[10.5px] uppercase text-amber-800 mr-1.5">
+                                                        Pembahasan:
+                                                    </strong>
+                                                    <RenderLatex content={q.pembahasan} />
                                                 </div>
-                                                {isKey && (
-                                                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-mono text-[9.5px] sm:text-[10px] font-bold uppercase shrink-0">
-                                                        KUNCI
-                                                    </span>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
-
-                            {selectedQuestionForPreview.pembahasan && (
-                                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 space-y-1">
-                                    <div className="font-mono font-bold text-[10px] text-amber-800 uppercase">
-                                        PEMBAHASAN SOAL:
-                                    </div>
-                                    <div className="leading-relaxed overflow-x-auto">
-                                        <RenderLatex content={String(selectedQuestionForPreview.pembahasan ?? "")} />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="p-3.5 sm:p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-2xl sm:rounded-b-3xl shrink-0">
-                            <button
-                                onClick={() => setSelectedQuestionForPreview(null)}
-                                className="w-full sm:w-auto px-5 py-2.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
-                            >
-                                Tutup Pratinjau
-                            </button>
-                        </div>
+                        )}
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* MODAL SALIN-TEMPEL DARI WORD */}
-            {showWordPasteModal && (
-                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
-                    <div className="bg-white rounded-2xl sm:rounded-3xl w-[96vw] sm:max-w-3xl p-4 sm:p-6 space-y-3 sm:space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] flex flex-col text-left">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-800 flex items-center justify-center font-bold shrink-0">
-                                    <ClipboardPaste className="w-4 h-4" />
-                                </div>
-                                <div className="min-w-0">
-                                    <h3 className="font-bold text-xs sm:text-sm text-slate-900 truncate">
-                                        Salin-Tempel Teks Naskah Word (TKA SMP)
-                                    </h3>
-                                    <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-                                        Unduh "Template Word" di bilah atas atau tempel langsung naskah soal Anda di bawah.
-                                    </p>
-                                </div>
+                {/* TAB 2: IMPORT NASKAH WORD (.DOCX & COPY-PASTE) */}
+                {activeTab === "word" && (
+                    <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-2xs space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div>
+                                <h2 className="text-sm sm:text-base font-black text-slate-900">
+                                    Import Naskah Soal dari Microsoft Word (.docx)
+                                </h2>
+                                <p className="text-xs text-slate-500">
+                                    Unduh template resmi, susun soal di MS Word, lalu unggah langsung file <strong>.docx</strong> atau tempel teksnya di bawah.
+                                </p>
                             </div>
                             <button
-                                onClick={() => setShowWordPasteModal(false)}
-                                className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-500 cursor-pointer shrink-0"
+                                type="button"
+                                onClick={handleDownloadWordTemplateM18}
+                                className="px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shrink-0"
                             >
-                                <X className="w-4 h-4" />
+                                <Download className="w-4 h-4" />
+                                <span>Download Template Word</span>
                             </button>
                         </div>
 
-                        <div className="p-2.5 sm:p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[10.5px] sm:text-[11px] text-blue-900 space-y-1 leading-relaxed shrink-0">
-                            <strong>Aturan Format Salin-Tempel:</strong>
-                            <p>
-                                Gunakan tag <code>[SUBTES: BINDO]</code> atau <code>[SUBTES: MTK]</code>, tag wacana{" "}
-                                <code>[STIMULUS]...[/STIMULUS]</code>, nomor soal <code>1. Pertanyaan</code>, opsi <code>A.</code>,{" "}
-                                <code>B.</code>, dan baris <code>KUNCI: B</code>.
+                        <div
+                            onClick={() => docxInputRef.current?.click()}
+                            className="border-2 border-dashed border-blue-300 bg-blue-50/40 hover:bg-blue-50 rounded-2xl p-6 text-center space-y-2 cursor-pointer transition"
+                        >
+                            <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mx-auto">
+                                <FileUp className="w-6 h-6" />
+                            </div>
+                            <div className="font-black text-sm text-slate-900">
+                                {isSaving ? "Sedang Membaca & Menyimpan ke Supabase..." : "Klik untuk Unggah File Word (.docx)"}
+                            </div>
+                            <p className="text-xs text-slate-500 max-w-md mx-auto">
+                                Mendukung file <strong>.docx</strong> secara langsung tanpa perlu salin-tempel manual. Gunakan tag{" "}
+                                <code>[SUBTES: BINDO]</code> atau <code>[SUBTES: MTK]</code> di dalam naskah.
                             </p>
+                            <input
+                                type="file"
+                                ref={docxInputRef}
+                                onChange={handleUploadDocxDirect}
+                                accept=".docx"
+                                className="hidden"
+                            />
                         </div>
 
-                        <textarea
-                            rows={8}
-                            value={pasteText}
-                            onChange={(e) => setPasteText(e.target.value)}
-                            placeholder={`[SUBTES: BINDO]\n[STIMULUS]\nHutan mangrove memiliki fungsi penting...\n[/STIMULUS]\n1. Fungsi utama mangrove adalah...\nA. Menahan intrusi\nB. Menyerap karbon 5x lebih tinggi\nC. Tempat bibit ikan\nD. Sumber kayu bakar\nKUNCI: B\nPEMBAHASAN: Karbon biru diserap secara masif oleh akar bakau.\n\n[SUBTES: MTK]\n2. Nilai $x$ dari $2x + 6 = 16$ adalah...\nA. 3\nB. 5\nC. 7\nD. 9\nKUNCI: B`}
-                            className="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs outline-none focus:border-blue-600 flex-1 min-h-[150px]"
-                        />
-
-                        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-slate-100 shrink-0">
-                            <button
-                                type="button"
-                                onClick={() => setShowWordPasteModal(false)}
-                                className="px-4 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer text-center"
-                            >
-                                Batal
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleParseWordPaste}
-                                disabled={isSaving}
-                                className="px-4 sm:px-5 py-2.5 sm:py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-                            >
-                                <Check className="w-4 h-4" />
-                                <span>{isSaving ? "Menyimpan..." : "Simpan ke Supabase"}</span>
-                            </button>
+                        <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                                <ClipboardPaste className="w-4 h-4 text-blue-700" />
+                                <span>Atau Salin-Tempel Teks Naskah Word di Sini:</span>
+                            </div>
+                            <textarea
+                                rows={8}
+                                value={pasteText}
+                                onChange={(e) => setPasteText(e.target.value)}
+                                placeholder={`[SUBTES: BINDO]\n[STIMULUS]\nKawasan ekosistem mangrove di pesisir utara Jakarta...\n[/STIMULUS]\n1. Fungsi utama ekosistem mangrove adalah...\nA. Mencegah abrasi\nB. Menyerap karbon biru\nC. Melindungi bibit ikan\nD. Menahan intrusi\nKUNCI: B\nPEMBAHASAN: Hutan bakau menyerap karbon biru secara masif.\n\n[SUBTES: MTK]\n2. Nilai $x$ dari $2x + 6 = 16$ adalah...\nA. 3\nB. 5\nC. 7\nD. 9\nKUNCI: B`}
+                                className="w-full p-3.5 rounded-2xl border border-slate-200 font-mono text-xs outline-none focus:border-blue-600"
+                            />
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={handleParseWordPaste}
+                                    disabled={isSaving}
+                                    className="px-5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                                >
+                                    <Check className="w-4 h-4" />
+                                    <span>{isSaving ? "Menyimpan..." : "Proses & Simpan ke Supabase"}</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* TAB 3: IMPORT MASSAL CSV / EXCEL */}
+                {activeTab === "csv" && (
+                    <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-2xs space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div>
+                                <h2 className="text-sm sm:text-base font-black text-slate-900">
+                                    Import Massal Soal dari Spreadsheet CSV / Excel
+                                </h2>
+                                <p className="text-xs text-slate-500">
+                                    Gunakan format 14 kolom resmi TKA SMP (<code>BINDO</code> & <code>MTK</code>) beserta dukungan link gambar dan rumus KaTeX.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleDownloadCsvTemplateM18}
+                                className="px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                            >
+                                <Download className="w-4 h-4" />
+                                <span>Download Template CSV</span>
+                            </button>
+                        </div>
+
+                        <div
+                            onClick={() => csvInputRef.current?.click()}
+                            className="border-2 border-dashed border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl p-8 text-center space-y-2.5 cursor-pointer transition"
+                        >
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+                                <Upload className="w-6 h-6" />
+                            </div>
+                            <div className="font-black text-sm text-slate-900">
+                                {isSaving ? "Menyimpan Data ke Supabase..." : "Klik untuk Memilih & Mengunggah File .CSV"}
+                            </div>
+                            <p className="text-xs text-slate-500 max-w-md mx-auto">
+                                Pastikan pemisah kolom menggunakan koma (<code>,</code>) atau simpan dari Excel sebagai{" "}
+                                <strong>CSV UTF-8 (Comma delimited)</strong>.
+                            </p>
+                            <input
+                                type="file"
+                                ref={csvInputRef}
+                                onChange={handleUploadCsvM18}
+                                accept=".csv"
+                                className="hidden"
+                            />
+                        </div>
+                    </div>
+                )}
+            </main>
         </div>
     );
 }

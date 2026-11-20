@@ -947,8 +947,8 @@ export default function BankSoalAdminPage() {
                                                     </span>
                                                     <span
                                                         className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold border ${isMath
-                                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                                            : "bg-slate-100 text-slate-700 border-slate-200"
+                                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                                : "bg-slate-100 text-slate-700 border-slate-200"
                                                             }`}
                                                     >
                                                         {code}
@@ -1026,8 +1026,8 @@ export default function BankSoalAdminPage() {
                                                             <div
                                                                 key={opt.key}
                                                                 className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
-                                                                    ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
-                                                                    : "bg-slate-50/60 border-slate-200 text-slate-700"
+                                                                        ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
+                                                                        : "bg-slate-50/60 border-slate-200 text-slate-700"
                                                                     }`}
                                                             >
                                                                 <span className="font-mono font-black text-slate-600 shrink-0">{opt.key}.</span>

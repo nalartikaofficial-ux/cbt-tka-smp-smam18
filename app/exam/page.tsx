@@ -40,9 +40,48 @@ const TKA_SMP_SUBJECTS = [
     }
 ];
 
-const KKM_STANDARD = 75;
+// Kategori Capaian Resmi Kepmendikdasmen No. 56 Tahun 2026 (Skala 0,00 - 100,00)
+export function getKepmendikdasmen56Category(score: number) {
+    const num = Number(score) || 0;
+    if (num >= 95.0) {
+        return {
+            label: "Istimewa",
+            badgeColor: "bg-indigo-100 text-indigo-900 border-indigo-300",
+            description:
+                "Predikat khusus bagi peserta didik dengan penguasaan materi dan penalaran tingkat tinggi yang sangat unggul."
+        };
+    }
+    if (num >= 76.67) {
+        return {
+            label: "Baik",
+            badgeColor: "bg-emerald-100 text-emerald-900 border-emerald-300",
+            description:
+                "Menggambarkan pemahaman materi yang kuat dan konsisten dalam mengaplikasikan konsep pada berbagai konteks."
+        };
+    }
+    if (num >= 50.0) {
+        return {
+            label: "Memadai",
+            badgeColor: "bg-blue-100 text-blue-900 border-blue-300",
+            description:
+                "Menandakan kemampuan dasar yang cukup sesuai standar minimum pada mata uji terkait."
+        };
+    }
+    return {
+        label: "Kurang",
+        badgeColor: "bg-rose-100 text-rose-900 border-rose-300",
+        description:
+            "Menunjukkan perlunya penguatan kompetensi fundamental dan pendampingan belajar pada mata uji terkait."
+    };
+}
 
-// Helper Render Formula LaTeX / KaTeX (Anti-Crash & Responsif HP)
+export function formatScoreID(score: number): string {
+    return (Number(score) || 0).toLocaleString("id-ID", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
 function RenderLatex({ content }: { content?: any }) {
     const safeText = String(content ?? "").trim();
     if (!safeText) return null;
@@ -87,7 +126,6 @@ function RenderLatex({ content }: { content?: any }) {
     );
 }
 
-// Normalisasi Kode Mapel ke BINDO / MTK
 function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
     const upper = String(raw || "").toUpperCase().trim();
     if (
@@ -102,7 +140,6 @@ function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
     return "BINDO";
 }
 
-// Normalisasi Butir Soal (Mendukung Format CSV 14 Kolom Bank Soal & Format Default)
 function normalizeQuestionItem(q: any, index: number) {
     const code = normalizeSubtestCode(q.subtes_code || q.subtest || q.subject);
     const subject = code === "MTK" ? "Matematika" : "Bahasa Indonesia";
@@ -146,7 +183,7 @@ function normalizeQuestionItem(q: any, index: number) {
     };
 }
 
-// Fungsi Tunggal Kalkulasi Skor Skala 0 - 100 (100% Sinkron Murid, Proktor, Dashboard)
+// Kalkulasi Skor Skala 0,00 - 100,00 (2 Angka di Belakang Koma) Sesuai Kepmendikdasmen No. 56 Tahun 2026
 export function calculateTkaSmpScore(questionsList: any[], currentAnswers: Record<string, any>) {
     let bindoScoreSum = 0,
         bindoWeightSum = 0,
@@ -190,32 +227,32 @@ export function calculateTkaSmpScore(questionsList: any[], currentAnswers: Recor
         }
     });
 
-    const bindoScore = bindoCount > 0 ? Math.round((bindoScoreSum / (bindoWeightSum || 1)) * 100) : 0;
-    const mtkScore = mtkCount > 0 ? Math.round((mtkScoreSum / (mtkWeightSum || 1)) * 100) : 0;
+    const bindoScore =
+        bindoCount > 0 ? Number(((bindoScoreSum / (bindoWeightSum || 1)) * 100).toFixed(2)) : 0;
+    const mtkScore =
+        mtkCount > 0 ? Number(((mtkScoreSum / (mtkWeightSum || 1)) * 100).toFixed(2)) : 0;
 
     let totalScore = 0;
     if (bindoCount > 0 && mtkCount > 0) {
-        totalScore = Math.round((bindoScore + mtkScore) / 2);
+        totalScore = Number(((bindoScore + mtkScore) / 2).toFixed(2));
     } else if (bindoCount > 0) {
         totalScore = bindoScore;
     } else if (mtkCount > 0) {
         totalScore = mtkScore;
     }
 
-    let predicate = "MAHIR";
-    if (totalScore < 55) predicate = "PERLU INTERVENSI KHUSUS";
-    else if (totalScore <= 70) predicate = "DASAR";
-    else if (totalScore <= 85) predicate = "CAKAP";
-
-    const isTuntasKkm = totalScore >= KKM_STANDARD;
+    const bindoCat = getKepmendikdasmen56Category(bindoScore);
+    const mtkCat = getKepmendikdasmen56Category(mtkScore);
+    const overallCat = getKepmendikdasmen56Category(totalScore);
 
     return {
         bindoScore,
         mtkScore,
         totalScore,
-        predicate,
-        isTuntasKkm,
-        kkm: KKM_STANDARD
+        bindoPredicate: bindoCat.label,
+        mtkPredicate: mtkCat.label,
+        predicate: `BINDO: ${bindoCat.label} | MTK: ${mtkCat.label}`,
+        overallCategory: overallCat.label
     };
 }
 
@@ -232,7 +269,6 @@ export default function OfficialExamChamberPage() {
     const [currentQIndexInSubtest, setCurrentQIndexInSubtest] = useState(0);
     const [subtestTimeLeft, setSubtestTimeLeft] = useState<number>(TKA_SMP_SUBJECTS[0].durationMin * 60);
 
-    // State & Snapshot Ref Jawaban & Pelanggaran (Anti-Lag saat Auto-Submit)
     const [answers, setAnswers] = useState<Record<string, any>>({});
     const answersRef = useRef<Record<string, any>>({});
 
@@ -240,9 +276,8 @@ export default function OfficialExamChamberPage() {
     const [violationCount, setViolationCount] = useState(0);
     const violationsRef = useRef<number>(0);
 
-    // Tahapan Layar Ujian
     const [isInExam, setIsInExam] = useState(false);
-    const [isIntermission, setIsIntermission] = useState(false); // Layar Jeda Antar-Mapel
+    const [isIntermission, setIsIntermission] = useState(false);
     const [isExamCompleted, setIsExamCompleted] = useState(false);
     const [isSubmittingScore, setIsSubmittingScore] = useState(false);
     const [showSubtestConfirmModal, setShowSubtestConfirmModal] = useState(false);
@@ -257,7 +292,6 @@ export default function OfficialExamChamberPage() {
         violationsRef.current = violationCount;
     }, [violationCount]);
 
-    // 1. Verifikasi Kredensial Siswa, Tarik Bank Soal dari Supabase & Preload Gambar
     useEffect(() => {
         if (typeof window === "undefined") return;
 
@@ -302,7 +336,6 @@ export default function OfficialExamChamberPage() {
                     setAllQuestionsList(normalized);
                     preloadImages(normalized);
                 } else {
-                    // Fallback ke localStorage jika Supabase masih kosong
                     const rawBank = localStorage.getItem("tka_bank_soal_cbt") || localStorage.getItem("tka_bank_soal");
                     if (rawBank) {
                         const parsedBank = JSON.parse(rawBank);
@@ -325,7 +358,6 @@ export default function OfficialExamChamberPage() {
 
     const activeSubtest = TKA_SMP_SUBJECTS[currentSubtestIndex];
 
-    // 2. Filter Soal Khusus Mata Pelajaran yang Sedang Berjalan
     const currentSubtestQuestions = useMemo(() => {
         const filtered = allQuestionsList.filter((q) => q.subtes_code === activeSubtest.code);
         return filtered.length > 0 ? filtered : allQuestionsList;
@@ -334,7 +366,6 @@ export default function OfficialExamChamberPage() {
     const currentQ = currentSubtestQuestions[currentQIndexInSubtest] || currentSubtestQuestions[0];
     const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${currentQIndexInSubtest}`;
 
-    // 3. Masuk Bilik Ujian, Kunci Layar Penuh & Tandai Status Aktif di Supabase
     const enterExamChamber = async () => {
         setIsInExam(true);
         try {
@@ -351,7 +382,7 @@ export default function OfficialExamChamberPage() {
                     name: studentSession?.name,
                     school: studentSession?.school || "SMP / MTs",
                     grade: studentSession?.grade || "9",
-                    interest: studentSession?.interest || "Sains & Teknologi (STEM)",
+                    interest: studentSession?.interest || "Umum",
                     status: "Sedang Mengerjakan"
                 },
                 { onConflict: "phone" }
@@ -359,7 +390,6 @@ export default function OfficialExamChamberPage() {
         }
     };
 
-    // 4. Sensor Anti-Cheat Kiosk & Sinkron Pelanggaran ke Supabase
     const recordViolation = useCallback(() => {
         if (!isInExam || isExamCompleted || isIntermission) return;
         setViolationCount((prev) => {
@@ -399,7 +429,6 @@ export default function OfficialExamChamberPage() {
         };
     }, [isInExam, isExamCompleted, isIntermission, recordViolation]);
 
-    // 5. Pengiriman Nilai Akhir dengan Snapshot Ref ke Supabase (tka_students & tka_results)
     const executeFinalSubmission = useCallback(async () => {
         setShowSubtestConfirmModal(false);
         setIsIntermission(false);
@@ -417,9 +446,10 @@ export default function OfficialExamChamberPage() {
             mtkScore: computed.mtkScore,
             indoScore: computed.bindoScore,
             mathScore: computed.mtkScore,
+            bindoPredicate: computed.bindoPredicate,
+            mtkPredicate: computed.mtkPredicate,
             predicate: computed.predicate,
-            isTuntasKkm: computed.isTuntasKkm,
-            kkm: computed.kkm,
+            overallCategory: computed.overallCategory,
             violations: snapshotViolations,
             answers: snapshotAnswers,
             questionsSnapshot: allQuestionsList,
@@ -438,12 +468,12 @@ export default function OfficialExamChamberPage() {
                         name: studentSession?.name,
                         school: studentSession?.school || "SMP / MTs",
                         grade: studentSession?.grade || "9",
-                        interest: studentSession?.interest || "Sains & Teknologi (STEM)",
+                        interest: studentSession?.interest || "Umum",
                         status: "Selesai",
                         violations: snapshotViolations,
-                        score: computed.totalScore,
-                        bindo_score: computed.bindoScore,
-                        mtk_score: computed.mtkScore,
+                        score: Math.round(computed.totalScore),
+                        bindo_score: Math.round(computed.bindoScore),
+                        mtk_score: Math.round(computed.mtkScore),
                         waktu_selesai: finishTime
                     },
                     { onConflict: "phone" }
@@ -453,11 +483,11 @@ export default function OfficialExamChamberPage() {
                     phone: cleanPhone,
                     student_name: studentSession?.name,
                     school: studentSession?.school || "SMP / MTs",
-                    total_score: computed.totalScore,
-                    bindo_score: computed.bindoScore,
-                    mtk_score: computed.mtkScore,
+                    total_score: Math.round(computed.totalScore),
+                    bindo_score: Math.round(computed.bindoScore),
+                    mtk_score: Math.round(computed.mtkScore),
                     predicate: computed.predicate,
-                    is_tuntas_kkm: computed.isTuntasKkm,
+                    is_tuntas_kkm: computed.bindoScore >= 50 && computed.mtkScore >= 50,
                     violations: snapshotViolations,
                     answers: snapshotAnswers
                 });
@@ -470,7 +500,6 @@ export default function OfficialExamChamberPage() {
         setIsExamCompleted(true);
     }, [allQuestionsList, studentSession]);
 
-    // 6. Peralihan ke Layar Jeda Antar-Mapel atau Submit Final
     const handleCompleteCurrentSubject = useCallback(() => {
         setShowSubtestConfirmModal(false);
         if (currentSubtestIndex < TKA_SMP_SUBJECTS.length - 1) {
@@ -480,7 +509,6 @@ export default function OfficialExamChamberPage() {
         }
     }, [currentSubtestIndex, executeFinalSubmission]);
 
-    // Mulai Mata Pelajaran Ke-2 (Matematika) setelah Layar Jeda
     const handleStartNextSubjectFromIntermission = () => {
         const nextIdx = currentSubtestIndex + 1;
         setCurrentSubtestIndex(nextIdx);
@@ -490,7 +518,6 @@ export default function OfficialExamChamberPage() {
         enterExamChamber();
     };
 
-    // 7. Timer Hitung Mundur Mandiri per Mata Pelajaran
     useEffect(() => {
         if (!isInExam || isExamCompleted || isIntermission) return;
 
@@ -508,7 +535,6 @@ export default function OfficialExamChamberPage() {
         return () => clearInterval(timer);
     }, [isInExam, isExamCompleted, isIntermission, currentSubtestIndex, handleCompleteCurrentSubject]);
 
-    // Handlers Jawaban
     const handleSelectSingleOption = (optIdx: number) => {
         setAnswers((prev) => {
             const next = { ...prev, [currentQKey]: optIdx };
@@ -551,9 +577,7 @@ export default function OfficialExamChamberPage() {
 
     if (!studentSession) return null;
 
-    // =========================================================================
-    // TAHAP 1: GERBANG KARANTINA BILIK UJIAN TKA SMP
-    // =========================================================================
+    // GERBANG KARANTINA BILIK UJIAN TKA SMP
     if (!isInExam && !isExamCompleted) {
         const bindoCount = allQuestionsList.filter((q) => q.subtes_code === "BINDO").length;
         const mtkCount = allQuestionsList.filter((q) => q.subtes_code === "MTK").length;
@@ -588,8 +612,8 @@ export default function OfficialExamChamberPage() {
 
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs">
                         <div className="font-bold text-slate-700 font-mono uppercase text-[11px] flex justify-between items-center">
-                            <span>Struktur Mata Pelajaran (2 Mapel):</span>
-                            <span className="text-blue-700 font-black">Skala 0–100 (KKM {KKM_STANDARD})</span>
+                            <span>Struktur Mata Uji TKA SMP:</span>
+                            <span className="text-blue-700 font-black">Kepmendikdasmen No. 56/2026</span>
                         </div>
                         {isLoadingQuestions ? (
                             <div className="py-4 text-center font-mono text-slate-400">
@@ -633,9 +657,7 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // =========================================================================
-    // TAHAP 2.5: LAYAR JEDA TRANSISI ANTAR-MATA PELAJARAN (BINDO -> MTK)
-    // =========================================================================
+    // LAYAR JEDA TRANSISI ANTAR-MATA PELAJARAN (BINDO -> MTK)
     if (isIntermission && !isExamCompleted) {
         const nextSubject = TKA_SMP_SUBJECTS[currentSubtestIndex + 1];
         const nextQuestionsCount = allQuestionsList.filter((q) => q.subtes_code === nextSubject.code).length;
@@ -649,19 +671,19 @@ export default function OfficialExamChamberPage() {
 
                     <div className="space-y-1.5">
                         <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 font-mono text-[10px] font-bold uppercase tracking-wider">
-                            JEDA TRANSISI ANTAR-MATA PELAJARAN
+                            JEDA TRANSISI ANTAR-MATA UJI
                         </span>
                         <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                            Mata Pelajaran 1 (BINDO) Selesai!
+                            Mata Uji 1 (Bahasa Indonesia) Selesai!
                         </h2>
                         <p className="text-xs text-slate-300 leading-relaxed">
-                            Jawaban Bahasa Indonesia Anda telah dikunci dengan aman. Silakan tarik napas sejenak sebelum melanjutkan ke mata pelajaran berikutnya.
+                            Jawaban Bahasa Indonesia Anda telah dikunci dengan aman. Silakan tarik napas sejenak sebelum melanjutkan ke mata uji berikutnya.
                         </p>
                     </div>
 
                     <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-700 text-left space-y-2 text-xs">
                         <div className="text-[10px] font-mono text-amber-400 font-bold uppercase">
-                            MATA PELAJARAN BERIKUTNYA:
+                            MATA UJI BERIKUTNYA:
                         </div>
                         <div className="flex items-center justify-between">
                             <div>
@@ -690,9 +712,7 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // =========================================================================
-    // TAHAP 4: SELESAI UJIAN & KONFIRMASI SKOR SKALA 0 - 100
-    // =========================================================================
+    // SELESAI UJIAN & KONFIRMASI SHTKA PER MATA UJI (KEPMENDIKDASMEN NO. 56 TAHUN 2026)
     if (isExamCompleted && finalSavedReport) {
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 flex items-center justify-center">
@@ -702,44 +722,56 @@ export default function OfficialExamChamberPage() {
                     </div>
 
                     <div className="space-y-1">
-                        <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-xs font-bold">
-                            TRYOUT TKA SMP SELESAI
+                        <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10px] font-bold uppercase">
+                            KEPMENDIKDASMEN NO. 56 TAHUN 2026
                         </span>
                         <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
                             Selamat, {studentSession?.name}!
                         </h2>
                         <p className="text-xs text-slate-500">
-                            Lembar Rapor Diagnostik TKA SMP dan Analisis Materi Anda telah berhasil diterbitkan.
+                            Sertifikat Hasil Tryout TKA SMP (Skala 0,00 – 100,00 per Mata Uji) telah diterbitkan.
                         </p>
                     </div>
 
-                    <div className="p-6 rounded-3xl bg-blue-900 text-white space-y-2">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-blue-200 font-bold">
-                            NILAI AKHIR TRYOUT TKA SMP (SKALA 0–100)
-                        </span>
-                        <div className="text-5xl font-black font-mono tracking-tight text-amber-300">
-                            {finalSavedReport.totalScore}
+                    <div className="p-5 sm:p-6 rounded-3xl bg-blue-950 text-white space-y-4">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-blue-300 font-bold">
+                            CAPAIAN PER MATA UJI (TANPA BATAS KELULUSAN)
                         </div>
-                        <div className="text-[11px] font-mono text-blue-100">
-                            Predikat: <strong>{finalSavedReport.predicate}</strong> •{" "}
-                            {finalSavedReport.isTuntasKkm ? `Tuntas KKM (${KKM_STANDARD})` : `Belum Tuntas KKM (${KKM_STANDARD})`}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                            <div className="bg-blue-900/60 p-4 rounded-2xl border border-blue-800 space-y-1">
+                                <div className="text-[10px] font-mono text-blue-200 uppercase">1. Bahasa Indonesia</div>
+                                <div className="text-3xl font-black font-mono text-white">
+                                    {formatScoreID(finalSavedReport.bindoScore)}
+                                </div>
+                                <div className="inline-block px-2.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-300/40 text-amber-300 font-mono text-[11px] font-bold">
+                                    Kategori: {finalSavedReport.bindoPredicate}
+                                </div>
+                            </div>
+
+                            <div className="bg-blue-900/60 p-4 rounded-2xl border border-blue-800 space-y-1">
+                                <div className="text-[10px] font-mono text-blue-200 uppercase">2. Matematika</div>
+                                <div className="text-3xl font-black font-mono text-white">
+                                    {formatScoreID(finalSavedReport.mtkScore)}
+                                </div>
+                                <div className="inline-block px-2.5 py-0.5 rounded-md bg-emerald-400/20 border border-emerald-300/40 text-emerald-300 font-mono text-[11px] font-bold">
+                                    Kategori: {finalSavedReport.mtkPredicate}
+                                </div>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 pt-3 border-t border-blue-800/80 text-xs font-mono">
-                            <div>
-                                Bahasa Indonesia: <strong>{finalSavedReport.bindoScore}</strong>
-                            </div>
-                            <div>
-                                Matematika: <strong>{finalSavedReport.mtkScore}</strong>
-                            </div>
+
+                        <div className="pt-2 border-t border-blue-800/80 text-[11px] font-mono text-blue-200 flex items-center justify-between">
+                            <span>Rerata Indeks Gabungan:</span>
+                            <strong className="text-amber-300 text-sm">{formatScoreID(finalSavedReport.totalScore)} / 100,00</strong>
                         </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <div className="flex flex-col sm:flex-row gap-3 pt-1">
                         <button
                             onClick={() => router.push("/result")}
                             className="flex-1 py-3.5 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
                         >
-                            <Award className="w-4 h-4" /> Buka Rapor Diagnostik & Pembahasan
+                            <Award className="w-4 h-4" /> Buka Sertifikat Hasil & Pembahasan
                         </button>
                         <button
                             onClick={() => router.push("/")}
@@ -753,12 +785,9 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // =========================================================================
-    // TAHAP 2 & 3: BILIK SOAL UJIAN AKTIF (BINDO / MTK)
-    // =========================================================================
+    // BILIK SOAL UJIAN AKTIF (BINDO / MTK)
     return (
         <div className="min-h-screen bg-[#F1F5F9] text-slate-800 flex flex-col justify-between font-sans selection:bg-blue-600 selection:text-white">
-            {/* HEADER ATAS */}
             <header className="bg-white border-b border-slate-200 px-3.5 sm:px-8 py-3 flex items-center justify-between sticky top-0 z-40 shadow-xs gap-2">
                 <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-white border border-slate-200 p-0.5 flex items-center justify-center overflow-hidden shrink-0">
@@ -802,9 +831,7 @@ export default function OfficialExamChamberPage() {
                 </div>
             </header>
 
-            {/* BILIK KONTEN UTAMA */}
             <main className="max-w-7xl mx-auto w-full p-3.5 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start flex-1">
-                {/* KIRI: KOTAK SOAL */}
                 <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl sm:rounded-3xl p-4 sm:p-8 space-y-5 sm:space-y-6 shadow-xs">
                     <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -828,7 +855,6 @@ export default function OfficialExamChamberPage() {
                         </button>
                     </div>
 
-                    {/* Gambar Soal Posisi Above */}
                     {currentQ?.image_url && currentQ?.image_position === "above" && (
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
                             <img
@@ -839,7 +865,6 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* Stimulus Teks Wacana */}
                     {currentQ?.stimulus && (
                         <div className="p-4 sm:p-5 bg-slate-50/80 border border-slate-200 rounded-2xl text-xs sm:text-[13px] text-slate-700 leading-relaxed whitespace-pre-line font-normal overflow-x-auto">
                             <div className="flex items-center gap-1.5 text-blue-800 font-mono font-bold text-[10px] uppercase mb-2">
@@ -849,12 +874,10 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* Teks Pertanyaan */}
                     <div className="text-sm sm:text-[15px] font-bold text-slate-900 leading-relaxed overflow-x-auto">
                         <RenderLatex content={currentQ?.question} />
                     </div>
 
-                    {/* Gambar Soal Posisi Below */}
                     {currentQ?.image_url && currentQ?.image_position === "below" && (
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-center">
                             <img
@@ -865,7 +888,6 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* 1. Pilihan Ganda Tunggal */}
                     {(!currentQ?.type || currentQ?.type === "PG_SEDERHANA") && currentQ?.options && (
                         <div className="space-y-2.5 sm:space-y-3 pt-1">
                             {currentQ.options.map((optText: string, oIdx: number) => {
@@ -897,7 +919,6 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* 2. Pilihan Ganda Kompleks MCMA */}
                     {currentQ?.type === "PGK_MCMA" && currentQ?.options && (
                         <div className="space-y-3 pt-1">
                             <div className="text-[11px] text-blue-800 font-semibold italic bg-blue-50/70 p-2.5 rounded-xl border border-blue-200/60 flex items-center gap-1.5">
@@ -933,7 +954,6 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* 3. Pilihan Ganda Kompleks Matriks Kategori */}
                     {currentQ?.type === "PGK_KATEGORI" && currentQ?.statements && (
                         <div className="pt-1 overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[440px]">
@@ -991,7 +1011,6 @@ export default function OfficialExamChamberPage() {
                         </div>
                     )}
 
-                    {/* Navigasi Soal Bawah */}
                     <div className="pt-5 border-t border-slate-100 flex items-center justify-between gap-2">
                         <button
                             type="button"
@@ -1026,7 +1045,6 @@ export default function OfficialExamChamberPage() {
                     </div>
                 </div>
 
-                {/* KANAN: PALET NOMOR SOAL */}
                 <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl sm:rounded-3xl p-5 sm:p-6 space-y-5 shadow-xs lg:sticky lg:top-24">
                     <div className="flex items-center justify-between text-xs font-bold">
                         <span className="text-slate-400 font-mono uppercase tracking-wider">
@@ -1092,7 +1110,6 @@ export default function OfficialExamChamberPage() {
                 </div>
             </main>
 
-            {/* MODAL KONFIRMASI PERALIHAN / SELESAI SUBTES */}
             {showSubtestConfirmModal && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 text-center shadow-2xl border border-slate-100 animate-in zoom-in-95">
@@ -1106,7 +1123,7 @@ export default function OfficialExamChamberPage() {
                         </h3>
                         <p className="text-xs text-slate-500 leading-relaxed">
                             {currentSubtestIndex === TKA_SMP_SUBJECTS.length - 1
-                                ? "Jawaban Anda akan dikunci dan dihitung otomatis untuk penerbitan lembar rapor diagnostik skala 0–100."
+                                ? "Jawaban Anda akan dikunci dan dihitung menggunakan skala 0,00–100,00 sesuai Kepmendikdasmen No. 56 Tahun 2026."
                                 : "Setelah dikonfirmasi, jawaban Bahasa Indonesia akan dikunci dan Anda akan masuk ke layar jeda sebelum mengerjakan Matematika."}
                         </p>
                         <div className="flex gap-2 pt-2">
@@ -1130,7 +1147,6 @@ export default function OfficialExamChamberPage() {
                 </div>
             )}
 
-            {/* MODAL PERINGATAN KIOSK ANTI-CHEAT */}
             {showViolationModal && (
                 <div className="fixed inset-0 z-[999] bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 text-center shadow-2xl border border-rose-200 animate-in zoom-in-95">

@@ -130,6 +130,14 @@ function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
     return "BINDO";
 }
 
+function normalizeQuestionType(raw: string): "PG_SEDERHANA" | "PGK_MCMA" | "PGK_KATEGORI" {
+    const upper = String(raw || "").toUpperCase().trim();
+    if (upper.includes("MCMA") || upper.includes("MULTI")) return "PGK_MCMA";
+    if (upper.includes("KATEGORI") || upper.includes("BENAR") || upper.includes("MATRIKS")) return "PGK_KATEGORI";
+    return "PG_SEDERHANA";
+}
+
+// Parser Naskah Word (Mendukung PG Sederhana, PGK MCMA, PGK Kategori, Materi & Tingkat Kesukaran)
 function parseRawWordBlocks(rawText: string) {
     const blocks = rawText.split(/(?=\d+\.\s+)/g).filter((b) => b.trim().length > 0);
     const rowsToInsert: any[] = [];
@@ -160,40 +168,102 @@ function parseRawWordBlocks(rawText: string) {
             currentStimulus = (stimMatch[1] || "").trim();
         }
 
-        const qMatch = block.match(/\d+\.\s+([\s\S]*?)(?=(?:^[A-E]\.|\n[A-E]\.|\nKUNCI:))/m);
-        const pertanyaan = qMatch ? qMatch[1].trim() : "";
+        // Deteksi Elemen Materi Perkaban 047/H/AN/2025
+        const materiMatch = block.match(/\[MATERI:\s*([^\]]+)\]/i);
+        const materi = materiMatch
+            ? materiMatch[1].trim()
+            : currentSubCode === "MTK"
+                ? "Bilangan"
+                : "Pemahaman Tekstual";
 
-        const opsi_a = block.match(/(?:^|\n)A\.\s*([\s\S]*?)(?=(?:\n[B-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-        const opsi_b = block.match(/(?:^|\n)B\.\s*([\s\S]*?)(?=(?:\n[C-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-        const opsi_c = block.match(/(?:^|\n)C\.\s*([\s\S]*?)(?=(?:\n[D-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-        const opsi_d = block.match(/(?:^|\n)D\.\s*([\s\S]*?)(?=(?:\nE\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
-        const opsi_e = block.match(/(?:^|\n)E\.\s*([\s\S]*?)(?=(?:\nKUNCI:|$))/)?.[1]?.trim() || "";
+        // Deteksi Tingkat Kesukaran & Bobot
+        const diffTagMatch = block.match(/\[KESUKARAN:\s*([^\]]+)\]/i);
+        const tingkat_kesukaran = diffTagMatch ? diffTagMatch[1].trim() : "Sedang";
+        const diffMap: Record<string, number> = { mudah: 1, sedang: 2, sulit: 3, sukar: 3 };
+        const difficulty = diffMap[tingkat_kesukaran.toLowerCase()] ?? 2;
 
-        const keyMatch = block.match(/KUNCI:\s*([A-E])/i);
-        const kunci = keyMatch ? keyMatch[1].toUpperCase() : "A";
+        // Deteksi Tipe Soal (PG_SEDERHANA, PGK_MCMA, PGK_KATEGORI)
+        const typeTagMatch = block.match(/\[TIPE:\s*([^\]]+)\]/i);
+        let qType: "PG_SEDERHANA" | "PGK_MCMA" | "PGK_KATEGORI" = typeTagMatch
+            ? normalizeQuestionType(typeTagMatch[1])
+            : "PG_SEDERHANA";
 
         const expMatch = block.match(/PEMBAHASAN:\s*([\s\S]*?)$/i);
         const pembahasan = expMatch ? expMatch[1].trim() : "";
 
-        if (pertanyaan && opsi_a && opsi_b) {
-            rowsToInsert.push({
-                no_soal: idx + 1,
-                subtes_code: currentSubCode,
-                subject: currentSubCode === "MTK" ? "Matematika" : "Bahasa Indonesia",
-                materi: currentSubCode === "MTK" ? "Numerasi SMP" : "Literasi Membaca",
-                type: "PG_SEDERHANA",
-                stimulus: currentStimulus,
-                pertanyaan,
-                opsi_a,
-                opsi_b,
-                opsi_c,
-                opsi_d,
-                opsi_e,
-                kunci,
-                difficulty: 2,
-                tingkat_kesukaran: "Sedang",
-                pembahasan
-            });
+        if (qType === "PGK_KATEGORI" || /(?:^|\n)P1\s*[:\.]/im.test(block)) {
+            qType = "PGK_KATEGORI";
+            const qMatch = block.match(/\d+\.\s+([\s\S]*?)(?=(?:^|\n)P1\s*[:\.])/im);
+            const pertanyaan = qMatch ? qMatch[1].trim() : "";
+
+            const statements: string[] = [];
+            const keys: string[] = [];
+            for (let p = 1; p <= 5; p++) {
+                const regex = new RegExp(`(?:^|\\n)P${p}\\s*[:\\.]\\s*([^\\n]+)`, "i");
+                const m = block.match(regex);
+                if (m && m[1]) {
+                    const parts = m[1].split("|").map((s) => s.trim());
+                    statements.push(parts[0] || "");
+                    keys.push(parts[1] || "Benar");
+                }
+            }
+
+            if (pertanyaan && statements.length >= 2) {
+                rowsToInsert.push({
+                    no_soal: idx + 1,
+                    subtes_code: currentSubCode,
+                    subject: currentSubCode === "MTK" ? "Matematika" : "Bahasa Indonesia",
+                    materi,
+                    type: "PGK_KATEGORI",
+                    stimulus: currentStimulus,
+                    pertanyaan,
+                    opsi_a: statements[0] || "",
+                    opsi_b: statements[1] || "",
+                    opsi_c: statements[2] || "",
+                    opsi_d: statements[3] || "",
+                    opsi_e: statements[4] || "",
+                    kunci: keys.join("|"),
+                    difficulty,
+                    tingkat_kesukaran,
+                    pembahasan
+                });
+            }
+        } else {
+            const qMatch = block.match(/\d+\.\s+([\s\S]*?)(?=(?:^[A-E]\.|\n[A-E]\.|\nKUNCI:))/m);
+            const pertanyaan = qMatch ? qMatch[1].trim() : "";
+
+            const opsi_a = block.match(/(?:^|\n)A\.\s*([\s\S]*?)(?=(?:\n[B-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+            const opsi_b = block.match(/(?:^|\n)B\.\s*([\s\S]*?)(?=(?:\n[C-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+            const opsi_c = block.match(/(?:^|\n)C\.\s*([\s\S]*?)(?=(?:\n[D-E]\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+            const opsi_d = block.match(/(?:^|\n)D\.\s*([\s\S]*?)(?=(?:\nE\.|\nKUNCI:|$))/)?.[1]?.trim() || "";
+            const opsi_e = block.match(/(?:^|\n)E\.\s*([\s\S]*?)(?=(?:\nKUNCI:|$))/)?.[1]?.trim() || "";
+
+            const keyMatch = block.match(/KUNCI:\s*([A-E,\s]+)/i);
+            const rawKunci = keyMatch ? keyMatch[1].toUpperCase().replace(/\s+/g, "") : "A";
+            if (rawKunci.includes(",")) {
+                qType = "PGK_MCMA";
+            }
+
+            if (pertanyaan && opsi_a && opsi_b) {
+                rowsToInsert.push({
+                    no_soal: idx + 1,
+                    subtes_code: currentSubCode,
+                    subject: currentSubCode === "MTK" ? "Matematika" : "Bahasa Indonesia",
+                    materi,
+                    type: qType,
+                    stimulus: currentStimulus,
+                    pertanyaan,
+                    opsi_a,
+                    opsi_b,
+                    opsi_c,
+                    opsi_d,
+                    opsi_e,
+                    kunci: rawKunci,
+                    difficulty,
+                    tingkat_kesukaran,
+                    pembahasan
+                });
+            }
         }
     });
 
@@ -209,7 +279,6 @@ export default function BankSoalAdminPage() {
     const [isSaving, setIsSaving] = useState(false);
 
     const [activeTab, setActiveTab] = useState<"koleksi" | "word" | "csv">("koleksi");
-
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSubtest, setSelectedSubtest] = useState<"ALL" | "BINDO" | "MTK">("ALL");
     const [pasteText, setPasteText] = useState("");
@@ -224,7 +293,6 @@ export default function BankSoalAdminPage() {
                 .order("no_soal", { ascending: true });
 
             if (error) {
-                console.error("Supabase fetch error:", error);
                 alert("Gagal memuat soal dari Supabase: " + error.message);
                 return;
             }
@@ -236,8 +304,8 @@ export default function BankSoalAdminPage() {
                     no_soal: Number(q.no_soal) || 1,
                     subtes_code: code,
                     subject: code === "MTK" ? "Matematika" : "Bahasa Indonesia",
-                    materi: q.materi || (code === "MTK" ? "Numerasi SMP" : "Literasi Membaca"),
-                    type: q.type || "PG_SEDERHANA",
+                    materi: q.materi || (code === "MTK" ? "Bilangan" : "Pemahaman Tekstual"),
+                    type: normalizeQuestionType(q.type),
                     stimulus: q.stimulus || "",
                     image_url: q.image_url || "",
                     image_position: q.image_position || "above",
@@ -320,6 +388,7 @@ export default function BankSoalAdminPage() {
         }
     };
 
+    // Template Word Resmi mencakup PG Biasa, PGK MCMA, PGK Kategori & 7 Elemen Materi
     const handleDownloadWordTemplateM18 = () => {
         const htmlDoc = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -332,15 +401,16 @@ export default function BankSoalAdminPage() {
       </style>
       </head>
       <body>
-        <div class="header">TEMPLATE NASKAH SOAL TRYOUT TKA SMP • SMA MUHAMMADIYAH 18 JAKARTA</div>
+        <div class="header">TEMPLATE NASKAH SOAL TRYOUT TKA SMP • PERKABAN 047/H/AN/2025</div>
         <div class="guide">
-          <b>Petunjuk Penyusunan Naskah:</b><br/>
-          1. Tandai pergantian mata pelajaran dengan <b>[SUBTES: BINDO]</b> atau <b>[SUBTES: MTK]</b>.<br/>
-          2. Jika soal memakai wacana bacaan, apit di antara <b>[STIMULUS]</b> dan <b>[/STIMULUS]</b>.<br/>
-          3. Setelah selesai, simpan file sebagai <b>.docx</b> lalu unggah langsung di menu <i>Import Naskah Word (.docx)</i>.
+          <b>Panduan 3 Bentuk Soal & 7 Elemen Materi Resmi:</b><br/>
+          1. <b>[SUBTES: BINDO]</b> atau <b>[SUBTES: MTK]</b><br/>
+          2. <b>[MATERI: ...]</b> → BINDO: <i>Pemahaman Tekstual</i>, <i>Pemahaman Inferensial</i>, <i>Evaluasi dan Apresiasi</i> | MTK: <i>Bilangan</i>, <i>Aljabar</i>, <i>Geometri & Pengukuran</i>, <i>Data & Peluang</i><br/>
+          3. <b>[TIPE: PG_SEDERHANA]</b> (KUNCI: B), <b>[TIPE: PGK_MCMA]</b> (KUNCI: A, C), atau <b>[TIPE: PGK_KATEGORI]</b> (P1: Pernyataan | Benar)<br/>
+          4. Simpan file sebagai <b>.docx</b> lalu unggah di menu <i>Import Naskah Word (.docx)</i>.
         </div>
 
-        <p class="tag">[SUBTES: BINDO]</p>
+        <p class="tag">[SUBTES: BINDO] [MATERI: Pemahaman Tekstual] [TIPE: PG_SEDERHANA] [KESUKARAN: Mudah]</p>
         <p class="tag">[STIMULUS]</p>
         <p>Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan. Selain sebagai benteng alami dari abrasi gelombang pasang, hutan bakau juga berfungsi sebagai penyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.</p>
         <p class="tag">[/STIMULUS]</p>
@@ -353,17 +423,26 @@ export default function BankSoalAdminPage() {
         <p>PEMBAHASAN: Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.</p>
 
         <br/>
-        <p class="tag">[SUBTES: MTK]</p>
+        <p class="tag">[SUBTES: MTK] [MATERI: Bilangan] [TIPE: PGK_MCMA] [KESUKARAN: Sedang]</p>
         <p class="tag">[STIMULUS]</p>
-        <p>Menjelang tahun ajaran baru, koperasi sekolah memberikan diskon bertingkat untuk paket perlengkapan belajar. Setiap pembelian diberi diskon pertama sebesar 20%, dan khusus anggota koperasi mendapatkan tambahan diskon kedua sebesar 10% dari harga setelah diskon pertama.</p>
+        <p>Koperasi sekolah memberikan promo diskon bertingkat: diskon pertama 20%, dan khusus anggota koperasi mendapatkan tambahan diskon kedua 10% dari harga setelah diskon pertama.</p>
         <p class="tag">[/STIMULUS]</p>
-        <p>2. Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal yang harus dibayarkan oleh siswa yang terdaftar sebagai anggota koperasi?</p>
-        <p>A. Rp210.000</p>
-        <p>B. Rp216.000</p>
-        <p>C. Rp220.000</p>
-        <p>D. Rp240.000</p>
-        <p>KUNCI: B</p>
-        <p>PEMBAHASAN: Harga setelah diskon pertama (20%) = $300.000 \\times 80\\% = \\text{Rp}240.000$. Harga setelah diskon kedua (10%) = $240.000 \\times 90\\% = \\text{Rp}216.000$.</p>
+        <p>2. Jika harga label paket perlengkapan sekolah adalah Rp300.000, pilihlah DUA pernyataan yang benar di bawah ini!</p>
+        <p>A. Harga setelah diskon pertama adalah Rp240.000</p>
+        <p>B. Total persentase diskon yang diterima anggota adalah 30%</p>
+        <p>C. Nominal akhir yang dibayarkan anggota koperasi adalah Rp216.000</p>
+        <p>D. Besar potongan diskon kedua adalah Rp30.000</p>
+        <p>KUNCI: A, C</p>
+        <p>PEMBAHASAN: Harga setelah diskon pertama = $300.000 \\times 0,8 = \\text{Rp}240.000$. Harga akhir = $240.000 \\times 0,9 = \\text{Rp}216.000$.</p>
+
+        <br/>
+        <p class="tag">[SUBTES: MTK] [MATERI: Aljabar] [TIPE: PGK_KATEGORI] [KESUKARAN: Sulit]</p>
+        <p class="tag">[STIMULUS][/STIMULUS]</p>
+        <p>3. Diketahui persamaan linier $3x - 5 = 16$. Tentukan nilai kebenaran (Benar atau Salah) dari setiap pernyataan berikut!</p>
+        <p>P1: Nilai $x$ yang memenuhi persamaan tersebut adalah $7$ | Benar</p>
+        <p>P2: Nilai dari $2x + 1$ adalah $13$ | Salah</p>
+        <p>P3: Jika $y = x - 2$, maka nilai $y$ adalah $5$ | Benar</p>
+        <p>PEMBAHASAN: $3x = 21 \\Rightarrow x = 7$. Maka $2x + 1 = 15$ (Salah) dan $y = 7 - 2 = 5$ (Benar).</p>
       </body>
       </html>
     `;
@@ -391,7 +470,7 @@ export default function BankSoalAdminPage() {
             const rowsToInsert = parseRawWordBlocks(extractedText);
             if (rowsToInsert.length === 0) {
                 alert(
-                    "Tidak ada butir soal yang terdeteksi dari file .docx. Pastikan format penomoran (1. Pertanyaan, A. Opsi, KUNCI: B) sudah sesuai template."
+                    "Tidak ada butir soal yang terdeteksi dari file .docx. Pastikan format penomoran sudah sesuai template."
                 );
                 return;
             }
@@ -403,7 +482,6 @@ export default function BankSoalAdminPage() {
             setActiveTab("koleksi");
             alert(`Berhasil mengimpor ${rowsToInsert.length} butir soal dari file ${file.name} ke Supabase!`);
         } catch (err: any) {
-            console.error(err);
             alert("Gagal membaca file .docx: " + (err?.message || "Pastikan file berformat .docx (Word 2007+)"));
         } finally {
             setIsSaving(false);
@@ -421,7 +499,7 @@ export default function BankSoalAdminPage() {
         try {
             const rowsToInsert = parseRawWordBlocks(pasteText);
             if (rowsToInsert.length === 0) {
-                alert("Format teks tidak terdeteksi. Gunakan format: 1. Pertanyaan, A. Opsi, B. Opsi, KUNCI: X");
+                alert("Format teks tidak terdeteksi. Gunakan format template Word yang tersedia.");
                 return;
             }
 
@@ -441,11 +519,12 @@ export default function BankSoalAdminPage() {
 
     const handleDownloadCsvTemplateM18 = () => {
         const headers =
-            "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
-        const row1 = `1,"BINDO","Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial dalam menahan laju intrusi air laut ke daratan...","","above","Berdasarkan teks wacana di atas, fungsi utama ekosistem mangrove yang terkait langsung dengan mitigasi perubahan iklim global adalah...","Mencegah abrasi fisik tanah pesisir akibat gelombang laut tinggi.","Menyerap karbon biru (blue carbon) dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan.","Melindungi bibit bandeng dan kepiting bakau dari pencemaran sampah plastik.","Menahan laju intrusi air laut yang dipicu penurunan muka tanah ibu kota.","","B","Mudah","Hutan bakau berfungsi sebagai penyerap karbon biru dengan kapasitas hingga lima kali lebih tinggi dibandingkan hutan tropis daratan."\n`;
-        const row2 = `2,"MTK","Menjelang tahun ajaran baru, koperasi pendidikan memberikan promosi diskon bertingkat untuk paket seragam...","","above","Jika harga label satu set paket perlengkapan sekolah adalah Rp300.000, berapakah nominal rupiah yang harus dibayarkan oleh siswa anggota koperasi?","Rp 210.000","Rp 216.000","Rp 220.000","Rp 240.000","","B","Sedang","Diskon 1 (20%): Rp300.000 x 0.8 = Rp240.000. Diskon 2 (10%): Rp240.000 x 0.9 = Rp216.000."\n`;
+            "No,Subtes,Elemen Materi,Tipe Soal,Wacana / Stimulus,Link Gambar,Posisi Gambar,Pertanyaan,Opsi A / P1,Opsi B / P2,Opsi C / P3,Opsi D / P4,Opsi E / P5,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
+        const row1 = `1,"BINDO","Pemahaman Tekstual","PG_SEDERHANA","Kawasan ekosistem mangrove di pesisir utara Jakarta memegang peranan krusial...","","above","Fungsi utama ekosistem mangrove terkait mitigasi perubahan iklim adalah...","Mencegah abrasi","Menyerap karbon biru 5x lebih tinggi","Melindungi bibit ikan","Menahan intrusi air laut","","B","Mudah","Hutan bakau berfungsi sebagai penyerap karbon biru."\n`;
+        const row2 = `2,"MTK","Bilangan","PGK_MCMA","Diskon bertingkat 20% + 10% untuk harga Rp300.000.","","above","Pilihlah DUA pernyataan yang benar!","Harga diskon 1 = Rp240.000","Total diskon = 30%","Harga akhir = Rp216.000","Diskon 2 = Rp30.000","","A,C","Sedang","Diskon 1: Rp240.000, Diskon 2: Rp216.000."\n`;
+        const row3 = `3,"MTK","Aljabar","PGK_KATEGORI","","","above","Diketahui $3x - 5 = 16$. Tentukan Benar atau Salah!","Nilai $x = 7$","Nilai $2x + 1 = 13$","Nilai $y = x - 2$ adalah $5$","","","Benar|Salah|Benar","Sulit","$x = 7$, maka $2x+1 = 15$ (Salah)."\n`;
 
-        const blob = new Blob(["\ufeff", headers + row1 + row2], { type: "text/csv;charset=utf-8;" });
+        const blob = new Blob(["\ufeff", headers + row1 + row2 + row3], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -458,7 +537,7 @@ export default function BankSoalAdminPage() {
     const handleExportCurrentCsv = () => {
         if (questions.length === 0) return;
         const headers =
-            "No,Subtes,Wacana / Stimulus,Link Gambar (Opsional),Posisi Gambar,Pertanyaan,Opsi A,Opsi B,Opsi C,Opsi D,Opsi E,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
+            "No,Subtes,Elemen Materi,Tipe Soal,Wacana / Stimulus,Link Gambar,Posisi Gambar,Pertanyaan,Opsi A / P1,Opsi B / P2,Opsi C / P3,Opsi D / P4,Opsi E / P5,Kunci Jawaban,Tingkat Kesukaran,Pembahasan\n";
         const esc = (val?: string) => `"${String(val || "").replace(/"/g, '""')}"`;
 
         const body = questions
@@ -466,6 +545,8 @@ export default function BankSoalAdminPage() {
                 [
                     q.no_soal || idx + 1,
                     esc(q.subtes_code),
+                    esc(q.materi),
+                    esc(q.type),
                     esc(q.stimulus),
                     esc(q.image_url),
                     esc(q.image_position || "above"),
@@ -509,29 +590,30 @@ export default function BankSoalAdminPage() {
                 const rowsToInsert: any[] = [];
                 for (let i = 1; i < lines.length; i++) {
                     const row = parseCSVLine(lines[i]);
-                    if (row.length < 6) continue;
+                    if (row.length < 8) continue;
 
                     const no_soal = Number(row[0]) || i;
                     const subtes_code = normalizeSubtestCode(row[1]);
                     const subject = subtes_code === "MTK" ? "Matematika" : "Bahasa Indonesia";
-                    const materi = subtes_code === "MTK" ? "Numerasi SMP" : "Literasi Membaca";
+                    const materi = row[2] || (subtes_code === "MTK" ? "Bilangan" : "Pemahaman Tekstual");
+                    const type = normalizeQuestionType(row[3]);
 
-                    const stimulus = row[2] || "";
-                    const image_url = row[3] || "";
-                    const image_position = row[4]?.toLowerCase() === "below" ? "below" : "above";
-                    const pertanyaan = row[5] || "";
+                    const stimulus = row[4] || "";
+                    const image_url = row[5] || "";
+                    const image_position = row[6]?.toLowerCase() === "below" ? "below" : "above";
+                    const pertanyaan = row[7] || "";
 
-                    const opsi_a = row[6] || "";
-                    const opsi_b = row[7] || "";
-                    const opsi_c = row[8] || "";
-                    const opsi_d = row[9] || "";
-                    const opsi_e = row[10] || "";
+                    const opsi_a = row[8] || "";
+                    const opsi_b = row[9] || "";
+                    const opsi_c = row[10] || "";
+                    const opsi_d = row[11] || "";
+                    const opsi_e = row[12] || "";
 
-                    const kunci = (row[11] || "A").trim().toUpperCase();
-                    const tingkat_kesukaran = row[12] || "Sedang";
-                    const diffMap: Record<string, number> = { mudah: 1, sedang: 2, sulit: 3 };
+                    const kunci = (row[13] || "A").trim();
+                    const tingkat_kesukaran = row[14] || "Sedang";
+                    const diffMap: Record<string, number> = { mudah: 1, sedang: 2, sulit: 3, sukar: 3 };
                     const difficulty = diffMap[tingkat_kesukaran.toLowerCase()] ?? 2;
-                    const pembahasan = row[13] || "";
+                    const pembahasan = row[15] || "";
 
                     if (pertanyaan) {
                         rowsToInsert.push({
@@ -539,7 +621,7 @@ export default function BankSoalAdminPage() {
                             subtes_code,
                             subject,
                             materi,
-                            type: "PG_SEDERHANA",
+                            type,
                             stimulus,
                             image_url,
                             image_position,
@@ -569,7 +651,6 @@ export default function BankSoalAdminPage() {
                     alert("Gagal membaca butir soal. Pastikan kolom sesuai urutan template.");
                 }
             } catch (err: any) {
-                console.error(err);
                 alert("Gagal menyimpan CSV ke Supabase: " + (err?.message || "Kesalahan format"));
             } finally {
                 setIsSaving(false);
@@ -583,7 +664,8 @@ export default function BankSoalAdminPage() {
         return questions.filter((q) => {
             const matchSearch =
                 (q.pertanyaan && q.pertanyaan.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                (q.stimulus && q.stimulus.toLowerCase().includes(searchQuery.toLowerCase()));
+                (q.stimulus && q.stimulus.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (q.materi && q.materi.toLowerCase().includes(searchQuery.toLowerCase()));
 
             const code = normalizeSubtestCode(q.subtes_code);
             const matchSub = selectedSubtest === "ALL" || code === selectedSubtest;
@@ -600,7 +682,6 @@ export default function BankSoalAdminPage() {
 
     return (
         <div className="min-h-screen bg-[#F1F5F9] flex flex-col font-sans text-slate-800 overflow-x-hidden">
-            {/* HEADER ATAS BERGAYA CBT SNBT */}
             <header className="bg-white border-b border-slate-200 py-3 px-4 sm:px-8 sticky top-0 z-30 shadow-2xs">
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -626,7 +707,7 @@ export default function BankSoalAdminPage() {
                                 BANK SOAL • SMA MUHAMMADIYAH 18
                             </h1>
                             <p className="text-[10.5px] sm:text-[11px] text-slate-500 truncate">
-                                Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK)
+                                Perkaban No. 047/H/AN/2025 • PG Biasa, PGK MCMA & PGK Kategori
                             </p>
                         </div>
                     </div>
@@ -643,7 +724,7 @@ export default function BankSoalAdminPage() {
             </header>
 
             <main className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-5 text-left">
-                {/* 1. BANNER STATUS PENYIMPANAN CLOUD SUPABASE */}
+                {/* BANNER CLOUD */}
                 <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3.5">
                         <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
@@ -652,26 +733,24 @@ export default function BankSoalAdminPage() {
                         <div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-black text-xs sm:text-sm text-slate-900">
-                                    Penyimpanan Cloud Supabase PostgreSQL (2 Mapel TKA SMP)
+                                    Penyimpanan Cloud Supabase PostgreSQL (7 Elemen Kompetensi TKA SMP)
                                 </span>
                                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[10px] font-bold">
                                     Aktif • {stats.total} Butir Soal
                                 </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                                Paket Aktif: <strong className="text-blue-700 font-mono">PAKET 1</strong> • Tersinkron otomatis ke seluruh perangkat siswa
+                                Mendukung 3 format soal Pusmendik: <strong>PG Sederhana</strong>, <strong>PGK MCMA</strong>, dan <strong>PGK Kategori (Benar/Salah)</strong>.
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                        <span className="px-3 py-1.5 rounded-xl bg-blue-700 text-white font-mono text-[11px] font-bold shadow-2xs">
-                            PAKET 1 (BINDO & MTK)
-                        </span>
-                    </div>
+                    <span className="px-3 py-1.5 rounded-xl bg-blue-700 text-white font-mono text-[11px] font-bold shadow-2xs self-start sm:self-auto">
+                        PAKET 1 (BINDO & MTK)
+                    </span>
                 </div>
 
-                {/* 2. KARTU RINGKASAN PER MATA PELAJARAN (BINDO & MTK) */}
+                {/* KARTU MAPEL */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <button
                         type="button"
@@ -688,16 +767,12 @@ export default function BankSoalAdminPage() {
                             </span>
                             <BookOpen className="w-4 h-4 text-blue-600" />
                         </div>
-                        <div className="font-bold text-xs sm:text-sm text-slate-900">Bahasa Indonesia (Literasi Membaca)</div>
+                        <div className="font-bold text-xs sm:text-sm text-slate-900">
+                            Bahasa Indonesia (Tekstual, Inferensial & Evaluasi/Apresiasi)
+                        </div>
                         <div className="mt-2 flex items-baseline justify-between">
                             <span className="text-xl sm:text-2xl font-black font-mono text-blue-700">{stats.bindo}</span>
                             <span className="text-[11px] font-mono text-slate-400">Butir Soal</span>
-                        </div>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
-                            <div
-                                className="h-full bg-blue-600 rounded-full"
-                                style={{ width: `${stats.total > 0 ? Math.round((stats.bindo / stats.total) * 100) : 0}%` }}
-                            />
                         </div>
                     </button>
 
@@ -716,28 +791,22 @@ export default function BankSoalAdminPage() {
                             </span>
                             <Calculator className="w-4 h-4 text-emerald-600" />
                         </div>
-                        <div className="font-bold text-xs sm:text-sm text-slate-900">Matematika (Numerasi & Aljabar SMP)</div>
+                        <div className="font-bold text-xs sm:text-sm text-slate-900">
+                            Matematika (Bilangan, Aljabar, Geometri & Data Peluang)
+                        </div>
                         <div className="mt-2 flex items-baseline justify-between">
                             <span className="text-xl sm:text-2xl font-black font-mono text-emerald-700">{stats.mtk}</span>
                             <span className="text-[11px] font-mono text-slate-400">Butir Soal</span>
                         </div>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
-                            <div
-                                className="h-full bg-emerald-600 rounded-full"
-                                style={{ width: `${stats.total > 0 ? Math.round((stats.mtk / stats.total) * 100) : 0}%` }}
-                            />
-                        </div>
                     </button>
                 </div>
 
-                {/* 3. BAR NAVIGASI 3 TAB UTAMA (PERSIS CBT SNBT) */}
+                {/* BAR 3 TAB */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-200/80 p-1.5 rounded-2xl border border-slate-300">
                     <button
                         type="button"
                         onClick={() => setActiveTab("koleksi")}
-                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "koleksi"
-                                ? "bg-white text-blue-800 shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
+                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "koleksi" ? "bg-white text-blue-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
                             }`}
                     >
                         <Layers className="w-4 h-4 text-blue-600" />
@@ -747,9 +816,7 @@ export default function BankSoalAdminPage() {
                     <button
                         type="button"
                         onClick={() => setActiveTab("word")}
-                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "word"
-                                ? "bg-white text-blue-800 shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
+                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "word" ? "bg-white text-blue-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
                             }`}
                     >
                         <FileText className="w-4 h-4 text-indigo-600" />
@@ -759,9 +826,7 @@ export default function BankSoalAdminPage() {
                     <button
                         type="button"
                         onClick={() => setActiveTab("csv")}
-                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "csv"
-                                ? "bg-white text-blue-800 shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
+                        className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${activeTab === "csv" ? "bg-white text-blue-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
                             }`}
                     >
                         <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
@@ -769,7 +834,7 @@ export default function BankSoalAdminPage() {
                     </button>
                 </div>
 
-                {/* TAB 1: KOLEKSI SOAL LENGKAP */}
+                {/* TAB 1: KOLEKSI SOAL */}
                 {activeTab === "koleksi" && (
                     <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-7 shadow-2xs space-y-5">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -778,7 +843,7 @@ export default function BankSoalAdminPage() {
                                     Koleksi Soal Tryout TKA SMP ({filteredQuestions.length} Butir)
                                 </h2>
                                 <p className="text-[11px] text-slate-500">
-                                    Menampilkan seluruh naskah soal, wacana, opsi jawaban, dan kunci aktif di server Supabase.
+                                    Menampilkan seluruh naskah soal, elemen materi, bentuk soal, opsi jawaban, dan kunci aktif.
                                 </p>
                             </div>
 
@@ -787,7 +852,7 @@ export default function BankSoalAdminPage() {
                                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                     <input
                                         type="text"
-                                        placeholder="Cari soal..."
+                                        placeholder="Cari soal / materi..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-600"
@@ -809,7 +874,7 @@ export default function BankSoalAdminPage() {
                                         <button
                                             type="button"
                                             onClick={handleExportCurrentCsv}
-                                            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                                         >
                                             <Download className="w-3.5 h-3.5" />
                                             <span>Download CSV</span>
@@ -819,7 +884,7 @@ export default function BankSoalAdminPage() {
                                             type="button"
                                             onClick={handleClearAllQuestions}
                                             disabled={isSaving}
-                                            className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                            className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
                                             <span>Hapus Semua</span>
@@ -837,7 +902,7 @@ export default function BankSoalAdminPage() {
                             <div className="py-14 text-center space-y-3 border border-dashed border-slate-200 rounded-2xl px-4">
                                 <FolderOpen className="w-9 h-9 mx-auto text-slate-300" />
                                 <div className="text-xs text-slate-500">
-                                    Koleksi soal masih kosong. Silakan pilih tab <strong>Import Naskah Word (.docx)</strong> atau{" "}
+                                    Koleksi soal masih kosong. Pilih tab <strong>Import Naskah Word (.docx)</strong> atau{" "}
                                     <strong>Import Massal CSV / Excel</strong> untuk mengunggah soal.
                                 </div>
                             </div>
@@ -853,6 +918,9 @@ export default function BankSoalAdminPage() {
                                         { key: "D", text: q.opsi_d },
                                         { key: "E", text: q.opsi_e }
                                     ].filter((opt) => opt.text !== undefined && opt.text !== null && String(opt.text).trim().length > 0);
+
+                                    const keyArray = String(q.kunci || "").split(",").map((k) => k.trim());
+                                    const categoryKeys = String(q.kunci || "").split("|").map((k) => k.trim());
 
                                     return (
                                         <div
@@ -870,7 +938,15 @@ export default function BankSoalAdminPage() {
                                                                 : "bg-slate-100 text-slate-700 border-slate-200"
                                                             }`}
                                                     >
-                                                        Subtes: {code}
+                                                        {code}
+                                                    </span>
+                                                    {q.materi && (
+                                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10.5px] font-bold">
+                                                            {q.materi}
+                                                        </span>
+                                                    )}
+                                                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10.5px] font-bold">
+                                                        {q.type}
                                                     </span>
                                                     <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[11px] font-black">
                                                         KUNCI: {q.kunci}
@@ -887,16 +963,6 @@ export default function BankSoalAdminPage() {
                                                 </button>
                                             </div>
 
-                                            {q.image_url && q.image_position === "above" && (
-                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-center">
-                                                    <img
-                                                        src={q.image_url}
-                                                        alt="Gambar Soal"
-                                                        className="max-h-56 object-contain rounded-lg max-w-full"
-                                                    />
-                                                </div>
-                                            )}
-
                                             {q.stimulus && (
                                                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-slate-700 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line">
                                                     <RenderLatex content={q.stimulus} />
@@ -907,35 +973,44 @@ export default function BankSoalAdminPage() {
                                                 <RenderLatex content={q.pertanyaan} />
                                             </div>
 
-                                            {q.image_url && q.image_position === "below" && (
-                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-center">
-                                                    <img
-                                                        src={q.image_url}
-                                                        alt="Gambar Soal"
-                                                        className="max-h-56 object-contain rounded-lg max-w-full"
-                                                    />
-                                                </div>
-                                            )}
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
-                                                {optionsList.map((opt) => {
-                                                    const isKey = String(q.kunci || "").toUpperCase().trim() === opt.key;
-                                                    return (
+                                            {q.type === "PGK_KATEGORI" ? (
+                                                <div className="space-y-2 pt-1">
+                                                    {optionsList.map((opt, oIdx) => (
                                                         <div
                                                             key={opt.key}
-                                                            className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
-                                                                    ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
-                                                                    : "bg-slate-50/60 border-slate-200 text-slate-700"
-                                                                }`}
+                                                            className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 text-xs flex items-center justify-between gap-3"
                                                         >
-                                                            <span className="font-mono font-black text-slate-600 shrink-0">{opt.key}.</span>
-                                                            <div className="flex-1 leading-relaxed">
+                                                            <div className="flex-1">
+                                                                <strong className="font-mono mr-2">P{oIdx + 1}.</strong>
                                                                 <RenderLatex content={opt.text} />
                                                             </div>
+                                                            <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono font-bold text-[10.5px] shrink-0">
+                                                                {categoryKeys[oIdx] || "Benar"}
+                                                            </span>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                                                    {optionsList.map((opt) => {
+                                                        const isKey = keyArray.includes(opt.key);
+                                                        return (
+                                                            <div
+                                                                key={opt.key}
+                                                                className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
+                                                                        ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
+                                                                        : "bg-slate-50/60 border-slate-200 text-slate-700"
+                                                                    }`}
+                                                            >
+                                                                <span className="font-mono font-black text-slate-600 shrink-0">{opt.key}.</span>
+                                                                <div className="flex-1 leading-relaxed">
+                                                                    <RenderLatex content={opt.text} />
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
 
                                             {q.pembahasan && (
                                                 <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950">
@@ -953,7 +1028,7 @@ export default function BankSoalAdminPage() {
                     </div>
                 )}
 
-                {/* TAB 2: IMPORT NASKAH WORD (.DOCX & COPY-PASTE) */}
+                {/* TAB 2: IMPORT WORD (.DOCX) */}
                 {activeTab === "word" && (
                     <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-2xs space-y-6">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -962,7 +1037,8 @@ export default function BankSoalAdminPage() {
                                     Import Naskah Soal dari Microsoft Word (.docx)
                                 </h2>
                                 <p className="text-xs text-slate-500">
-                                    Unduh template resmi, susun soal di MS Word, lalu unggah langsung file <strong>.docx</strong> atau tempel teksnya di bawah.
+                                    Template Word sudah mencakup contoh <strong>PG Sederhana</strong>, <strong>PGK MCMA</strong>, dan{" "}
+                                    <strong>PGK Kategori (Benar/Salah)</strong> beserta tag 7 elemen materi resmi.
                                 </p>
                             </div>
                             <button
@@ -986,8 +1062,7 @@ export default function BankSoalAdminPage() {
                                 {isSaving ? "Sedang Membaca & Menyimpan ke Supabase..." : "Klik untuk Unggah File Word (.docx)"}
                             </div>
                             <p className="text-xs text-slate-500 max-w-md mx-auto">
-                                Mendukung file <strong>.docx</strong> secara langsung tanpa perlu salin-tempel manual. Gunakan tag{" "}
-                                <code>[SUBTES: BINDO]</code> atau <code>[SUBTES: MTK]</code> di dalam naskah.
+                                Mendukung file <strong>.docx</strong> secara langsung untuk seluruh 3 tipe bentuk soal Pusmendik.
                             </p>
                             <input
                                 type="file"
@@ -1007,7 +1082,7 @@ export default function BankSoalAdminPage() {
                                 rows={8}
                                 value={pasteText}
                                 onChange={(e) => setPasteText(e.target.value)}
-                                placeholder={`[SUBTES: BINDO]\n[STIMULUS]\nKawasan ekosistem mangrove di pesisir utara Jakarta...\n[/STIMULUS]\n1. Fungsi utama ekosistem mangrove adalah...\nA. Mencegah abrasi\nB. Menyerap karbon biru\nC. Melindungi bibit ikan\nD. Menahan intrusi\nKUNCI: B\nPEMBAHASAN: Hutan bakau menyerap karbon biru secara masif.\n\n[SUBTES: MTK]\n2. Nilai $x$ dari $2x + 6 = 16$ adalah...\nA. 3\nB. 5\nC. 7\nD. 9\nKUNCI: B`}
+                                placeholder={`[SUBTES: BINDO] [MATERI: Pemahaman Tekstual] [TIPE: PG_SEDERHANA]\n1. Contoh pertanyaan...\nA. Opsi A\nB. Opsi B\nC. Opsi C\nD. Opsi D\nKUNCI: B`}
                                 className="w-full p-3.5 rounded-2xl border border-slate-200 font-mono text-xs outline-none focus:border-blue-600"
                             />
                             <div className="flex justify-end">
@@ -1025,7 +1100,7 @@ export default function BankSoalAdminPage() {
                     </div>
                 )}
 
-                {/* TAB 3: IMPORT MASSAL CSV / EXCEL */}
+                {/* TAB 3: IMPORT CSV */}
                 {activeTab === "csv" && (
                     <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-2xs space-y-6">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -1034,7 +1109,7 @@ export default function BankSoalAdminPage() {
                                     Import Massal Soal dari Spreadsheet CSV / Excel
                                 </h2>
                                 <p className="text-xs text-slate-500">
-                                    Gunakan format 14 kolom resmi TKA SMP (<code>BINDO</code> & <code>MTK</code>) beserta dukungan link gambar dan rumus KaTeX.
+                                    Format 16 kolom resmi mencakup <strong>Elemen Materi</strong> dan <strong>3 Tipe Soal</strong> (PG_SEDERHANA, PGK_MCMA, PGK_KATEGORI).
                                 </p>
                             </div>
                             <button
@@ -1057,10 +1132,6 @@ export default function BankSoalAdminPage() {
                             <div className="font-black text-sm text-slate-900">
                                 {isSaving ? "Menyimpan Data ke Supabase..." : "Klik untuk Memilih & Mengunggah File .CSV"}
                             </div>
-                            <p className="text-xs text-slate-500 max-w-md mx-auto">
-                                Pastikan pemisah kolom menggunakan koma (<code>,</code>) atau simpan dari Excel sebagai{" "}
-                                <strong>CSV UTF-8 (Comma delimited)</strong>.
-                            </p>
                             <input
                                 type="file"
                                 ref={csvInputRef}

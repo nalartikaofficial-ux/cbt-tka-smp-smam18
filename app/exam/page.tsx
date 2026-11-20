@@ -143,7 +143,8 @@ function normalizeSubtestCode(raw: string): "BINDO" | "MTK" {
 function normalizeQuestionItem(q: any, index: number) {
     const code = normalizeSubtestCode(q.subtes_code || q.subtest || q.subject);
     const subject = code === "MTK" ? "Matematika" : "Bahasa Indonesia";
-    const materi = q.materi || q.competency || (code === "MTK" ? "Numerasi & Aljabar SMP" : "Literasi Membaca SMP");
+    const materi = q.materi || q.competency || (code === "MTK" ? "Bilangan" : "Pemahaman Tekstual");
+    const qType = q.type || "PG_SEDERHANA";
 
     let optionsList: string[] = [];
     if (Array.isArray(q.options) && q.options.length > 0) {
@@ -154,13 +155,35 @@ function normalizeQuestionItem(q: any, index: number) {
             .map((val) => String(val));
     }
 
+    const keyMap: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
     let singleAnswerIdx = 0;
-    if (typeof q.singleAnswer === "number") {
-        singleAnswerIdx = q.singleAnswer;
+    let multiAnswersList: number[] = Array.isArray(q.multiAnswers) ? q.multiAnswers : [];
+    let statementsList: any[] = Array.isArray(q.statements) ? q.statements : [];
+
+    if (qType === "PGK_KATEGORI") {
+        if (statementsList.length === 0) {
+            const catKeys = String(q.kunci || "").split("|").map((k) => k.trim());
+            statementsList = optionsList.map((stmtText, sIdx) => ({
+                id: `st_${index}_${sIdx}`,
+                statement: stmtText,
+                correctCategory: catKeys[sIdx] || "Benar"
+            }));
+        }
+    } else if (qType === "PGK_MCMA") {
+        if (multiAnswersList.length === 0) {
+            multiAnswersList = String(q.kunci || "A")
+                .toUpperCase()
+                .split(",")
+                .map((k) => keyMap[k.trim()])
+                .filter((n) => n !== undefined);
+        }
     } else {
-        const rawKey = String(q.kunci || q.singleAnswer || "A").toUpperCase().trim();
-        const keyMap: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
-        singleAnswerIdx = keyMap[rawKey] ?? 0;
+        if (typeof q.singleAnswer === "number") {
+            singleAnswerIdx = q.singleAnswer;
+        } else {
+            const rawKey = String(q.kunci || q.singleAnswer || "A").toUpperCase().trim();
+            singleAnswerIdx = keyMap[rawKey] ?? 0;
+        }
     }
 
     return {
@@ -169,15 +192,15 @@ function normalizeQuestionItem(q: any, index: number) {
         subtes_code: code,
         subject,
         materi,
-        type: q.type || "PG_SEDERHANA",
+        type: qType,
         stimulus: q.stimulus || "",
         image_url: q.image_url || "",
         image_position: q.image_position || "above",
         question: q.pertanyaan || q.question || "",
         options: optionsList,
         singleAnswer: singleAnswerIdx,
-        multiAnswers: Array.isArray(q.multiAnswers) ? q.multiAnswers : [],
-        statements: Array.isArray(q.statements) ? q.statements : [],
+        multiAnswers: multiAnswersList,
+        statements: statementsList,
         difficulty: Number(q.difficulty) || 1,
         pembahasan: q.pembahasan || q.explanation || ""
     };
@@ -847,8 +870,8 @@ export default function OfficialExamChamberPage() {
                             type="button"
                             onClick={handleToggleDoubtful}
                             className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${doubtfuls[currentQKey]
-                                    ? "bg-amber-100 border-amber-300 text-amber-900 font-bold"
-                                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                ? "bg-amber-100 border-amber-300 text-amber-900 font-bold"
+                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                                 }`}
                         >
                             <Bookmark className="w-3.5 h-3.5" /> Ragu-ragu
@@ -900,8 +923,8 @@ export default function OfficialExamChamberPage() {
                                         type="button"
                                         onClick={() => handleSelectSingleOption(oIdx)}
                                         className={`w-full text-left p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm border transition flex items-start gap-3 sm:gap-3.5 cursor-pointer ${isSelected
-                                                ? "bg-blue-50/90 border-blue-600 text-blue-950 font-semibold ring-1 ring-blue-600 shadow-xs"
-                                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                            ? "bg-blue-50/90 border-blue-600 text-blue-950 font-semibold ring-1 ring-blue-600 shadow-xs"
+                                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
                                             }`}
                                     >
                                         <span
@@ -935,8 +958,8 @@ export default function OfficialExamChamberPage() {
                                         type="button"
                                         onClick={() => handleToggleMultiOption(oIdx)}
                                         className={`w-full text-left p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm border transition flex items-start gap-3.5 cursor-pointer ${isSelected
-                                                ? "bg-indigo-50/90 border-indigo-600 text-indigo-950 font-semibold ring-1 ring-indigo-600 shadow-xs"
-                                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                            ? "bg-indigo-50/90 border-indigo-600 text-indigo-950 font-semibold ring-1 ring-indigo-600 shadow-xs"
+                                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
                                             }`}
                                     >
                                         <div
@@ -984,8 +1007,8 @@ export default function OfficialExamChamberPage() {
                                                         type="button"
                                                         onClick={() => handleSelectCategory(st.id, labelYes)}
                                                         className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition cursor-pointer ${isYes
-                                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                                                                : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
+                                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                                            : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
                                                             }`}
                                                     >
                                                         {labelYes}
@@ -996,8 +1019,8 @@ export default function OfficialExamChamberPage() {
                                                         type="button"
                                                         onClick={() => handleSelectCategory(st.id, labelNo)}
                                                         className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition cursor-pointer ${isNo
-                                                                ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                                                                : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
+                                                            ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                                                            : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
                                                             }`}
                                                     >
                                                         {labelNo}

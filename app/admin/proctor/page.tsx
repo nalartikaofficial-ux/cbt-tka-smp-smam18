@@ -103,7 +103,7 @@ export default function ProctorMasterDashboard() {
 
     const [masterSession, setMasterSession] = useState<MasterSession>({
         paket_aktif: "PAKET_1",
-        nama_paket: "Tryout Terstandarisasi TKA Jenjang SMP (30 BINDO & 25 MTK) 2026",
+        nama_paket: "Tryout Terstandarisasi TKA Jenjang SMP (30 BINDO & 30 MTK) 2026",
         token_resmi: "TKA18",
         status_akses: "DIBUKA",
         waktu_mulai: "2026-11-20T07:30",
@@ -133,7 +133,7 @@ export default function ProctorMasterDashboard() {
         nomorSurat: "118/BAP-TKA-SMP/SMA-M18/2026",
         ruangUjian: "Laboratorium Komputer CBT SMA Muhammadiyah 18 Jakarta",
         catatanKhusus:
-            "Pelaksanaan Tryout Tes Kemampuan Akademik (TKA) Jenjang SMP (55 Soal: Bahasa Indonesia & Matematika) berjalan tertib dan lancar sesuai standar Kepmendikdasmen No. 56 Tahun 2026.",
+            "Pelaksanaan Tryout Tes Kemampuan Akademik (TKA) Jenjang SMP (60 Soal: Bahasa Indonesia & Matematika) berjalan tertib dan lancar sesuai standar Kepmendikdasmen No. 56 Tahun 2026.",
         kepalaSekolahNama: "Drs. H. Ahmad Dahlan, M.Pd.",
         kepalaSekolahNbm: "882.118.001",
         pengawasNama: "Fadhillah Umar, S.Pd.",
@@ -154,7 +154,7 @@ export default function ProctorMasterDashboard() {
             if (!error && data) {
                 setMasterSession({
                     paket_aktif: (data.paket_aktif as any) || "PAKET_1",
-                    nama_paket: data.nama_paket || "Tryout Terstandarisasi TKA Jenjang SMP (30 BINDO & 25 MTK) 2026",
+                    nama_paket: data.nama_paket || "Tryout Terstandarisasi TKA Jenjang SMP (30 BINDO & 30 MTK) 2026",
                     token_resmi: data.token_resmi || "TKA18",
                     status_akses: (data.status_akses as any) || "DIBUKA",
                     waktu_mulai: data.waktu_mulai ? String(data.waktu_mulai).substring(0, 16) : "2026-11-20T07:30",
@@ -708,7 +708,7 @@ export default function ProctorMasterDashboard() {
                             </div>
                             <div>
                                 <div className="text-[9.5px] sm:text-[10px] font-mono font-bold tracking-widest text-amber-300 uppercase">
-                                    PENGATURAN RUANG UJIAN TERPUSAT (30 BINDO & 25 MTK)
+                                    PENGATURAN RUANG UJIAN TERPUSAT (30 BINDO & 30 MTK)
                                 </div>
                                 <h2 className="text-base sm:text-xl font-black text-white">
                                     Token Resmi Sesi Tryout TKA SMP
@@ -774,7 +774,7 @@ export default function ProctorMasterDashboard() {
                                 onChange={(e: any) => setMasterSession({ ...masterSession, paket_aktif: e.target.value })}
                                 className="w-full px-3 py-2 sm:py-2.5 rounded-xl bg-white/10 border border-white/20 text-white font-bold font-mono text-xs outline-none focus:bg-white/20 cursor-pointer"
                             >
-                                <option value="PAKET_1" className="text-slate-900">PAKET 1 (Reguler 55 Soal)</option>
+                                <option value="PAKET_1" className="text-slate-900">PAKET 1 (Reguler 60 Soal)</option>
                                 <option value="PAKET_2" className="text-slate-900">PAKET 2 (Alternatif)</option>
                                 <option value="PAKET_3" className="text-slate-900">PAKET 3 (Susulan)</option>
                             </select>
@@ -1432,7 +1432,7 @@ export default function ProctorMasterDashboard() {
                                             year: "numeric"
                                         })}
                                     </strong>
-                                    , telah diselenggarakan Tryout Terstandarisasi Tes Kemampuan Akademik (TKA) Jenjang SMP (55 Butir Soal: 30 Bahasa Indonesia & 25 Matematika) Tahun Pelajaran 2026/2027 berbasis Computer-Based Test (CBT) di lingkungan{" "}
+                                    , telah diselenggarakan Tryout Terstandarisasi Tes Kemampuan Akademik (TKA) Jenjang SMP (60 Butir Soal: 30 Bahasa Indonesia & 30 Matematika) Tahun Pelajaran 2026/2027 berbasis Computer-Based Test (CBT) di lingkungan{" "}
                                     <strong>SMA Muhammadiyah 18 Jakarta</strong> dengan ketentuan pelaksanaan sebagai berikut:
                                 </p>
 
@@ -1446,7 +1446,7 @@ export default function ProctorMasterDashboard() {
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Mata Uji</td>
-                                            <td>1. Bahasa Indonesia (30 Soal) • 2. Matematika (25 Soal)</td>
+                                            <td>1. Bahasa Indonesia (30 Soal) • 2. Matematika (30 Soal)</td>
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Ruang / Tempat Ujian</td>

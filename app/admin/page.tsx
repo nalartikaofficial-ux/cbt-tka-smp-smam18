@@ -393,7 +393,7 @@ export default function AdminGateAndHubPage() {
                                     Kelola Bank Soal CBT
                                 </h2>
                                 <p className="text-[11.5px] sm:text-xs text-slate-500 leading-relaxed mt-1">
-                                    Input & kelola 55 butir soal 2 mata uji (30 Bahasa Indonesia & 25 Matematika), impor Word (.docx) & CSV, serta sinkronisasi ke Supabase.
+                                    Input & kelola 60 butir soal 2 mata uji (30 Bahasa Indonesia & 30 Matematika), impor Word (.docx) & CSV, serta sinkronisasi ke Supabase.
                                 </p>
                             </div>
                         </div>
@@ -438,7 +438,7 @@ export default function AdminGateAndHubPage() {
                         <div className="text-xs">
                             <span className="font-bold block">Uji Coba Bilik Siswa Langsung:</span>
                             <span className="text-blue-200 text-[10.5px] sm:text-[11px]">
-                                Buka halaman simulasi mandiri siswa dengan 55 butir soal (30 Bahasa Indonesia & 25 Matematika) dan 2 mata uji resmi TKA SMP.
+                                Buka halaman simulasi mandiri siswa dengan 60 butir soal (30 Bahasa Indonesia & 30 Matematika) dan 2 mata uji resmi TKA SMP.
                             </span>
                         </div>
                     </div>

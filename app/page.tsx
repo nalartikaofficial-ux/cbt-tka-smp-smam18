@@ -235,9 +235,9 @@ export default function CBTEngineLandingPage() {
                   </h1>
 
                   <p className="text-slate-600 text-xs sm:text-[15px] leading-relaxed max-w-xl font-normal">
-                    Uji kesiapan akademikmu menghadapi evaluasi standar nasional jenjang SMP/MTs (total <strong>55 soal</strong>):{" "}
+                    Uji kesiapan akademikmu menghadapi evaluasi standar nasional jenjang SMP/MTs (total <strong>60 soal</strong>):{" "}
                     <strong className="font-bold text-slate-900">Bahasa Indonesia (30 Soal)</strong> &{" "}
-                    <strong className="font-bold text-slate-900">Matematika (25 Soal)</strong>. Terbitkan{" "}
+                    <strong className="font-bold text-slate-900">Matematika (30 Soal)</strong>. Terbitkan{" "}
                     <strong className="font-bold text-blue-900">Sertifikat Hasil Tryout (SHTKA)</strong> & klaim{" "}
                     <strong className="font-bold text-blue-900">Voucher Beasiswa PPDB SMA Muhammadiyah 18 Jakarta</strong>.
                   </p>
@@ -257,7 +257,7 @@ export default function CBTEngineLandingPage() {
                       className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs sm:text-sm transition shadow-2xs flex items-center gap-2"
                     >
                       <BarChart3 className="w-4 h-4 text-blue-700" />
-                      <span>Struktur 55 Soal</span>
+                      <span>Struktur 60 Soal</span>
                     </a>
                   </div>
                 </div>
@@ -556,7 +556,7 @@ export default function CBTEngineLandingPage() {
           </div>
         </section>
 
-        {/* SECTION 3: SILABUS & CAKUPAN SUBTES (55 SOAL TKA SMP) */}
+        {/* SECTION 3: SILABUS & CAKUPAN SUBTES (60 SOAL TKA SMP) */}
         <section id="silabus" className="relative z-10 bg-slate-50/70 border-b border-slate-200/90 py-10 sm:py-14">
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 sm:pb-7 mb-6 sm:mb-8 border-b border-slate-200/80">
@@ -579,7 +579,7 @@ export default function CBTEngineLandingPage() {
               <div className="flex items-center gap-3 bg-white border border-slate-200 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl shadow-2xs shrink-0 self-start md:self-auto">
                 <div className="text-left md:text-right">
                   <div className="text-[9px] sm:text-[9.5px] font-bold font-mono text-slate-400 uppercase tracking-wider">Total Paket</div>
-                  <div className="text-xs font-black text-slate-900 font-mono">55 Soal • 30 Menit</div>
+                  <div className="text-xs font-black text-slate-900 font-mono">60 Soal • 150 Menit</div>
                 </div>
                 <div className="h-7 w-[1px] bg-slate-200" />
                 <div className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200/80 font-mono font-bold text-[11px] sm:text-xs">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -33,12 +33,36 @@ export default function StudentLoginPage() {
         name: "",
         school: "",
         grade: "9",
-        phoneSuffix: "", // Digit setelah +62 (misal: 81234567890)
+        phoneSuffix: "",
         token: ""
     });
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
+
+    // Prefetch halaman /exam & paket soal di latar belakang saat siswa mengisi biodata (0 ms lag saat masuk ujian)
+    useEffect(() => {
+        router.prefetch("/exam");
+
+        const prefetchQuestions = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("tka_questions")
+                    .select("*")
+                    .order("subtes_code", { ascending: true })
+                    .order("no_soal", { ascending: true });
+
+                if (!error && Array.isArray(data) && data.length > 0 && typeof window !== "undefined") {
+                    localStorage.setItem("tka_bank_soal_cbt", JSON.stringify(data));
+                    localStorage.setItem("tka_bank_soal", JSON.stringify(data));
+                }
+            } catch {
+                // Abaikan jika gagal prefetch; halaman /exam tetap punya fallback fetch mandiri
+            }
+        };
+
+        prefetchQuestions();
+    }, [router]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -50,13 +74,12 @@ export default function StudentLoginPage() {
             return;
         }
 
-        // Standar nomor seluler Indonesia: setelah +62 wajib diawali '8' dan panjang 9-12 digit (setara 08 + 8-11 digit = 10-13 digit)
         if (!suffix.startsWith("8") || suffix.length < 9 || suffix.length > 12) {
             setErrorMsg("Nomor WhatsApp tidak valid! Masukkan 9–12 digit nomor HP Indonesia setelah +62 (diawali angka 8).");
             return;
         }
 
-        const cleanPhone = "0" + suffix; // Disimpan seragam sebagai 08xxxxxxxxxx di Supabase
+        const cleanPhone = "0" + suffix;
         const cleanName = formData.name.toUpperCase().replace(/\s+/g, " ").trim();
         const cleanSchool = formData.school.toUpperCase().replace(/\s+/g, " ").trim();
 
@@ -74,14 +97,14 @@ export default function StudentLoginPage() {
         setIsSubmitting(true);
 
         try {
-            // 1. Cek Status Sesi & Token Resmi di Supabase (tka_sessions)
-            const { data: sessionData, error: sessionErr } = await supabase
-                .from("tka_sessions")
-                .select("*")
-                .eq("id", 1)
-                .single();
+            // Jalankan pengecekan sesi & data siswa secara paralel agar 2x lebih cepat
+            const [sessionRes, studentRes] = await Promise.all([
+                supabase.from("tka_sessions").select("*").eq("id", 1).single(),
+                supabase.from("tka_students").select("*").eq("phone", cleanPhone).maybeSingle()
+            ]);
 
-            if (!sessionErr && sessionData) {
+            const sessionData = sessionRes.data;
+            if (!sessionRes.error && sessionData) {
                 if (sessionData.status_akses && sessionData.status_akses !== "DIBUKA") {
                     setErrorMsg("Akses bilik ujian saat ini sedang DIKUNCI oleh Proktor. Silakan tunggu instruksi pembukaan sesi.");
                     setIsSubmitting(false);
@@ -96,13 +119,7 @@ export default function StudentLoginPage() {
                 }
             }
 
-            // 2. Cek apakah siswa sudah terdaftar / terkunci sebelumnya di tka_students
-            const { data: existingStudent } = await supabase
-                .from("tka_students")
-                .select("*")
-                .eq("phone", cleanPhone)
-                .maybeSingle();
-
+            const existingStudent = studentRes.data;
             if (existingStudent) {
                 const stLower = String(existingStudent.status || "").toLowerCase();
                 if (stLower.includes("kunci")) {
@@ -123,7 +140,6 @@ export default function StudentLoginPage() {
                 timestamp: new Date().toISOString()
             };
 
-            // 3. Simpan / Perbarui Data Prospek Siswa Mandiri ke Supabase (tka_students)
             const { error: upsertErr } = await supabase.from("tka_students").upsert(
                 {
                     phone: cleanPhone,
@@ -144,14 +160,11 @@ export default function StudentLoginPage() {
                 console.warn("Supabase upsert warning:", upsertErr.message);
             }
 
-            // 4. Simpan ke LocalStorage agar langsung terbaca di bilik ujian & rapor
             localStorage.setItem("tka_student", JSON.stringify(studentPayload));
-
             router.push("/exam");
         } catch (err) {
             console.error("Gagal memproses registrasi siswa:", err);
             setErrorMsg("Terjadi gangguan koneksi ke server. Silakan coba beberapa saat lagi.");
-        } finally {
             setIsSubmitting(false);
         }
     };
@@ -207,7 +220,7 @@ export default function StudentLoginPage() {
                             Formulir Peserta Try Out
                         </h1>
                         <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-                            Lengkapi identitas Anda untuk mengklaim <strong>Voucher Beasiswa PPDB</strong> dan membuka lembar soal simulasi.
+                            Lengkapi identitas Anda untuk memulai <strong>60 Soal Asesmen TKA SMP</strong> dan menerbitkan <strong>Sertifikat Hasil Tryout (SHTKA)</strong>.
                         </p>
                     </div>
 
@@ -218,7 +231,6 @@ export default function StudentLoginPage() {
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4 text-xs text-left">
-                        {/* Nama Siswa (Otomatis Kapital) */}
                         <div className="space-y-1">
                             <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
                                 <UserCheck className="w-3.5 h-3.5 text-blue-700" /> NAMA LENGKAP SISWA:
@@ -233,7 +245,6 @@ export default function StudentLoginPage() {
                             />
                         </div>
 
-                        {/* Asal Sekolah (Otomatis Kapital) & Tingkat Kelas */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                             <div className="space-y-1">
                                 <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
@@ -265,7 +276,6 @@ export default function StudentLoginPage() {
                             </div>
                         </div>
 
-                        {/* No WA (+62 Terkunci) & Token (Otomatis Kapital) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                             <div className="space-y-1">
                                 <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
@@ -308,7 +318,6 @@ export default function StudentLoginPage() {
                             </div>
                         </div>
 
-                        {/* Tombol Submit */}
                         <button
                             type="submit"
                             disabled={isSubmitting}

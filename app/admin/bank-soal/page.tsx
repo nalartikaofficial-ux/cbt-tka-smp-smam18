@@ -138,22 +138,64 @@ function normalizeQuestionType(raw: string): "PG_SEDERHANA" | "PGK_MCMA" | "PGK_
     return "PG_SEDERHANA";
 }
 
-// Konversi HTML hasil Mammoth menjadi teks terstruktur + menyisipkan tag [IMG_DATA:data:image/...]
+// Helper Upload Gambar ke Supabase Storage (Sama seperti SNBT) + Fallback Data URL Ringan
+async function uploadExtractedImageToCloud(base64Str: string, contentType: string): Promise<string> {
+    try {
+        const cleanB64 = base64Str.replace(/\s+/g, "");
+        const byteCharacters = atob(cleanB64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const ext = contentType.includes("jpeg") || contentType.includes("jpg") ? "jpg" : "png";
+        const blob = new Blob([byteArray], { type: contentType || "image/png" });
+        const fileName = `tka_smp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+        // Coba upload ke bucket "soal-images"
+        const { error: uploadErr } = await supabase.storage
+            .from("soal-images")
+            .upload(fileName, blob, { contentType: contentType || "image/png", upsert: true });
+
+        if (!uploadErr) {
+            const { data: pubData } = supabase.storage.from("soal-images").getPublicUrl(fileName);
+            if (pubData?.publicUrl) {
+                return pubData.publicUrl;
+            }
+        }
+
+        // Jika bucket "soal-images" belum dibuat, coba bucket cadangan "images" / "bank-soal"
+        for (const altBucket of ["bank-soal", "images", "public"]) {
+            const { error: altErr } = await supabase.storage
+                .from(altBucket)
+                .upload(fileName, blob, { contentType: contentType || "image/png", upsert: true });
+            if (!altErr) {
+                const { data: altPub } = supabase.storage.from(altBucket).getPublicUrl(fileName);
+                if (altPub?.publicUrl) return altPub.publicUrl;
+            }
+        }
+
+        // Fallback terakhir: kembalikan Data URI bersih tanpa spasi/newline
+        return `data:${contentType || "image/png"};base64,${cleanB64}`;
+    } catch {
+        return `data:${contentType || "image/png"};base64,${base64Str.replace(/\s+/g, "")}`;
+    }
+}
+
+// Konversi HTML hasil Mammoth menjadi teks berstruktur dengan token gambar terindeks
 function htmlToStructuredWordText(html: string): string {
     if (typeof window === "undefined") return html;
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
 
-    // Ubah setiap elemen <img> di dalam dokumen Word menjadi penanda baris [IMG_DATA:...]
     doc.querySelectorAll("img").forEach((img) => {
-        const src = img.getAttribute("src") || "";
+        const src = (img.getAttribute("src") || "").trim();
         if (src) {
-            const marker = doc.createTextNode(`\n[IMG_DATA:${src}]\n`);
+            const marker = doc.createTextNode(`\n[IMG_SRC::${src}::IMG_END]\n`);
             img.replaceWith(marker);
         }
     });
 
-    // Ubah tag paragraf/baris menjadi newline bersih
     doc.querySelectorAll("p, div, tr, li, br, h1, h2, h3, h4").forEach((el) => {
         el.appendChild(doc.createTextNode("\n"));
     });
@@ -161,7 +203,7 @@ function htmlToStructuredWordText(html: string): string {
     return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-// Parser Naskah Word: Memecah per blok [SUBTES: ...] agar PGK_KATEGORI (P1, P2, P3) & Gambar tidak terpotong
+// Parser Naskah Word: Menangani 60 Soal (PG_SEDERHANA, PGK_MCMA, PGK_KATEGORI) + Gambar URL/Base64
 function parseStructuredWordBlocks(rawText: string) {
     const hasSubtesTags = /\[SUBTES:/i.test(rawText);
     const blocks = hasSubtesTags
@@ -173,7 +215,6 @@ function parseStructuredWordBlocks(rawText: string) {
     let mtkCounter = 0;
 
     blocks.forEach((block) => {
-        // 1. Subtes (BINDO / MTK)
         const subMatch = block.match(/\[SUBTES:\s*([^\]]+)\]/i);
         const currentSubCode = normalizeSubtestCode(subMatch ? subMatch[1] : "BINDO");
 
@@ -181,21 +222,19 @@ function parseStructuredWordBlocks(rawText: string) {
         else bindoCounter++;
         const noSoal = currentSubCode === "MTK" ? mtkCounter : bindoCounter;
 
-        // 2. Gambar tertanam dari .docx atau tag [GAMBAR: ...]
-        const imgDataMatch = block.match(/\[IMG_DATA:(data:image\/[^\]]+)\]/i);
-        const imgUrlMatch = block.match(/\[GAMBAR:\s*([^\]]+)\]/i);
-        const image_url = imgDataMatch
-            ? imgDataMatch[1].trim()
-            : imgUrlMatch
-                ? imgUrlMatch[1].trim()
+        // Ekstrak gambar dari token [IMG_SRC::...::IMG_END] atau tag manual [GAMBAR: ...]
+        const imgSrcMatch = block.match(/\[IMG_SRC::([\s\S]*?)::IMG_END\]/i);
+        const imgManualMatch = block.match(/\[GAMBAR:\s*([^\]]+)\]/i);
+        const image_url = imgSrcMatch
+            ? imgSrcMatch[1].trim()
+            : imgManualMatch
+                ? imgManualMatch[1].trim()
                 : "";
 
-        // Bersihkan marker gambar dari teks sebelum membaca stimulus/pertanyaan
         const cleanBlock = block
-            .replace(/\[IMG_DATA:[^\]]+\]/gi, "")
+            .replace(/\[IMG_SRC::[\s\S]*?::IMG_END\]/gi, "")
             .replace(/\[GAMBAR:[^\]]+\]/gi, "");
 
-        // 3. Elemen Materi
         const materiMatch = cleanBlock.match(/\[MATERI:\s*([^\]]+)\]/i);
         const materi = materiMatch
             ? materiMatch[1].trim()
@@ -203,23 +242,19 @@ function parseStructuredWordBlocks(rawText: string) {
                 ? "Bilangan"
                 : "Pemahaman Tekstual";
 
-        // 4. Tingkat Kesukaran
         const diffTagMatch = cleanBlock.match(/\[KESUKARAN:\s*([^\]]+)\]/i);
         const tingkat_kesukaran = diffTagMatch ? diffTagMatch[1].trim() : "Sedang";
         const diffMap: Record<string, number> = { mudah: 1, sedang: 2, sulit: 3, sukar: 3 };
         const difficulty = diffMap[tingkat_kesukaran.toLowerCase()] ?? 2;
 
-        // 5. Tipe Soal
         const typeTagMatch = cleanBlock.match(/\[TIPE:\s*([^\]]+)\]/i);
         let qType: "PG_SEDERHANA" | "PGK_MCMA" | "PGK_KATEGORI" = typeTagMatch
             ? normalizeQuestionType(typeTagMatch[1])
             : "PG_SEDERHANA";
 
-        // 6. Stimulus
         const stimMatch = cleanBlock.match(/\[STIMULUS\]([\s\S]*?)\[\/STIMULUS\]/i);
         const stimulus = stimMatch ? stimMatch[1].trim() : "";
 
-        // Ambil bagian setelah [/STIMULUS] (atau setelah baris tag [SUBTES:...])
         let bodyAfterStimulus = cleanBlock;
         if (/\[\/STIMULUS\]/i.test(cleanBlock)) {
             bodyAfterStimulus = cleanBlock.split(/\[\/STIMULUS\]/i)[1] || "";
@@ -227,27 +262,35 @@ function parseStructuredWordBlocks(rawText: string) {
             bodyAfterStimulus = cleanBlock.replace(/^\[SUBTES:[^\n]+\n?/i, "");
         }
 
-        // 7. Pembahasan
         const expMatch = bodyAfterStimulus.match(/PEMBAHASAN:\s*([\s\S]*?)$/i);
         const pembahasan = expMatch ? expMatch[1].trim() : "";
         const questionAndOptionsPart = bodyAfterStimulus.replace(/PEMBAHASAN:\s*[\s\S]*$/i, "").trim();
 
-        if (qType === "PGK_KATEGORI" || /(?:^|\n)P1\s*[:\.]/im.test(questionAndOptionsPart)) {
+        const lines = questionAndOptionsPart
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0);
+
+        const pLines = lines.filter((l) => /^P[1-5]\s*[:\.]/i.test(l));
+
+        if (qType === "PGK_KATEGORI" || pLines.length >= 2) {
             qType = "PGK_KATEGORI";
-            const qMatch = questionAndOptionsPart.match(/^(?:\d+\.\s*)?([\s\S]*?)(?=(?:^|\n)P1\s*[:\.])/im);
-            const pertanyaan = qMatch ? qMatch[1].trim() : "";
+            const firstPIdx = lines.findIndex((l) => /^P[1-5]\s*[:\.]/i.test(l));
+            const rawQuestionLines = firstPIdx > 0 ? lines.slice(0, firstPIdx) : lines.slice(0, 1);
+            const pertanyaan = rawQuestionLines
+                .join(" ")
+                .replace(/^\d+\.\s*/, "")
+                .trim();
 
             const statements: string[] = [];
             const keys: string[] = [];
-            for (let p = 1; p <= 5; p++) {
-                const regex = new RegExp(`(?:^|\\n)P${p}\\s*[:\\.]\\s*([^\\n]+)`, "i");
-                const m = questionAndOptionsPart.match(regex);
-                if (m && m[1]) {
-                    const parts = m[1].split("|").map((s) => s.trim());
-                    statements.push(parts[0] || "");
-                    keys.push(parts[1] || "Benar");
-                }
-            }
+
+            pLines.slice(0, 5).forEach((pLine) => {
+                const contentAfterP = pLine.replace(/^P[1-5]\s*[:\.]\s*/i, "").trim();
+                const pipeParts = contentAfterP.split("|").map((s) => s.trim());
+                statements.push(pipeParts[0] || "");
+                keys.push(pipeParts[1] || "Benar");
+            });
 
             if (pertanyaan && statements.length >= 2) {
                 rowsToInsert.push({
@@ -273,7 +316,7 @@ function parseStructuredWordBlocks(rawText: string) {
             }
         } else {
             const qMatch = questionAndOptionsPart.match(
-                /^(?:\d+\.\s*)?([\s\S]*?)(?=(?:^|\n)A\.\s*)/m
+                /^(?:\d+\.\s*)?([\s\S]*?)(?=(?:^|\n)[A-E]\.\s*)/m
             );
             const pertanyaan = qMatch ? qMatch[1].trim() : "";
 
@@ -469,7 +512,7 @@ export default function BankSoalAdminPage() {
         document.body.removeChild(link);
     };
 
-    // Unggah .docx langsung mengekstrak teks + gambar tertanam (convertToHtml)
+    // Unggah .docx: Menggunakan mammoth.images.imgElement (persis standar SNBT) untuk ekstrak & upload gambar otomatis
     const handleUploadDocxDirect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -477,17 +520,27 @@ export default function BankSoalAdminPage() {
         setIsSaving(true);
         try {
             const arrayBuffer = await file.arrayBuffer();
-            const result = await mammoth.convertToHtml({ arrayBuffer });
-            const structuredText = htmlToStructuredWordText(result.value || "");
 
+            const result = await mammoth.convertToHtml(
+                { arrayBuffer },
+                {
+                    convertImage: mammoth.images.imgElement(async (image) => {
+                        const base64Buffer = await image.read("base64");
+                        const uploadedUrl = await uploadExtractedImageToCloud(base64Buffer, image.contentType);
+                        return { src: uploadedUrl };
+                    })
+                }
+            );
+
+            const structuredText = htmlToStructuredWordText(result.value || "");
             const rowsToInsert = parseStructuredWordBlocks(structuredText);
+
             if (rowsToInsert.length === 0) {
                 alert("Tidak ada butir soal yang terdeteksi dari file .docx. Pastikan format tag sudah sesuai.");
                 return;
             }
 
-            // Simpan per batch 20 soal agar payload gambar tetap ringan dan cepat di Supabase
-            const batchSize = 20;
+            const batchSize = 15;
             for (let i = 0; i < rowsToInsert.length; i += batchSize) {
                 const chunk = rowsToInsert.slice(i, i + batchSize);
                 const { error } = await supabase.from("tka_questions").insert(chunk);
@@ -498,7 +551,7 @@ export default function BankSoalAdminPage() {
             setActiveTab("koleksi");
             const withImages = rowsToInsert.filter((r) => Boolean(r.image_url)).length;
             alert(
-                `Berhasil mengimpor ${rowsToInsert.length} butir soal (${withImages} soal bergambar) dari ${file.name} ke Supabase!`
+                `Berhasil mengimpor ${rowsToInsert.length} butir soal lengkap (${withImages} soal bergambar) dari ${file.name} ke Supabase!`
             );
         } catch (err: any) {
             alert("Gagal membaca file .docx: " + (err?.message || "Pastikan file berformat .docx"));
@@ -754,7 +807,7 @@ export default function BankSoalAdminPage() {
                                 </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                                Otomatis mengekstrak <strong>3 bentuk soal</strong> dan <strong>gambar diagram tertanam</strong> langsung dari file Word (<code>.docx</code>).
+                                Otomatis mengekstrak <strong>60 soal (3 bentuk Pusmendik)</strong> dan <strong>gambar tertanam</strong> ke Supabase Storage.
                             </p>
                         </div>
                     </div>
@@ -1065,8 +1118,7 @@ export default function BankSoalAdminPage() {
                                     Import Naskah Soal dari Microsoft Word (.docx)
                                 </h2>
                                 <p className="text-xs text-slate-500">
-                                    Otomatis membaca seluruh <strong>PG Sederhana</strong>, <strong>PGK MCMA</strong>,{" "}
-                                    <strong>PGK Kategori (P1/P2/P3)</strong>, beserta <strong>gambar diagram tertanam</strong> di dalam Word.
+                                    Otomatis membaca 60 butir soal dan mengunggah gambar diagram tertanam ke Supabase Storage.
                                 </p>
                             </div>
                             <button
@@ -1087,7 +1139,7 @@ export default function BankSoalAdminPage() {
                                 <FileUp className="w-6 h-6" />
                             </div>
                             <div className="font-black text-sm text-slate-900">
-                                {isSaving ? "Sedang Membaca Soal & Gambar ke Supabase..." : "Klik untuk Unggah File Word (.docx)"}
+                                {isSaving ? "Sedang Mengekstrak Soal & Mengunggah Gambar ke Supabase..." : "Klik untuk Unggah File Word (.docx)"}
                             </div>
                             <p className="text-xs text-slate-500 max-w-md mx-auto">
                                 Mendukung file <strong>.docx</strong> lengkap dengan gambar diagram dan 3 tipe soal Pusmendik.

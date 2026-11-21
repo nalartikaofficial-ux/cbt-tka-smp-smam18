@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
     ShieldAlert,
     BookOpen,
-    Lock,
     ArrowRight,
     ChevronLeft,
     User,
@@ -38,7 +37,7 @@ interface UserAccount {
 const DEFAULT_SYSTEM_ACCOUNTS: UserAccount[] = [
     { username: "admin", password: "admin18", nama: "Administrator Utama", role: "admin", mapel: "Semua" },
     { username: "proctor", password: "proctor18", nama: "Proktor Pengawas Ruang", role: "proctor", mapel: "Semua" },
-    { username: "gurufisika", password: "guru123", nama: "Fadhillah Umar, S.Pd.", role: "guru", mapel: "Fisika" }
+    { username: "gurufisika", password: "guru123", nama: "Fadhillah Umar, S.Pd.", role: "guru", mapel: "Semua" }
 ];
 
 export default function AdminGateAndHubPage() {
@@ -220,7 +219,7 @@ export default function AdminGateAndHubPage() {
                                 alt="Logo SMA Muhammadiyah 18 Jakarta"
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
-                                    (e.target as any).src = "/images/logo-smam18.png";
+                                    (e.target as HTMLElement).style.display = "none";
                                 }}
                             />
                         </div>
@@ -229,7 +228,7 @@ export default function AdminGateAndHubPage() {
                                 SMA MUHAMMADIYAH 18 JAKARTA
                             </div>
                             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-1">
-                                Portal Guru &amp; Proktor
+                                Portal Guru & Proktor
                             </h1>
                             <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
                                 Masuk menggunakan akun Administrator, Pengawas Ujian, atau Guru Mata Pelajaran.
@@ -318,13 +317,13 @@ export default function AdminGateAndHubPage() {
                                 alt="Logo SMA Muhammadiyah 18 Jakarta"
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
-                                    (e.target as any).src = "/images/logo-smam18.png";
+                                    (e.target as HTMLElement).style.display = "none";
                                 }}
                             />
                         </div>
                         <div className="min-w-0">
                             <div className="text-[11px] sm:text-sm font-black text-slate-900 tracking-tight uppercase truncate">
-                                PUSAT KENDALI STAF &bull; SMA MUHAMMADIYAH 18
+                                PUSAT KENDALI STAF • SMA MUHAMMADIYAH 18
                             </div>
                             <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">
                                 Masuk sebagai: <strong className="text-blue-700">{currentUser.nama}</strong> ({currentUser.role.toUpperCase()})
@@ -345,7 +344,7 @@ export default function AdminGateAndHubPage() {
             <div className="max-w-6xl w-full mx-auto p-3.5 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 my-auto">
                 <div className="text-left space-y-0.5 sm:space-y-1">
                     <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Pilih Bilik Layanan</h1>
-                    <p className="text-[11px] sm:text-xs text-slate-500">Pilih modul tugas yang ingin Anda kelola hari ini.</p>
+                    <p className="text-[11px] sm:text-xs text-slate-500">Pilih modul tugas Tryout TKA SMP yang ingin Anda kelola hari ini.</p>
                 </div>
 
                 {/* TIGA KARTU MENU BILIK */}
@@ -367,12 +366,12 @@ export default function AdminGateAndHubPage() {
                                     Pusat Komando Proktor
                                 </h2>
                                 <p className="text-[11.5px] sm:text-xs text-slate-500 leading-relaxed mt-1">
-                                    Generator token sesi, pemantauan bilik siswa, buka kunci pelanggaran kiosk, dan cetak Berita Acara Ujian (BAP).
+                                    Generator token sesi, pemantauan bilik siswa secara real-time, pantau catatan peringatan fokus layar, dan cetak Berita Acara Ujian (BAP).
                                 </p>
                             </div>
                         </div>
                         <div className="pt-3.5 sm:pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-700">
-                            <span>Masuk Bilik Proktor &rarr;</span>
+                            <span>Masuk Bilik Proktor →</span>
                             <Activity className="w-4 h-4 animate-pulse" />
                         </div>
                     </Link>
@@ -394,12 +393,12 @@ export default function AdminGateAndHubPage() {
                                     Kelola Bank Soal CBT
                                 </h2>
                                 <p className="text-[11.5px] sm:text-xs text-slate-500 leading-relaxed mt-1">
-                                    Input butir soal 7 subtes, rumus sains KaTeX, impor CSV, konversi link Google Drive, dan sinkron ke spreadsheet.
+                                    Input & kelola 55 butir soal 2 mata uji (30 Bahasa Indonesia & 25 Matematika), impor Word (.docx) & CSV, serta sinkronisasi ke Supabase.
                                 </p>
                             </div>
                         </div>
                         <div className="pt-3.5 sm:pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-700">
-                            <span>Masuk Ruang Bank Soal &rarr;</span>
+                            <span>Masuk Ruang Bank Soal →</span>
                             <BookOpen className="w-4 h-4" />
                         </div>
                     </Link>
@@ -418,15 +417,15 @@ export default function AdminGateAndHubPage() {
                                     BILIK 03
                                 </span>
                                 <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight mt-1 group-hover:text-emerald-700 transition-colors">
-                                    Analitik &amp; Rekapitulasi Nilai
+                                    Analitik & Rekapitulasi Nilai
                                 </h2>
                                 <p className="text-[11.5px] sm:text-xs text-slate-500 leading-relaxed mt-1">
-                                    Dashboard hasil try out, peringkat siswa, cetak rapor diagnostik individual, dan pengesahan pejabat.
+                                    Dashboard hasil try out TKA SMP, peringkat siswa, cetak rapor diagnostik SHTKA, dan pengesahan pejabat.
                                 </p>
                             </div>
                         </div>
                         <div className="pt-3.5 sm:pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-700">
-                            <span>Buka Statistik Nilai &rarr;</span>
+                            <span>Buka Statistik Nilai →</span>
                             <BarChart3 className="w-4 h-4" />
                         </div>
                     </Link>
@@ -439,12 +438,12 @@ export default function AdminGateAndHubPage() {
                         <div className="text-xs">
                             <span className="font-bold block">Uji Coba Bilik Siswa Langsung:</span>
                             <span className="text-blue-200 text-[10.5px] sm:text-[11px]">
-                                Buka halaman simulasi mandiri siswa dengan 160 butir soal dan alur pembagian 7 subtes resmi.
+                                Buka halaman simulasi mandiri siswa dengan 55 butir soal (30 Bahasa Indonesia & 25 Matematika) dan 2 mata uji resmi TKA SMP.
                             </span>
                         </div>
                     </div>
                     <Link
-                        href="/simulation"
+                        href="/login"
                         target="_blank"
                         className="px-4 py-2 rounded-xl bg-white text-blue-950 font-bold text-xs hover:bg-blue-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs w-full sm:w-auto shrink-0"
                     >
@@ -488,12 +487,12 @@ export default function AdminGateAndHubPage() {
                             {/* 2. Mata Pelajaran / Subtes */}
                             <div className="sm:col-span-1 lg:col-span-3 space-y-1">
                                 <label className="font-bold text-slate-700 font-mono text-[10.5px] sm:text-[11px] uppercase tracking-wider block">
-                                    MATA PELAJARAN / SUBTES:
+                                    MATA PELAJARAN:
                                 </label>
                                 <input
                                     type="text"
                                     required
-                                    placeholder="Contoh: Fisika / Penalaran Matematika..."
+                                    placeholder="Contoh: Bahasa Indonesia / Matematika..."
                                     value={newMapel}
                                     onChange={(e) => setNewMapel(e.target.value)}
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-blue-600 outline-none bg-white placeholder:text-slate-400"

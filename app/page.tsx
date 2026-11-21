@@ -30,7 +30,7 @@ export default function CBTEngineLandingPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsLoading(false);
-    }, 350); // Langsung terbuka seketika (0,35 detik)
+    }, 1000); // Langsung terbuka seketika (1 detik)
     return () => clearTimeout(timer);
   }, []);
 

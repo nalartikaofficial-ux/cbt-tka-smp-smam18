@@ -30,13 +30,13 @@ const TKA_SMP_SUBJECTS = [
         code: "BINDO",
         name: "Bahasa Indonesia",
         domain: "Literasi Membaca (Wacana Informasi & Sastra)",
-        durationMin: 15
+        durationMin: 75
     },
     {
         code: "MTK",
         name: "Matematika",
         domain: "Numerasi, Aljabar, Geometri & Data Peluang SMP",
-        durationMin: 15
+        durationMin: 75
     }
 ];
 
@@ -290,7 +290,11 @@ export default function OfficialExamChamberPage() {
 
     const [currentSubtestIndex, setCurrentSubtestIndex] = useState(0);
     const [currentQIndexInSubtest, setCurrentQIndexInSubtest] = useState(0);
-    const [subtestTimeLeft, setSubtestTimeLeft] = useState<number>(TKA_SMP_SUBJECTS[0].durationMin * 60);
+    const [subtestDurationsSec, setSubtestDurationsSec] = useState<Record<string, number>>({
+        BINDO: 4500,
+        MTK: 4500
+    });
+    const [subtestTimeLeft, setSubtestTimeLeft] = useState<number>(4500);
 
     const [answers, setAnswers] = useState<Record<string, any>>({});
     const answersRef = useRef<Record<string, any>>({});
@@ -349,7 +353,6 @@ export default function OfficialExamChamberPage() {
             });
         };
 
-        // Muat langsung dari cache lokal dulu agar 0 ms lag jika sudah di-prefetch di /login
         let hasCached = false;
         const rawBank = localStorage.getItem("tka_bank_soal_cbt") || localStorage.getItem("tka_bank_soal");
         if (rawBank) {
@@ -387,7 +390,25 @@ export default function OfficialExamChamberPage() {
             }
         };
 
+        const loadSessionDurations = async () => {
+            try {
+                const { data } = await supabase
+                    .from("tka_sessions")
+                    .select("durasi_bindo_detik, durasi_mtk_detik")
+                    .eq("id", 1)
+                    .single();
+
+                if (data) {
+                    const bindoSec = Number(data.durasi_bindo_detik) > 0 ? Number(data.durasi_bindo_detik) : 4500;
+                    const mtkSec = Number(data.durasi_mtk_detik) > 0 ? Number(data.durasi_mtk_detik) : 4500;
+                    setSubtestDurationsSec({ BINDO: bindoSec, MTK: mtkSec });
+                    setSubtestTimeLeft(bindoSec);
+                }
+            } catch { }
+        };
+
         loadQuestionsFromCloud();
+        loadSessionDurations();
     }, [router]);
 
     const activeSubtest = TKA_SMP_SUBJECTS[currentSubtestIndex];
@@ -424,12 +445,10 @@ export default function OfficialExamChamberPage() {
         }
     };
 
-    // MODE SOFT-WARNING: Mencatat & memberi peringatan tanpa memblokir ujian siswa
     const recordViolation = useCallback(
         (reasonText?: string) => {
             if (!isInExam || isExamCompleted || isIntermission) return;
 
-            // Jeda 1,5 detik agar satu kejadian (misal keluar fullscreen + blur bersamaan) tidak dihitung ganda
             const now = Date.now();
             if (now - lastViolationTimeRef.current < 1500) return;
             lastViolationTimeRef.current = now;
@@ -447,7 +466,7 @@ export default function OfficialExamChamberPage() {
                         .from("tka_students")
                         .update({
                             violations: next,
-                            status: "Sedang Mengerjakan" // Tetap aktif mengerjakan, TIDAK pernah dikunci/blokir
+                            status: "Sedang Mengerjakan"
                         })
                         .eq("phone", cleanPhone);
                 }
@@ -525,6 +544,7 @@ export default function OfficialExamChamberPage() {
 
         setFinalSavedReport(finalReport);
         localStorage.setItem("tka_result", JSON.stringify(finalReport));
+        try { localStorage.removeItem("tka_draft_answers"); } catch { }
 
         const cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "");
         if (cleanPhone) {
@@ -578,9 +598,10 @@ export default function OfficialExamChamberPage() {
 
     const handleStartNextSubjectFromIntermission = () => {
         const nextIdx = currentSubtestIndex + 1;
+        const nextCode = TKA_SMP_SUBJECTS[nextIdx].code;
         setCurrentSubtestIndex(nextIdx);
         setCurrentQIndexInSubtest(0);
-        setSubtestTimeLeft(Math.round(TKA_SMP_SUBJECTS[nextIdx].durationMin * 60));
+        setSubtestTimeLeft(subtestDurationsSec[nextCode] || Math.round(TKA_SMP_SUBJECTS[nextIdx].durationMin * 60));
         setIsIntermission(false);
         enterExamChamber();
     };
@@ -645,6 +666,12 @@ export default function OfficialExamChamberPage() {
         return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
     };
 
+    const formatDurationLabel = (totalSecs: number) => {
+        const m = Math.floor(totalSecs / 60);
+        const s = totalSecs % 60;
+        return s > 0 ? `${m} Menit ${s} Detik` : `${m} Menit`;
+    };
+
     if (!studentSession) return null;
 
     // GERBANG KARANTINA BILIK UJIAN TKA SMP
@@ -691,24 +718,34 @@ export default function OfficialExamChamberPage() {
                             </div>
                         ) : (
                             <div className="space-y-2 text-[11px] text-slate-600">
-                                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
+                                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2">
                                     <div>
                                         <div className="font-bold text-slate-900">1. Bahasa Indonesia (BINDO)</div>
                                         <div className="text-[10px] text-slate-500">Literasi Membaca Wacana Informasi & Sastra</div>
                                     </div>
-                                    <span className="font-mono font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded">
-                                        {bindoCount} Soal
-                                    </span>
+                                    <div className="text-right shrink-0">
+                                        <span className="font-mono font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded block">
+                                            {bindoCount} Soal
+                                        </span>
+                                        <span className="text-[10px] font-mono text-slate-500">
+                                            {formatDurationLabel(subtestDurationsSec.BINDO)}
+                                        </span>
+                                    </div>
                                 </div>
 
-                                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
+                                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2">
                                     <div>
                                         <div className="font-bold text-slate-900">2. Matematika (MTK)</div>
                                         <div className="text-[10px] text-slate-500">Numerasi, Aljabar, Geometri & Data Peluang</div>
                                     </div>
-                                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
-                                        {mtkCount} Soal
-                                    </span>
+                                    <div className="text-right shrink-0">
+                                        <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded block">
+                                            {mtkCount} Soal
+                                        </span>
+                                        <span className="text-[10px] font-mono text-slate-500">
+                                            {formatDurationLabel(subtestDurationsSec.MTK)}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -731,6 +768,7 @@ export default function OfficialExamChamberPage() {
     if (isIntermission && !isExamCompleted) {
         const nextSubject = TKA_SMP_SUBJECTS[currentSubtestIndex + 1];
         const nextQuestionsCount = allQuestionsList.filter((q) => q.subtes_code === nextSubject.code).length;
+        const nextDurationSec = subtestDurationsSec[nextSubject.code] || 4500;
 
         return (
             <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4 font-sans">
@@ -755,16 +793,16 @@ export default function OfficialExamChamberPage() {
                         <div className="text-[10px] font-mono text-amber-400 font-bold uppercase">
                             MATA UJI BERIKUTNYA:
                         </div>
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                             <div>
                                 <div className="text-base font-black text-white">
                                     {nextSubject.name} ({nextSubject.code})
                                 </div>
                                 <div className="text-[11px] text-slate-400">{nextSubject.domain}</div>
                             </div>
-                            <div className="text-right font-mono">
+                            <div className="text-right font-mono shrink-0">
                                 <div className="text-sm font-black text-emerald-400">{nextQuestionsCount} Soal</div>
-                                <div className="text-[10px] text-slate-400">{nextSubject.durationMin} Menit</div>
+                                <div className="text-[10px] text-slate-400">{formatDurationLabel(nextDurationSec)}</div>
                             </div>
                         </div>
                     </div>
@@ -782,7 +820,7 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // SELESAI UJIAN & KONFIRMASI SHTKA PER MATA UJI (KEPMENDIKDASMEN NO. 56 TAHUN 2026)
+    // SELESAI UJIAN & KONFIRMASI SHTKA PER MATA UJI
     if (isExamCompleted && finalSavedReport) {
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 flex items-center justify-center">

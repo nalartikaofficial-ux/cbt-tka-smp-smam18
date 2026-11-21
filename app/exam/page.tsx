@@ -558,9 +558,9 @@ export default function OfficialExamChamberPage() {
                         interest: studentSession?.interest || "Umum",
                         status: "Selesai",
                         violations: snapshotViolations,
-                        score: Math.round(computed.totalScore),
-                        bindo_score: Math.round(computed.bindoScore),
-                        mtk_score: Math.round(computed.mtkScore),
+                        score: computed.totalScore,
+                        bindo_score: computed.bindoScore,
+                        mtk_score: computed.mtkScore,
                         waktu_selesai: finishTime
                     },
                     { onConflict: "phone" }
@@ -570,9 +570,9 @@ export default function OfficialExamChamberPage() {
                     phone: cleanPhone,
                     student_name: studentSession?.name,
                     school: studentSession?.school || "SMP / MTs",
-                    total_score: Math.round(computed.totalScore),
-                    bindo_score: Math.round(computed.bindoScore),
-                    mtk_score: Math.round(computed.mtkScore),
+                    total_score: computed.totalScore,
+                    bindo_score: computed.bindoScore,
+                    mtk_score: computed.mtkScore,
                     predicate: computed.predicate,
                     is_tuntas_kkm: computed.bindoScore >= 50 && computed.mtkScore >= 50,
                     violations: snapshotViolations,
@@ -824,68 +824,51 @@ export default function OfficialExamChamberPage() {
     if (isExamCompleted && finalSavedReport) {
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 flex items-center justify-center">
-                <div className="max-w-2xl w-full bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 text-center space-y-6 shadow-xl">
+                <div className="max-w-xl w-full bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 text-center space-y-6 shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-600" />
+
                     <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto">
                         <CheckCircle2 className="w-8 h-8" />
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                         <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10px] font-bold uppercase">
-                            KEPMENDIKDASMEN NO. 56 TAHUN 2026
+                            LEMBAR JAWABAN TERKUNCI DI SERVER
                         </span>
                         <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                            Selamat, {studentSession?.name}!
+                            Terima Kasih, {studentSession?.name}!
                         </h2>
                         <p className="text-xs text-slate-500">
-                            Sertifikat Hasil Tryout TKA SMP (Skala 0,00 – 100,00 per Mata Uji) telah diterbitkan.
+                            Asal Sekolah: <strong className="text-slate-700">{studentSession?.school}</strong>
                         </p>
                     </div>
 
-                    <div className="p-5 sm:p-6 rounded-3xl bg-blue-950 text-white space-y-4">
-                        <div className="text-[10px] font-mono uppercase tracking-wider text-blue-300 font-bold">
-                            CAPAIAN PER MATA UJI (TANPA BATAS KELULUSAN)
+                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs text-slate-600 leading-relaxed">
+                        <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0" />
+                            <span>Pengumuman Sertifikat Hasil Tryout TKA SMP (SHTKA)</span>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                            <div className="bg-blue-900/60 p-4 rounded-2xl border border-blue-800 space-y-1">
-                                <div className="text-[10px] font-mono text-blue-200 uppercase">1. Bahasa Indonesia</div>
-                                <div className="text-3xl font-black font-mono text-white">
-                                    {formatScoreID(finalSavedReport.bindoScore)}
-                                </div>
-                                <div className="inline-block px-2.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-300/40 text-amber-300 font-mono text-[11px] font-bold">
-                                    Kategori: {finalSavedReport.bindoPredicate}
-                                </div>
-                            </div>
-
-                            <div className="bg-blue-900/60 p-4 rounded-2xl border border-blue-800 space-y-1">
-                                <div className="text-[10px] font-mono text-blue-200 uppercase">2. Matematika</div>
-                                <div className="text-3xl font-black font-mono text-white">
-                                    {formatScoreID(finalSavedReport.mtkScore)}
-                                </div>
-                                <div className="inline-block px-2.5 py-0.5 rounded-md bg-emerald-400/20 border border-emerald-300/40 text-emerald-300 font-mono text-[11px] font-bold">
-                                    Kategori: {finalSavedReport.mtkPredicate}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="pt-2 border-t border-blue-800/80 text-[11px] font-mono text-blue-200 flex items-center justify-between">
-                            <span>Rerata Indeks Gabungan:</span>
-                            <strong className="text-amber-300 text-sm">{formatScoreID(finalSavedReport.totalScore)} / 100,00</strong>
-                        </div>
+                        <p>
+                            Seluruh jawaban <strong>Bahasa Indonesia</strong> dan <strong>Matematika</strong> Anda telah berhasil dikirimkan dan diamankan di server <strong>SMA Muhammadiyah 18 Jakarta</strong>.
+                        </p>
+                        <p>
+                            Sesuai ketentuan panitia, <strong>Rapor Nilai (Skala 0,00–100,00), Grafik Analisis Kompetensi per Kisi-Kisi, serta Peringkat Sekolah</strong> akan dibagikan secara resmi melalui <strong>Guru Pendamping / Panitia Pelaksana</strong> setelah seluruh sesi ujian selesai.
+                        </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                    <div className="pt-1">
                         <button
-                            onClick={() => router.push("/result")}
-                            className="flex-1 py-3.5 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                            onClick={() => {
+                                try {
+                                    if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
+                                } catch { }
+                                localStorage.removeItem("tka_result");
+                                router.push("/");
+                            }}
+                            className="w-full py-3.5 bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
                         >
-                            <Award className="w-4 h-4" /> Buka Sertifikat Hasil & Pembahasan
-                        </button>
-                        <button
-                            onClick={() => router.push("/")}
-                            className="px-5 py-3.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                            <Home className="w-4 h-4" /> Beranda
+                            <Home className="w-4 h-4" />
+                            <span>Selesai & Kembali ke Beranda</span>
                         </button>
                     </div>
                 </div>

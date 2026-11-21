@@ -5,15 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
     Users,
-    ShieldAlert,
     Award,
     Activity,
     PlusCircle,
     RefreshCw,
     Search,
     CheckCircle2,
-    Lock,
-    Unlock,
     AlertTriangle,
     ChevronLeft,
     Trash2,
@@ -31,8 +28,7 @@ import {
     FileSpreadsheet,
     LogOut,
     LockKeyhole,
-    LockKeyholeOpen,
-    Ban
+    LockKeyholeOpen
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -107,7 +103,7 @@ export default function ProctorMasterDashboard() {
 
     const [masterSession, setMasterSession] = useState<MasterSession>({
         paket_aktif: "PAKET_1",
-        nama_paket: "Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK) 2026",
+        nama_paket: "Tryout Terstandarisasi TKA Jenjang SMP (30 BINDO & 25 MTK) 2026",
         token_resmi: "TKA18",
         status_akses: "DIBUKA",
         waktu_mulai: "2026-11-20T07:30",
@@ -137,7 +133,7 @@ export default function ProctorMasterDashboard() {
         nomorSurat: "118/BAP-TKA-SMP/SMA-M18/2026",
         ruangUjian: "Laboratorium Komputer CBT SMA Muhammadiyah 18 Jakarta",
         catatanKhusus:
-            "Pelaksanaan Tryout Tes Kemampuan Akademik (TKA) Jenjang SMP (Mata Uji Bahasa Indonesia & Matematika) berjalan tertib dan lancar sesuai standar Kepmendikdasmen No. 56 Tahun 2026.",
+            "Pelaksanaan Tryout Tes Kemampuan Akademik (TKA) Jenjang SMP (55 Soal: Bahasa Indonesia & Matematika) berjalan tertib dan lancar sesuai standar Kepmendikdasmen No. 56 Tahun 2026.",
         kepalaSekolahNama: "Drs. H. Ahmad Dahlan, M.Pd.",
         kepalaSekolahNbm: "882.118.001",
         pengawasNama: "Fadhillah Umar, S.Pd.",
@@ -158,7 +154,7 @@ export default function ProctorMasterDashboard() {
             if (!error && data) {
                 setMasterSession({
                     paket_aktif: (data.paket_aktif as any) || "PAKET_1",
-                    nama_paket: data.nama_paket || "Tryout Terstandarisasi TKA Jenjang SMP (BINDO & MTK) 2026",
+                    nama_paket: data.nama_paket || "Tryout Terstandarisasi TKA Jenjang SMP (30 BINDO & 25 MTK) 2026",
                     token_resmi: data.token_resmi || "TKA18",
                     status_akses: (data.status_akses as any) || "DIBUKA",
                     waktu_mulai: data.waktu_mulai ? String(data.waktu_mulai).substring(0, 16) : "2026-11-20T07:30",
@@ -325,56 +321,6 @@ export default function ProctorMasterDashboard() {
             await handleUpdateSchedule(undefined, { waktu_selesai: newEndStr });
         } catch {
             alert("Gagal menambahkan kompensasi waktu.");
-        }
-    };
-
-    const handleUnlockResumeStudent = async (student: StudentItem) => {
-        const stLower = student.status.toLowerCase();
-
-        if (stLower.includes("belum") || stLower.includes("hadir")) {
-            alert(`Peserta ${student.nama} belum memulai ujian.`);
-            return;
-        }
-
-        if (stLower.includes("selesai")) {
-            alert(`Peserta ${student.nama} telah menyelesaikan ujian.`);
-            return;
-        }
-
-        setStudents((prev) =>
-            prev.map((s) => (s.nisn === student.nisn ? { ...s, status: "Sedang Mengerjakan" } : s))
-        );
-
-        try {
-            const { error } = await supabase
-                .from("tka_students")
-                .update({ status: "Sedang Mengerjakan" })
-                .eq("phone", student.nisn);
-
-            if (error) throw error;
-            alert(`Akses pengerjaan ${student.nama} berhasil dibuka kembali.`);
-        } catch (err: any) {
-            alert("Gagal membuka akses pengerjaan: " + (err?.message || "Kesalahan server"));
-        }
-    };
-
-    const handleBlockStudent = async (student: StudentItem) => {
-        if (!confirm(`Kunci/Blokir bilik ujian ${student.nama}? Akses ujian akan dihentikan sementara.`)) return;
-
-        setStudents((prev) =>
-            prev.map((s) => (s.nisn === student.nisn ? { ...s, status: "Terkunci" } : s))
-        );
-
-        try {
-            const { error } = await supabase
-                .from("tka_students")
-                .update({ status: "Terkunci", violations: student.violations })
-                .eq("phone", student.nisn);
-
-            if (error) throw error;
-            alert(`Peserta ${student.nama} berhasil diblokir.`);
-        } catch (err: any) {
-            alert("Gagal memblokir peserta: " + (err?.message || "Kesalahan server"));
         }
     };
 
@@ -589,9 +535,9 @@ export default function ProctorMasterDashboard() {
         const total = students.length;
         const working = students.filter((s) => s.status.toLowerCase().includes("mengerjakan")).length;
         const finished = students.filter((s) => s.status.toLowerCase().includes("selesai") || s.score > 0).length;
-        const locked = students.filter((s) => s.status.toLowerCase().includes("kunci") || s.violations >= 3).length;
-        const absent = total - (working + finished + locked);
-        return { total, working, finished, locked, absent: Math.max(0, absent) };
+        const warned = students.filter((s) => s.violations > 0).length;
+        const absent = total - (working + finished);
+        return { total, working, finished, warned, absent: Math.max(0, absent) };
     }, [students]);
 
     const filteredStudents = useMemo(() => {
@@ -718,12 +664,12 @@ export default function ProctorMasterDashboard() {
                             {masterSession.status_akses === "DIBUKA" ? (
                                 <>
                                     <LockKeyhole className="w-3.5 h-3.5" />
-                                    <span>Kunci Akses</span>
+                                    <span>Kunci Sesi</span>
                                 </>
                             ) : (
                                 <>
                                     <LockKeyholeOpen className="w-3.5 h-3.5" />
-                                    <span>Buka Akses</span>
+                                    <span>Buka Sesi</span>
                                 </>
                             )}
                         </button>
@@ -762,7 +708,7 @@ export default function ProctorMasterDashboard() {
                             </div>
                             <div>
                                 <div className="text-[9.5px] sm:text-[10px] font-mono font-bold tracking-widest text-amber-300 uppercase">
-                                    PENGATURAN RUANG UJIAN TERPUSAT (BINDO & MTK)
+                                    PENGATURAN RUANG UJIAN TERPUSAT (30 BINDO & 25 MTK)
                                 </div>
                                 <h2 className="text-base sm:text-xl font-black text-white">
                                     Token Resmi Sesi Tryout TKA SMP
@@ -828,7 +774,7 @@ export default function ProctorMasterDashboard() {
                                 onChange={(e: any) => setMasterSession({ ...masterSession, paket_aktif: e.target.value })}
                                 className="w-full px-3 py-2 sm:py-2.5 rounded-xl bg-white/10 border border-white/20 text-white font-bold font-mono text-xs outline-none focus:bg-white/20 cursor-pointer"
                             >
-                                <option value="PAKET_1" className="text-slate-900">PAKET 1 (Reguler BINDO & MTK)</option>
+                                <option value="PAKET_1" className="text-slate-900">PAKET 1 (Reguler 55 Soal)</option>
                                 <option value="PAKET_2" className="text-slate-900">PAKET 2 (Alternatif)</option>
                                 <option value="PAKET_3" className="text-slate-900">PAKET 3 (Susulan)</option>
                             </select>
@@ -925,13 +871,13 @@ export default function ProctorMasterDashboard() {
                         <div className="text-xl sm:text-3xl font-black text-emerald-700 mt-1 sm:mt-2 font-mono">{stats.finished}</div>
                     </div>
 
-                    <div className={`p-3.5 sm:p-4 rounded-2xl border shadow-2xs ${stats.locked > 0 ? "bg-rose-50 border-rose-300" : "bg-white border-slate-200"}`}>
-                        <div className={`flex items-center justify-between text-[11px] sm:text-xs font-bold font-mono ${stats.locked > 0 ? "text-rose-700" : "text-slate-500"}`}>
-                            <span>TERKUNCI</span>
-                            <ShieldAlert className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${stats.locked > 0 ? "text-rose-600 animate-bounce" : "text-slate-400"}`} />
+                    <div className={`p-3.5 sm:p-4 rounded-2xl border shadow-2xs ${stats.warned > 0 ? "bg-amber-50 border-amber-300" : "bg-white border-slate-200"}`}>
+                        <div className={`flex items-center justify-between text-[11px] sm:text-xs font-bold font-mono ${stats.warned > 0 ? "text-amber-800" : "text-slate-500"}`}>
+                            <span>PERINGATAN</span>
+                            <AlertTriangle className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${stats.warned > 0 ? "text-amber-600" : "text-slate-400"}`} />
                         </div>
-                        <div className={`text-xl sm:text-3xl font-black mt-1 sm:mt-2 font-mono ${stats.locked > 0 ? "text-rose-700" : "text-slate-900"}`}>
-                            {stats.locked}
+                        <div className={`text-xl sm:text-3xl font-black mt-1 sm:mt-2 font-mono ${stats.warned > 0 ? "text-amber-800" : "text-slate-900"}`}>
+                            {stats.warned}
                         </div>
                     </div>
 
@@ -1137,9 +1083,7 @@ export default function ProctorMasterDashboard() {
                                                             ? "bg-blue-50 text-blue-700 border border-blue-200"
                                                             : s.status.toLowerCase().includes("selesai") || s.score > 0
                                                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                                : s.status.toLowerCase().includes("kunci") || s.violations >= 3
-                                                                    ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                                                    : "bg-slate-100 text-slate-600 border border-slate-200"
+                                                                : "bg-slate-100 text-slate-600 border border-slate-200"
                                                             }`}
                                                     >
                                                         {s.status}
@@ -1185,7 +1129,7 @@ export default function ProctorMasterDashboard() {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                             <div>
                                 <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
-                                    <span>Pemantauan Bilik Kiosk Siswa</span>
+                                    <span>Pemantauan Bilik Ujian Siswa</span>
                                     <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[9.5px] sm:text-[10px] font-bold inline-flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                                         Auto-Sync 5s
@@ -1193,7 +1137,7 @@ export default function ProctorMasterDashboard() {
                                 </h3>
                                 <p className="text-[11px] sm:text-xs text-slate-500">
                                     Paket aktif: <strong className="text-blue-700 font-bold">{masterSession.paket_aktif}</strong> | Token:{" "}
-                                    <strong className="text-amber-600 font-mono font-bold">{masterSession.token_resmi}</strong>
+                                    <strong className="text-amber-600 font-mono font-bold">{masterSession.token_resmi}</strong> | Mode: <strong className="text-emerald-700">Soft-Warning (Tanpa Blokir)</strong>
                                 </p>
                             </div>
 
@@ -1215,7 +1159,6 @@ export default function ProctorMasterDashboard() {
                                 >
                                     <option value="ALL">Semua Status</option>
                                     <option value="Mengerjakan">Sedang Mengerjakan</option>
-                                    <option value="Terkunci">Terkunci</option>
                                     <option value="Selesai">Selesai</option>
                                     <option value="Hadir">Belum Hadir</option>
                                 </select>
@@ -1223,20 +1166,19 @@ export default function ProctorMasterDashboard() {
                         </div>
 
                         <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                            <table className="w-full text-left text-xs border-collapse min-w-[720px]">
+                            <table className="w-full text-left text-xs border-collapse min-w-[680px]">
                                 <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] sm:text-[11px] text-slate-600">
                                     <tr>
                                         <th className="p-3">No. WhatsApp</th>
                                         <th className="p-3">Nama Peserta</th>
                                         <th className="p-3">Asal SMP / Kelas</th>
                                         <th className="p-3">Status Pengerjaan</th>
-                                        <th className="p-3">Pelanggaran Kiosk</th>
-                                        <th className="p-3 text-right">Aksi Pengawas (Kendali Penuh)</th>
+                                        <th className="p-3">Catatan Fokus Layar</th>
+                                        <th className="p-3 text-right">Aksi Pengawas</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 font-medium">
                                     {filteredStudents.map((s) => {
-                                        const isLocked = s.status.toLowerCase().includes("kunci") || s.violations >= 3;
                                         const isFinished = s.status.toLowerCase().includes("selesai") || s.score > 0;
                                         const isWorking = s.status.toLowerCase().includes("mengerjakan");
 
@@ -1259,13 +1201,7 @@ export default function ProctorMasterDashboard() {
                                                             Selesai ({s.waktu_selesai || "-"})
                                                         </span>
                                                     )}
-                                                    {isLocked && (
-                                                        <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 font-black text-[10px] inline-flex items-center gap-1 animate-pulse">
-                                                            <Lock className="w-3.5 h-3.5" />
-                                                            Terkunci Kiosk
-                                                        </span>
-                                                    )}
-                                                    {!isWorking && !isFinished && !isLocked && (
+                                                    {!isWorking && !isFinished && (
                                                         <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-medium">
                                                             Belum Hadir
                                                         </span>
@@ -1273,40 +1209,22 @@ export default function ProctorMasterDashboard() {
                                                 </td>
                                                 <td className="p-3 font-mono font-bold">
                                                     {s.violations > 0 ? (
-                                                        <span className="text-rose-600 flex items-center gap-1">
-                                                            <AlertTriangle className="w-3.5 h-3.5" />
-                                                            {s.violations}x Terdeteksi
+                                                        <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full text-[10.5px] inline-flex items-center gap-1">
+                                                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                                            {s.violations}x Peringatan
                                                         </span>
                                                     ) : (
                                                         <span className="text-emerald-600">0 (Tertib)</span>
                                                     )}
                                                 </td>
-                                                <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
-                                                    <button
-                                                        onClick={() => handleUnlockResumeStudent(s)}
-                                                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 shadow-2xs transition-all active:scale-95"
-                                                        title="Buka akses pengerjaan tanpa menghapus jawaban yang tersimpan"
-                                                    >
-                                                        <Unlock className="w-3.5 h-3.5" />
-                                                        <span>Buka Akses</span>
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => handleBlockStudent(s)}
-                                                        className="px-2.5 py-1.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 transition-all active:scale-95"
-                                                        title="Kunci bilik peserta secara manual"
-                                                    >
-                                                        <Ban className="w-3.5 h-3.5" />
-                                                        <span>Kunci</span>
-                                                    </button>
-
+                                                <td className="p-3 text-right whitespace-nowrap">
                                                     <button
                                                         onClick={() => handleResetStudent(s)}
                                                         className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 transition-all active:scale-95"
                                                         title="Reset status peserta ke awal"
                                                     >
                                                         <RotateCcw className="w-3.5 h-3.5" />
-                                                        <span>Reset</span>
+                                                        <span>Reset Ujian</span>
                                                     </button>
                                                 </td>
                                             </tr>
@@ -1514,7 +1432,7 @@ export default function ProctorMasterDashboard() {
                                             year: "numeric"
                                         })}
                                     </strong>
-                                    , telah diselenggarakan Tryout Terstandarisasi Tes Kemampuan Akademik (TKA) Jenjang SMP (Mata Uji Bahasa Indonesia & Matematika) Tahun Pelajaran 2026/2027 berbasis Computer-Based Test (CBT) di lingkungan{" "}
+                                    , telah diselenggarakan Tryout Terstandarisasi Tes Kemampuan Akademik (TKA) Jenjang SMP (55 Butir Soal: 30 Bahasa Indonesia & 25 Matematika) Tahun Pelajaran 2026/2027 berbasis Computer-Based Test (CBT) di lingkungan{" "}
                                     <strong>SMA Muhammadiyah 18 Jakarta</strong> dengan ketentuan pelaksanaan sebagai berikut:
                                 </p>
 
@@ -1528,7 +1446,7 @@ export default function ProctorMasterDashboard() {
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Mata Uji</td>
-                                            <td>1. Bahasa Indonesia (BINDO) • 2. Matematika (MTK)</td>
+                                            <td>1. Bahasa Indonesia (30 Soal) • 2. Matematika (25 Soal)</td>
                                         </tr>
                                         <tr>
                                             <td className="font-semibold">Ruang / Tempat Ujian</td>

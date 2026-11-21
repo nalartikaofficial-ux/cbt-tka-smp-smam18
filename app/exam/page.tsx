@@ -606,6 +606,7 @@ export default function OfficialExamChamberPage() {
         setAnswers((prev) => {
             const next = { ...prev, [currentQKey]: optIdx };
             answersRef.current = next;
+            try { localStorage.setItem("tka_draft_answers", JSON.stringify(next)); } catch { }
             return next;
         });
     };
@@ -618,6 +619,7 @@ export default function OfficialExamChamberPage() {
                 : [...existing, optIdx];
             const next = { ...prev, [currentQKey]: updated };
             answersRef.current = next;
+            try { localStorage.setItem("tka_draft_answers", JSON.stringify(next)); } catch { }
             return next;
         });
     };
@@ -628,6 +630,7 @@ export default function OfficialExamChamberPage() {
             const updated = { ...existing, [statementId]: choice };
             const next = { ...prev, [currentQKey]: updated };
             answersRef.current = next;
+            try { localStorage.setItem("tka_draft_answers", JSON.stringify(next)); } catch { }
             return next;
         });
     };
@@ -1102,8 +1105,8 @@ export default function OfficialExamChamberPage() {
                             type="button"
                             onClick={handleToggleDoubtful}
                             className={`px-4 sm:px-5 py-2.5 rounded-xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${doubtfuls[currentQKey]
-                                    ? "bg-amber-400 border-amber-500 text-slate-950"
-                                    : "bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100"
+                                ? "bg-amber-400 border-amber-500 text-slate-950"
+                                : "bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100"
                                 }`}
                         >
                             <Bookmark className="w-4 h-4" /> Ragu-ragu
@@ -1209,11 +1212,38 @@ export default function OfficialExamChamberPage() {
                                 ? "Kumpulkan Seluruh Lembar Ujian?"
                                 : "Selesaikan Bahasa Indonesia & Masuk ke Jeda Matematika?"}
                         </h3>
-                        <p className="text-xs text-slate-500 leading-relaxed">
-                            {currentSubtestIndex === TKA_SMP_SUBJECTS.length - 1
-                                ? "Jawaban Anda akan dikunci dan dihitung menggunakan skala 0,00–100,00 sesuai Kepmendikdasmen No. 56 Tahun 2026."
-                                : "Setelah dikonfirmasi, jawaban Bahasa Indonesia akan dikunci dan Anda akan masuk ke layar jeda sebelum mengerjakan Matematika."}
-                        </p>
+
+                        {(() => {
+                            const unAnsweredCount = currentSubtestQuestions.filter((q: any, idx: number) => {
+                                const k = q.id ? String(q.id) : `${activeSubtest.code}_${idx}`;
+                                const a = answers[k];
+                                if (a === undefined || a === null) return true;
+                                if (Array.isArray(a)) return a.length === 0;
+                                if (typeof a === "object") return Object.keys(a).length === 0;
+                                return false;
+                            }).length;
+                            const doubtCount = currentSubtestQuestions.filter((q: any, idx: number) => {
+                                const k = q.id ? String(q.id) : `${activeSubtest.code}_${idx}`;
+                                return Boolean(doubtfuls[k]);
+                            }).length;
+
+                            return (
+                                <div className="space-y-2 text-xs text-slate-500 leading-relaxed">
+                                    {(unAnsweredCount > 0 || doubtCount > 0) && (
+                                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-semibold text-[11px]">
+                                            Perhatian: Masih ada <strong>{doubtCount} soal Ragu-ragu</strong> dan{" "}
+                                            <strong>{unAnsweredCount} soal Belum Dijawab</strong> (soal ragu-ragu yang sudah terisi tetap akan dinilai).
+                                        </div>
+                                    )}
+                                    <p>
+                                        {currentSubtestIndex === TKA_SMP_SUBJECTS.length - 1
+                                            ? "Jawaban Anda akan dikunci dan dihitung menggunakan skala 0,00–100,00 sesuai Kepmendikdasmen No. 56 Tahun 2026."
+                                            : "Setelah dikonfirmasi, jawaban Bahasa Indonesia akan dikunci dan Anda akan masuk ke layar jeda sebelum mengerjakan Matematika."}
+                                    </p>
+                                </div>
+                            );
+                        })()}
+
                         <div className="flex gap-2 pt-2">
                             <button
                                 type="button"

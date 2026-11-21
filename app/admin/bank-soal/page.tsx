@@ -203,7 +203,7 @@ function htmlToStructuredWordText(html: string): string {
     return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-// Parser Naskah Word: Menangani 60 Soal (PG_SEDERHANA, PGK_MCMA, PGK_KATEGORI) + Gambar URL/Base64
+// Parser Naskah Word: Menangani 55 Soal (PG_SEDERHANA, PGK_MCMA, PGK_KATEGORI) + Gambar URL/Base64
 function parseStructuredWordBlocks(rawText: string) {
     const hasSubtesTags = /\[SUBTES:/i.test(rawText);
     const blocks = hasSubtesTags
@@ -807,7 +807,7 @@ export default function BankSoalAdminPage() {
                                 </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                                Otomatis mengekstrak <strong>60 soal (3 bentuk Pusmendik)</strong> dan <strong>gambar tertanam</strong> ke Supabase Storage.
+                                Otomatis mengekstrak <strong>55 soal (3 bentuk Pusmendik)</strong> dan <strong>gambar tertanam</strong> ke Supabase Storage.
                             </p>
                         </div>
                     </div>
@@ -1000,8 +1000,8 @@ export default function BankSoalAdminPage() {
                                                     </span>
                                                     <span
                                                         className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold border ${isMath
-                                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                                                : "bg-slate-100 text-slate-700 border-slate-200"
+                                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                            : "bg-slate-100 text-slate-700 border-slate-200"
                                                             }`}
                                                     >
                                                         {code}
@@ -1079,8 +1079,8 @@ export default function BankSoalAdminPage() {
                                                             <div
                                                                 key={opt.key}
                                                                 className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isKey
-                                                                        ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
-                                                                        : "bg-slate-50/60 border-slate-200 text-slate-700"
+                                                                    ? "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold"
+                                                                    : "bg-slate-50/60 border-slate-200 text-slate-700"
                                                                     }`}
                                                             >
                                                                 <span className="font-mono font-black text-slate-600 shrink-0">{opt.key}.</span>

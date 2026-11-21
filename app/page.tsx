@@ -14,25 +14,12 @@ import {
   Cpu,
   EyeOff,
   Play,
-  LogIn,
-  KeyRound,
-  X,
-  BookOpen,
-  Calculator,
-  Award,
-  ArrowRight
+  Award
 } from "lucide-react";
 
 export default function CBTEngineLandingPage() {
   // 1. Countdown Timer Mockup Hero
-  const [secondsLeft, setSecondsLeft] = useState(895);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1000); // Langsung terbuka seketika (1 detik)
-    return () => clearTimeout(timer);
-  }, []);
+  const [secondsLeft] = useState(895);
 
   const formatTimer = (totalSec: number) => {
     const m = Math.floor(totalSec / 60).toString().padStart(2, "0");
@@ -45,7 +32,7 @@ export default function CBTEngineLandingPage() {
 
   // 2. Animasi Hitung Metrik Hero (0 ke 100)
   const metricsRef = useRef<HTMLDivElement | null>(null);
-  const [metricCount, setMetricCount] = useState(0);
+  const [metricCount, setMetricCount] = useState(100);
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
@@ -54,9 +41,8 @@ export default function CBTEngineLandingPage() {
     const startCounting = () => {
       setMetricCount(0);
       delayTimer = setTimeout(() => {
-        let current = 0;
         const target = 100;
-        const totalDuration = 1800;
+        const totalDuration = 1200;
         const frameRate = 30;
         const totalFrames = totalDuration / frameRate;
         let frame = 0;
@@ -67,15 +53,15 @@ export default function CBTEngineLandingPage() {
           frame++;
           const progress = frame / totalFrames;
           const easedProgress = 1 - Math.pow(1 - progress, 3);
-          current = Math.min(target, Math.round(target * easedProgress));
+          const current = Math.min(target, Math.round(target * easedProgress));
 
           setMetricCount(current);
 
-          if (frame >= totalFrames) {
-            if (timer) clearInterval(timer);
+          if (frame >= totalFrames && timer) {
+            clearInterval(timer);
           }
         }, frameRate);
-      }, 200);
+      }, 100);
     };
 
     const target = metricsRef.current;
@@ -83,8 +69,7 @@ export default function CBTEngineLandingPage() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0];
-        if (entry.isIntersecting) {
+        if (entries[0].isIntersecting) {
           startCounting();
         }
       },
@@ -100,12 +85,18 @@ export default function CBTEngineLandingPage() {
     };
   }, []);
 
-  // 3. Splash Screen In-House Engine
+  // 3. Splash Screen Cepat (300ms pada kunjungan pertama, 0ms jika sudah di-cache sesi)
   const [isLoading, setIsLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
 
   useEffect(() => {
-    const totalDuration = 1500;
+    if (typeof window !== "undefined" && sessionStorage.getItem("m18_boot_done")) {
+      setIsLoading(false);
+      setLoadProgress(100);
+      return;
+    }
+
+    const totalDuration = 300;
     const updateInterval = 25;
     const totalTicks = totalDuration / updateInterval;
     let currentTick = 0;
@@ -117,119 +108,81 @@ export default function CBTEngineLandingPage() {
 
       if (currentTick >= totalTicks) {
         clearInterval(progressTimer);
-        setTimeout(() => {
-          setIsLoading(false);
-        }, 150);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("m18_boot_done", "1");
+        }
+        setIsLoading(false);
       }
     }, updateInterval);
 
     return () => clearInterval(progressTimer);
   }, []);
 
-  // 4. Modal Dialog Pintu Masuk Siswa
-  const [showStudentAuthModal, setShowStudentAuthModal] = useState(false);
-
   return (
     <div className="min-h-screen bg-[#F1F5F9] text-slate-800 font-sans selection:bg-blue-700 selection:text-white relative overflow-x-hidden">
       {/* ============================================================== */}
-      {/* A. ENTERPRISE BOOTLOADER SPLASH SCREEN                         */}
+      {/* A. ENTERPRISE BOOTLOADER SPLASH SCREEN (FAST 300MS)            */}
       {/* ============================================================== */}
-      <div
-        className={`fixed inset-0 top-0 left-0 w-screen h-screen z-[9999] flex flex-col items-center justify-center bg-white transition-all duration-700 ease-in-out ${isLoading
-          ? "opacity-100 pointer-events-auto"
-          : "opacity-0 -translate-y-4 pointer-events-none"
-          }`}
-      >
-        <div className="absolute w-80 h-80 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+      {isLoading && (
+        <div className="fixed inset-0 top-0 left-0 w-screen h-screen z-[9999] flex flex-col items-center justify-center bg-white transition-opacity duration-300">
+          <div className="absolute w-80 h-80 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
 
-        <div className="relative flex flex-col items-center text-center space-y-4 px-4 max-w-lg">
-          <div className="relative flex items-center justify-center">
-            <span className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-blue-400 opacity-20" />
-            <div className="relative w-16 h-16 rounded-2xl bg-white p-1.5 shadow-xl shadow-blue-900/10 border border-slate-200 flex items-center justify-center overflow-hidden">
-              <img
-                src="/logo-timsim.jpg"
-                alt="Logo SMA Muhammadiyah 18"
-                className="w-full h-full object-contain"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = "none";
-                  const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
-                  if (fallback) fallback.style.display = "flex";
-                }}
-              />
-              <div className="hidden w-full h-full rounded-xl bg-slate-900 border border-amber-400 items-center justify-center font-black text-amber-300 text-xs">
-                M18
+          <div className="relative flex flex-col items-center text-center space-y-4 px-4 max-w-lg">
+            <div className="relative flex items-center justify-center">
+              <div className="relative w-16 h-16 rounded-2xl bg-white p-1.5 shadow-xl shadow-blue-900/10 border border-slate-200 flex items-center justify-center overflow-hidden">
+                <img
+                  src="/logo-timsim.jpg"
+                  alt="Logo SMA Muhammadiyah 18"
+                  className="w-full h-full object-contain"
+                />
               </div>
             </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <div className="font-mono text-[11px] font-bold text-blue-600 tracking-widest uppercase flex items-center justify-center gap-1.5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
-              </span>
-              <span>IN-HOUSE CBT ENGINE INITIALIZING</span>
+            <div className="space-y-1">
+              <div className="font-mono text-[11px] font-bold text-blue-600 tracking-widest uppercase">
+                CBT ENGINE • TKA SMP
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 uppercase">
+                TIM SISTEM INFORMASI & MANAJEMEN
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 font-semibold">
+                SMA Muhammadiyah 18 Jakarta
+              </p>
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 uppercase">
-              TIM SISTEM INFORMASI &amp; MANAJEMEN
-            </h2>
-
-            <p className="text-xs sm:text-sm text-slate-500 font-semibold tracking-wide">
-              SMA Muhammadiyah 18 Jakarta
-            </p>
-          </div>
-
-          <div className="w-56 sm:w-64 h-1.5 bg-slate-100 rounded-full overflow-hidden relative mt-3 border border-slate-200/80">
-            <div
-              className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 rounded-full transition-[width] duration-75 ease-linear"
-              style={{ width: `${loadProgress}%` }}
-            />
-          </div>
-
-          <div className="font-mono text-[9.5px] sm:text-[10px] text-slate-400 tracking-widest pt-1">
-            VERIFYING KIOSK &bull; 2 SUBTES PUSMENDIK &bull; READY
+            <div className="w-56 sm:w-64 h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/80">
+              <div
+                className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 rounded-full transition-[width] duration-75 ease-linear"
+                style={{ width: `${loadProgress}%` }}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ============================================================== */}
       {/* B. MAIN PORTAL WRAPPER                                         */}
       {/* ============================================================== */}
-      <div
-        className={`transition-all duration-1000 ease-out ${isLoading
-          ? "opacity-0 translate-y-3 filter blur-xs"
-          : "opacity-100 translate-y-0 filter-none"
-          }`}
-      >
-        {/* NAVBAR RESPONSIF (TIDAK BERTUMPUK DI HP) */}
+      <div>
+        {/* NAVBAR BERSIH (1 TOMBOL KHUSUS GURU & ADMIN) */}
         <header className="relative z-40 w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md shadow-xs sticky top-0">
-          <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+          <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-3">
             {/* Branding & Logo */}
-            <div className="flex items-center gap-2.5 sm:gap-3.5 text-left w-full sm:w-auto">
-              <div className="relative group shrink-0">
-                <div className="absolute -inset-1 rounded-full bg-blue-500/20 blur-xs animate-pulse" />
+            <div className="flex items-center gap-2.5 sm:gap-3.5 text-left min-w-0">
+              <div className="relative shrink-0">
                 <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white p-1 shadow-sm border border-slate-200 flex items-center justify-center overflow-hidden">
                   <img
                     src="/logo-timsim.jpg"
                     alt="Logo SMA Muhammadiyah 18 Jakarta"
                     className="w-full h-full object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
-                      const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
-                      if (fallback) fallback.style.display = "flex";
-                    }}
                   />
-                  <div className="hidden w-full h-full rounded-xl bg-slate-900 border border-amber-400 items-center justify-center font-black text-amber-300 text-[10px]">
-                    M18
-                  </div>
                 </div>
               </div>
 
               <div className="space-y-0.5 min-w-0">
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                   <span className="text-xs sm:text-base font-black tracking-tight text-[#1e3a8a] uppercase truncate">
-                    TIM SISTEM INFORMASI &amp; MANAJEMEN
+                    TIM SISTEM INFORMASI & MANAJEMEN
                   </span>
                   <div className="relative inline-flex items-center gap-1 rounded-full bg-blue-600 px-1.5 py-0.2 sm:px-2 sm:py-0.5 text-[9px] sm:text-[10px] font-black tracking-wider text-white shadow-xs">
                     <span className="relative flex h-1.5 w-1.5 shrink-0">
@@ -251,26 +204,15 @@ export default function CBTEngineLandingPage() {
               </div>
             </div>
 
-            {/* Nav Action Buttons */}
-            <div className="flex items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-              <Link
-                href="/admin"
-                className="h-8 sm:h-10 px-3 sm:px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 transition shadow-xs flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold cursor-pointer"
-              >
-                <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />
-                <span className="hidden md:inline">Portal Guru &amp; Admin</span>
-                <span className="md:hidden">Portal Guru</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => setShowStudentAuthModal(true)}
-                className="h-8 sm:h-10 px-3.5 sm:px-5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white transition shadow-sm shadow-blue-700/20 flex items-center gap-1.5 text-[11px] sm:text-xs font-bold shrink-0 cursor-pointer"
-              >
-                <span>Ruang Ujian Siswa</span>
-                <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </button>
-            </div>
+            {/* 1 Tombol Sekunder Khusus Guru & Admin */}
+            <Link
+              href="/admin"
+              className="h-9 sm:h-10 px-3 sm:px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 transition shadow-xs flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold shrink-0 cursor-pointer"
+            >
+              <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700 shrink-0" />
+              <span className="hidden sm:inline">Portal Guru & Admin</span>
+              <span className="sm:hidden">Portal Guru</span>
+            </Link>
           </div>
         </header>
 
@@ -283,7 +225,7 @@ export default function CBTEngineLandingPage() {
                 <div className="space-y-3 sm:space-y-3.5">
                   <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white text-[10px] sm:text-xs font-bold tracking-wider uppercase shadow-sm border border-blue-500/30">
                     <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
-                    <span className="tracking-wide">STANDAR ASESMEN NASIONAL PUSMENDIK</span>
+                    <span className="tracking-wide">KEPMENDIKDASMEN NO. 56 TAHUN 2026</span>
                   </div>
 
                   <h1 className="text-3xl sm:text-5xl lg:text-[48px] font-black tracking-tight leading-none pt-0.5">
@@ -293,28 +235,29 @@ export default function CBTEngineLandingPage() {
                   </h1>
 
                   <p className="text-slate-600 text-xs sm:text-[15px] leading-relaxed max-w-xl font-normal">
-                    Uji kesiapan akademikmu menghadapi evaluasi standar nasional jenjang SMP. Terdiri dari 2 subtes inti:{" "}
-                    <strong className="font-bold text-slate-900">Literasi Bahasa Indonesia</strong> &amp;{" "}
-                    <strong className="font-bold text-slate-900">Penalaran Matematika</strong>. Dapatkan analisis diagnostik instan dan klaim{" "}
-                    <strong className="font-bold text-blue-900">Voucher Beasiswa Masuk SMA Muhammadiyah 18 Jakarta</strong>.
+                    Uji kesiapan akademikmu menghadapi evaluasi standar nasional jenjang SMP/MTs (total <strong>55 soal</strong>):{" "}
+                    <strong className="font-bold text-slate-900">Bahasa Indonesia (30 Soal)</strong> &{" "}
+                    <strong className="font-bold text-slate-900">Matematika (25 Soal)</strong>. Terbitkan{" "}
+                    <strong className="font-bold text-blue-900">Sertifikat Hasil Tryout (SHTKA)</strong> & klaim{" "}
+                    <strong className="font-bold text-blue-900">Voucher Beasiswa PPDB SMA Muhammadiyah 18 Jakarta</strong>.
                   </p>
 
+                  {/* 1 TOMBOL UTAMA LANGSUNG KE /LOGIN */}
                   <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowStudentAuthModal(true)}
-                      className="h-10 sm:h-11 px-4 sm:px-6 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs sm:text-sm transition shadow-md shadow-blue-700/20 flex items-center gap-2 cursor-pointer"
+                    <Link
+                      href="/login"
+                      className="h-11 sm:h-12 px-5 sm:px-7 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-black text-xs sm:text-sm transition shadow-md shadow-blue-700/25 flex items-center gap-2 cursor-pointer"
                     >
-                      <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" />
+                      <Play className="w-4 h-4 fill-white" />
                       <span>Ikuti Try Out Sekarang</span>
-                    </button>
+                    </Link>
 
                     <a
                       href="#silabus"
-                      className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs sm:text-sm transition shadow-2xs flex items-center gap-2"
+                      className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs sm:text-sm transition shadow-2xs flex items-center gap-2"
                     >
-                      <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-700" />
-                      <span>Silabus 2 Subtes</span>
+                      <BarChart3 className="w-4 h-4 text-blue-700" />
+                      <span>Struktur 55 Soal</span>
                     </a>
                   </div>
                 </div>
@@ -324,10 +267,10 @@ export default function CBTEngineLandingPage() {
                   <div className="group relative p-2.5 sm:p-3.5 rounded-2xl bg-white border border-slate-200 text-center transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-blue-300 overflow-hidden cursor-default flex flex-col items-center justify-center">
                     <div className="flex items-center justify-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5 sm:mb-1">
                       <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-600 animate-pulse shrink-0" />
-                      <span>KONKURENSI</span>
+                      <span>KAPASITAS</span>
                     </div>
                     <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-mono">
-                      {metricCount}<span className="text-blue-600">+</span>
+                      500<span className="text-blue-600">+</span>
                     </div>
                     <div className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Uji serentak stabil</div>
                   </div>
@@ -340,7 +283,7 @@ export default function CBTEngineLandingPage() {
                     <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-mono">
                       SKALA <span className="text-blue-600">100</span>
                     </div>
-                    <div className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Rapor diagnostik</div>
+                    <div className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Skor 0,00 – 100,00</div>
                   </div>
 
                   <div className="group relative p-2.5 sm:p-3.5 rounded-2xl bg-white border border-slate-200 text-center transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-emerald-300 overflow-hidden cursor-default flex flex-col items-center justify-center">
@@ -351,7 +294,7 @@ export default function CBTEngineLandingPage() {
                     <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-mono">
                       {metricCount}<span className="text-emerald-600">%</span>
                     </div>
-                    <div className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Kiosk anti-cheat</div>
+                    <div className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Ramah siswa SMP</div>
                   </div>
                 </div>
               </div>
@@ -383,10 +326,10 @@ export default function CBTEngineLandingPage() {
                     <div className="flex items-center justify-between pb-2 border-b border-slate-200 text-xs">
                       <div className="flex items-center gap-1.5 sm:gap-2">
                         <span className="px-2 py-0.5 rounded-md bg-blue-700 text-white font-mono font-bold text-[9.5px] sm:text-[10px]">
-                          SOAL NO. 06
+                          CONTOH SOAL
                         </span>
                         <span className="text-slate-700 font-semibold text-[10px] sm:text-[11px] truncate">
-                          Penalaran Matematika (PM)
+                          Matematika (MTK)
                         </span>
                       </div>
                       <div className="flex items-center gap-1 text-amber-700 bg-amber-50 px-1.5 sm:px-2 py-0.5 rounded font-mono text-[10px] sm:text-[11px] font-bold border border-amber-200 shrink-0">
@@ -400,7 +343,7 @@ export default function CBTEngineLandingPage() {
                         Sebuah toko buku memberikan diskon bertingkat: paket buku pelajaran didiskon 20%, dan jika memiliki kartu anggota pelajar, diberikan tambahan diskon 10% dari harga setelah diskon pertama.
                       </p>
                       <div className="py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono text-[10px] sm:text-[11px] font-semibold text-center shadow-2xs tracking-tight">
-                        Harga Label: Rp 250.000 &bull; Diskon Bertingkat: 20% + 10%
+                        Harga Label: Rp 250.000 • Diskon Bertingkat: 20% + 10%
                       </div>
                       <p className="text-[11.5px] sm:text-[12px] text-slate-900 font-semibold">
                         Berapakah harga final yang harus dibayar pelajar tersebut?
@@ -457,11 +400,11 @@ export default function CBTEngineLandingPage() {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                         </span>
-                        <span>Kiosk: <strong className="text-emerald-600 font-bold">Aktif</strong></span>
+                        <span>Mode: <strong className="text-emerald-600 font-bold">Soft-Warning</strong></span>
                       </div>
                       <div className="flex items-center gap-1">
                         <EyeOff className="w-3 h-3 text-emerald-600 animate-pulse" />
-                        <span>Anti-Blur: <strong className="text-slate-800 font-bold">100%</strong></span>
+                        <span>Anti-Blur: <strong className="text-slate-800 font-bold">Aktif</strong></span>
                       </div>
                       <div className="flex items-center gap-1">
                         <Cpu className="w-3 h-3 text-amber-600 animate-pulse" />
@@ -477,15 +420,15 @@ export default function CBTEngineLandingPage() {
             <div className="mt-3 sm:mt-2 pt-3 sm:pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-4 text-xs text-slate-500 text-center sm:text-left">
               <div className="flex items-center gap-1.5 sm:gap-2 font-medium justify-center sm:justify-start">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span className="text-slate-700 font-semibold">Kompatibilitas Sistem:</span>
-                <span>Dioptimalkan untuk Laptop, Tablet &amp; Ponsel</span>
+                <span className="text-slate-700 font-semibold">Kompatibilitas Perangkat:</span>
+                <span>Lancar di Ponsel Android/iOS, Tablet & Laptop</span>
               </div>
               <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-[11px] font-mono text-slate-400 flex-wrap justify-center">
-                <span>LATENCY: &lt; 40MS</span>
-                <span>&bull;</span>
-                <span>STANDAR: PUSMENDIK / AKM</span>
-                <span>&bull;</span>
-                <span>LEAD MARKETING INTEGRATED</span>
+                <span>55 BUTIR SOAL</span>
+                <span>•</span>
+                <span>KEPMENDIKDASMEN 56/2026</span>
+                <span>•</span>
+                <span>SHTKA DIGITAL</span>
               </div>
             </div>
           </div>
@@ -500,13 +443,13 @@ export default function CBTEngineLandingPage() {
                 <span>ARSITEKTUR CBT ENGINE</span>
               </div>
               <h2 className="text-2xl sm:text-4xl lg:text-[40px] font-black text-slate-900 tracking-tight leading-tight">
-                Standar Keamanan &amp;{" "}
+                Standar Kenyamanan &{" "}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900">
                   Presisi Asesmen
                 </span>
               </h2>
               <p className="text-slate-600 text-xs sm:text-base leading-relaxed max-w-2xl mx-auto font-normal">
-                Infrastruktur pengujian digital terintegrasi untuk menjamin validitas skor, meniadakan celah kecurangan, dan mempertahankan latensi rendah saat ujian serentak.
+                Dirancang khusus agar mudah digunakan siswa SMP/MTs di berbagai perangkat dengan perhitungan nilai akurat sesuai regulasi pemerintah.
               </p>
             </div>
 
@@ -519,18 +462,18 @@ export default function CBTEngineLandingPage() {
                       <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-blue-700" />
                     </div>
                     <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[9.5px] font-bold uppercase tracking-wider font-mono">
-                      Proteksi Kiosk
+                      Soft-Warning
                     </span>
                   </div>
                   <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight mb-1.5">
-                    Kiosk Anti-Cheat Matrix
+                    Pengawasan Ramah Siswa
                   </h3>
                   <p className="text-[11.5px] sm:text-xs text-slate-600 leading-relaxed">
-                    Penguncian peramban otomatis dengan deteksi blur jendela, inspeksi ganti tab, pencegahan ekstensi, dan pencatatan pelanggaran *real-time*.
+                    Mendeteksi perpindahan tab atau layar penuh dengan peringatan lembut tanpa memblokir ujian, sehingga siswa tidak panik saat notifikasi muncul.
                   </p>
                 </div>
                 <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between text-[10.5px] sm:text-[11px] font-mono text-slate-500">
-                  <span>SENSOR STATUS</span>
+                  <span>ANTI-PANIK</span>
                   <span className="text-emerald-600 font-bold flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                     AKTIF
@@ -546,19 +489,19 @@ export default function CBTEngineLandingPage() {
                       <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-blue-700" />
                     </div>
                     <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200/60 text-[9.5px] font-bold uppercase tracking-wider font-mono">
-                      Skala 0–100
+                      Skala 0,00–100,00
                     </span>
                   </div>
                   <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight mb-1.5">
-                    Evaluasi Diagnostik
+                    Evaluasi Diagnostik SHTKA
                   </h3>
                   <p className="text-[11.5px] sm:text-xs text-slate-600 leading-relaxed">
-                    Perhitungan skor terkalibrasi bobot kesukaran per butir soal, menghasilkan peta kekuatan literasi dan numerasi siswa secara transparan.
+                    Perhitungan skor terpisah per mata uji (Istimewa, Baik, Memadai, Kurang) lengkap dengan review kunci jawaban dan pembahasan.
                   </p>
                 </div>
                 <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between text-[10.5px] sm:text-[11px] font-mono text-slate-500">
-                  <span>PEMBOBOTAN</span>
-                  <span className="text-blue-700 font-bold">STANDAR NASIONAL</span>
+                  <span>REGULASI</span>
+                  <span className="text-blue-700 font-bold">NO. 56 TAHUN 2026</span>
                 </div>
               </div>
 
@@ -570,14 +513,14 @@ export default function CBTEngineLandingPage() {
                       <Award className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-700" />
                     </div>
                     <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[9.5px] font-bold uppercase tracking-wider font-mono">
-                      Marketing PPDB
+                      Beasiswa PPDB
                     </span>
                   </div>
                   <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight mb-1.5">
-                    Voucher Beasiswa PPDB
+                    Voucher Jalur Prestasi
                   </h3>
                   <p className="text-[11.5px] sm:text-xs text-slate-600 leading-relaxed">
-                    Siswa berprestasi langsung mendapatkan hak klaim voucher potongan biaya masuk SMA Muhammadiyah 18 Jakarta sesuai pencapaian skor.
+                    Peserta langsung memperoleh kode voucher beasiswa pendaftaran di SMA Muhammadiyah 18 Jakarta sesuai capaian hasil ujian.
                   </p>
                 </div>
                 <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between text-[10.5px] sm:text-[11px] font-mono text-slate-500">
@@ -601,7 +544,7 @@ export default function CBTEngineLandingPage() {
                     Zero-Loss Sync Engine
                   </h3>
                   <p className="text-[11.5px] sm:text-xs text-slate-600 leading-relaxed">
-                    Pencadangan lembar jawaban berjenjang secara lokal di perangkat klien. Siswa tetap dapat melanjutkan pengerjaan tanpa gangguan koneksi lab.
+                    Pencadangan lembar jawaban berjenjang di perangkat siswa sehingga pengerjaan tetap stabil dan aman hingga 500 peserta serentak.
                   </p>
                 </div>
                 <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between text-[10.5px] sm:text-[11px] font-mono text-slate-500">
@@ -613,34 +556,34 @@ export default function CBTEngineLandingPage() {
           </div>
         </section>
 
-        {/* SECTION 3: SILABUS & CAKUPAN SUBTES (STANDAR RESMI TKA SMP) */}
+        {/* SECTION 3: SILABUS & CAKUPAN SUBTES (55 SOAL TKA SMP) */}
         <section id="silabus" className="relative z-10 bg-slate-50/70 border-b border-slate-200/90 py-10 sm:py-14">
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 sm:pb-7 mb-6 sm:mb-8 border-b border-slate-200/80">
               <div className="space-y-2 text-left">
                 <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white text-[10px] sm:text-[10.5px] font-bold tracking-wider uppercase shadow-sm border border-blue-500/30">
                   <BarChart3 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
-                  <span>STANDARISASI PUSMENDIK &amp; AKM</span>
+                  <span>STANDARISASI PUSMENDIK & AKM</span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-black text-slate-900 tracking-tight leading-tight">
-                  Cakupan Materi &amp;{" "}
+                  Cakupan Materi &{" "}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900">
-                    2 Subtes Resmi TKA SMP
+                    2 Mata Uji Resmi TKA SMP
                   </span>
                 </h2>
                 <p className="text-slate-600 text-xs sm:text-sm max-w-2xl font-normal leading-relaxed">
-                  Struktur instrumen berbasis <strong>Stimulus Wacana &amp; Numerasi Kontekstual</strong> dengan 3 bentuk evaluasi: Pilihan Ganda Sederhana, PGK MCMA (Multi-Jawaban), dan PGK Kategori (Benar/Salah).
+                  Struktur instrumen berbasis <strong>Stimulus Wacana & Numerasi Kontekstual</strong> dengan 3 bentuk evaluasi: Pilihan Ganda Sederhana, PGK MCMA (Multi-Jawaban), dan PGK Kategori (Benar/Salah).
                 </p>
               </div>
 
               <div className="flex items-center gap-3 bg-white border border-slate-200 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl shadow-2xs shrink-0 self-start md:self-auto">
                 <div className="text-left md:text-right">
-                  <div className="text-[9px] sm:text-[9.5px] font-bold font-mono text-slate-400 uppercase tracking-wider">Total Evaluasi</div>
-                  <div className="text-xs sm:text-xs font-black text-slate-900 font-mono">10 Soal &bull; 15 Menit</div>
+                  <div className="text-[9px] sm:text-[9.5px] font-bold font-mono text-slate-400 uppercase tracking-wider">Total Paket</div>
+                  <div className="text-xs font-black text-slate-900 font-mono">55 Soal • 30 Menit</div>
                 </div>
                 <div className="h-7 w-[1px] bg-slate-200" />
                 <div className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200/80 font-mono font-bold text-[11px] sm:text-xs">
-                  2 Subtes Inti
+                  2 Mata Uji
                 </div>
               </div>
             </div>
@@ -652,36 +595,36 @@ export default function CBTEngineLandingPage() {
                 <div className="space-y-2.5 sm:space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold text-[9.5px] sm:text-[10px]">
-                      LIT &bull; 01
+                      BINDO • 01
                     </span>
                     <div className="flex items-center gap-1 font-mono text-[10.5px] sm:text-[11px] text-blue-900 font-semibold bg-blue-50/80 px-2 py-0.5 rounded-md border border-blue-100">
-                      <Clock className="w-3 h-3 text-blue-600" /> 7.5m
+                      <Clock className="w-3 h-3 text-blue-600" /> 15 Menit
                     </div>
                   </div>
 
                   <div>
                     <h4 className="text-sm sm:text-base font-black text-slate-900 tracking-tight group-hover:text-blue-700 transition-colors">
-                      Literasi Bahasa Indonesia
+                      Bahasa Indonesia
                     </h4>
                     <p className="text-[10.5px] sm:text-[11px] text-blue-700 font-bold mt-0.5">
-                      Fokus: Keterampilan Membaca Wacana
+                      Fokus: Literasi Membaca Wacana
                     </p>
                   </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Stimulus teks <strong>Informasi &amp; Fiksi</strong> yang menguji 3 ranah kompetensi asesmen:
+                    Stimulus teks <strong>Informasi & Sastra</strong> yang menguji 3 ranah kompetensi asesmen:
                   </p>
 
                   <ul className="text-[11px] text-slate-600 space-y-1.5 bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-100 font-medium">
-                    <li>&bull; <strong>Menemukan Informasi:</strong> Fakta eksplisit teks.</li>
-                    <li>&bull; <strong>Interpretasi &amp; Integrasi:</strong> Ide pokok &amp; makna tersirat.</li>
-                    <li>&bull; <strong>Evaluasi &amp; Refleksi:</strong> Menilai kredibilitas teks.</li>
+                    <li>• <strong>Pemahaman Tekstual:</strong> Fakta eksplisit teks.</li>
+                    <li>• <strong>Pemahaman Inferensial:</strong> Ide pokok & makna tersirat.</li>
+                    <li>• <strong>Evaluasi & Apresiasi:</strong> Menilai kredibilitas & pesan teks.</li>
                   </ul>
                 </div>
 
                 <div className="pt-3.5 sm:pt-4 mt-4 sm:mt-5 border-t border-slate-150 flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-400">BOBOT UJIAN</span>
-                  <span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-slate-200">5 Butir Soal</span>
+                  <span className="text-slate-400">JUMLAH BUTIR</span>
+                  <span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-slate-200">30 Butir Soal</span>
                 </div>
               </div>
 
@@ -690,16 +633,16 @@ export default function CBTEngineLandingPage() {
                 <div className="space-y-2.5 sm:space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-250 font-mono font-bold text-[9.5px] sm:text-[10px]">
-                      PM &bull; 02
+                      MTK • 02
                     </span>
                     <div className="flex items-center gap-1 font-mono text-[10.5px] sm:text-[11px] text-emerald-950 font-semibold bg-emerald-50/90 px-2 py-0.5 rounded-md border border-emerald-200">
-                      <Clock className="w-3 h-3 text-emerald-600" /> 7.5m
+                      <Clock className="w-3 h-3 text-emerald-600" /> 15 Menit
                     </div>
                   </div>
 
                   <div>
                     <h4 className="text-sm sm:text-base font-black text-slate-900 tracking-tight group-hover:text-emerald-700 transition-colors">
-                      Penalaran Matematika (PM)
+                      Matematika
                     </h4>
                     <p className="text-[10.5px] sm:text-[11px] text-emerald-700 font-bold mt-0.5">
                       Fokus: 4 Elemen Numerasi Fase D
@@ -707,20 +650,20 @@ export default function CBTEngineLandingPage() {
                   </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Pengujian nalar logis, representasi data, dan pemecahan masalah kontekstual nyata:
+                    Pengujian nalar logis, representasi visual, dan pemecahan masalah kontekstual nyata:
                   </p>
 
                   <div className="grid grid-cols-2 gap-1.5 text-[10px] sm:text-[10.5px] font-mono text-slate-700 bg-slate-50 p-2 sm:p-2.5 rounded-xl border border-slate-100">
-                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">&bull; Bilangan</span>
-                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">&bull; Aljabar</span>
-                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">&bull; Geometri</span>
-                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">&bull; Data &amp; Peluang</span>
+                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">• Bilangan</span>
+                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">• Aljabar</span>
+                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">• Geometri</span>
+                    <span className="bg-white p-1.5 rounded border border-slate-200 font-bold">• Data & Peluang</span>
                   </div>
                 </div>
 
                 <div className="pt-3.5 sm:pt-4 mt-4 sm:mt-5 border-t border-slate-150 flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-400">BOBOT UJIAN</span>
-                  <span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-slate-200">5 Butir Soal</span>
+                  <span className="text-slate-400">JUMLAH BUTIR</span>
+                  <span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-slate-200">25 Butir Soal</span>
                 </div>
               </div>
 
@@ -733,7 +676,7 @@ export default function CBTEngineLandingPage() {
                       SKOR DIAGNOSTIK
                     </span>
                     <div className="flex items-center gap-1 text-blue-200 font-mono text-[10.5px] sm:text-[11px] bg-white/10 px-2 py-0.5 rounded-md">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Skala 0–100
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> 0,00–100,00
                     </div>
                   </div>
 
@@ -781,7 +724,7 @@ export default function CBTEngineLandingPage() {
                 </div>
                 <div className="flex items-center gap-2 text-[10px] sm:text-[10.5px] font-mono font-bold text-slate-500">
                   <span className="px-1.5 sm:px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs">FULL-CLIENT RESILIENT</span>
-                  <span className="text-slate-300">&bull;</span>
+                  <span className="text-slate-300">•</span>
                   <span className="px-1.5 sm:px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs text-blue-800">PUSMENDIK VERIFIED</span>
                 </div>
               </div>
@@ -813,7 +756,7 @@ export default function CBTEngineLandingPage() {
                       </span>
                     </div>
                     <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
-                      SMA Muhammadiyah 18 Jakarta &bull; <span className="text-blue-800 font-semibold">School of Champions</span>
+                      SMA Muhammadiyah 18 Jakarta • <span className="text-blue-800 font-semibold">School of Champions</span>
                     </p>
                   </div>
                 </div>
@@ -840,27 +783,19 @@ export default function CBTEngineLandingPage() {
                     src="/logo-timsim.jpg"
                     alt="Logo SMA Muhammadiyah 18"
                     className="h-full w-full object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
-                      const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
-                      if (fallback) fallback.style.display = "flex";
-                    }}
                   />
-                  <div className="hidden w-full h-full rounded-lg bg-slate-900 border border-amber-400 items-center justify-center font-black text-amber-300 text-[10px]">
-                    M18
-                  </div>
                 </div>
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="font-black text-xs sm:text-sm text-slate-900 tracking-tight">
-                      CBT ENGINE &bull; TO TKA SMP
+                      CBT ENGINE • TO TKA SMP
                     </span>
                     <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 font-mono text-[9px] font-bold">
-                      v1.4
+                      v2.0
                     </span>
                   </div>
                   <p className="text-[11px] sm:text-[11.5px] text-slate-500 font-normal">
-                    <strong className="font-semibold text-slate-700">&copy; 2026</strong>{" "}
+                    <strong className="font-semibold text-slate-700">© 2026</strong>{" "}
                     <strong className="font-semibold text-slate-700">TIM S.I.M.</strong>{" "}
                     <strong className="font-semibold text-slate-700">SMA Muhammadiyah 18 Jakarta</strong>.
                   </p>
@@ -874,81 +809,19 @@ export default function CBTEngineLandingPage() {
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                   </span>
                   <span className="font-mono text-[10px] sm:text-[11px] font-bold tracking-tight text-slate-800">
-                    SISTEM AKTIF &amp; TERKALIBRASI
+                    SISTEM AKTIF & TERKALIBRASI
                   </span>
                 </div>
                 <div className="font-mono text-[9px] sm:text-[9.5px] text-slate-400 font-medium tracking-tight flex items-center justify-center flex-wrap">
                   <span>ENKRIPSI TLS 1.3</span>
-                  <span className="mx-1.5 text-slate-300">&bull;</span>
-                  <span>STANDAR PUSMENDIK / AKM</span>
+                  <span className="mx-1.5 text-slate-300">•</span>
+                  <span>KEPMENDIKDASMEN 56/2026</span>
                 </div>
               </div>
             </div>
           </div>
         </footer>
       </div>
-
-      {/* ============================================================== */}
-      {/* C. MODAL DIALOG PINTU MASUK PESERTA SISWA TKA SMP              */}
-      {/* ============================================================== */}
-      {showStudentAuthModal && (
-        <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 max-w-md w-full p-5 sm:p-7 space-y-4 sm:space-y-5 shadow-2xl relative animate-in zoom-in-95">
-            <button
-              onClick={() => setShowStudentAuthModal(false)}
-              className="absolute top-4 right-4 sm:top-5 sm:right-5 text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex flex-col items-center text-center space-y-2">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 mb-1">
-                <KeyRound className="w-6 h-6 sm:w-7 sm:h-7" />
-              </div>
-              <span className="inline-block px-3 py-0.5 rounded-full bg-blue-50 border border-blue-200 font-mono text-[9.5px] sm:text-[10px] font-bold text-blue-800 tracking-wider">
-                PORTAL RESMI SIMULASI TKA SMP
-              </span>
-              <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                Ruang Ujian Siswa
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed max-w-xs">
-                Isi biodata pendaftaran singkat untuk memulai <strong>10 Soal Asesmen</strong> dan klaim voucher beasiswa PPDB SMA Muhammadiyah 18 Jakarta.
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3.5 sm:p-4 space-y-2 text-xs text-slate-600">
-              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 font-mono text-[10.5px] sm:text-[11px]">
-                <span className="text-slate-400">Sasaran Peserta:</span>
-                <span className="font-bold text-slate-700">Siswa SMP/MTs Kelas 8 &amp; 9</span>
-              </div>
-              <div className="flex items-center justify-between pt-0.5 font-mono text-[10.5px] sm:text-[11px]">
-                <span className="text-slate-400">Format Penilaian:</span>
-                <span className="font-bold text-emerald-600 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Skala 0–100 (Standar Pusmendik)
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-1">
-              <Link
-                href="/login"
-                className="w-full py-3 px-4 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Daftar &amp; Mulai Try Out TKA SMP</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <button
-                type="button"
-                onClick={() => setShowStudentAuthModal(false)}
-                className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

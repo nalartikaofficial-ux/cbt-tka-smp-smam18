@@ -28,10 +28,10 @@ export default function CBTEngineLandingPage() {
   const [secondsLeft, setSecondsLeft] = useState(895);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 900));
-    }, 1000);
-    return () => clearInterval(timer);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 350); // Langsung terbuka seketika (0,35 detik)
+    return () => clearTimeout(timer);
   }, []);
 
   const formatTimer = (totalSec: number) => {
@@ -136,8 +136,8 @@ export default function CBTEngineLandingPage() {
       {/* ============================================================== */}
       <div
         className={`fixed inset-0 top-0 left-0 w-screen h-screen z-[9999] flex flex-col items-center justify-center bg-white transition-all duration-700 ease-in-out ${isLoading
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 -translate-y-4 pointer-events-none"
+          ? "opacity-100 pointer-events-auto"
+          : "opacity-0 -translate-y-4 pointer-events-none"
           }`}
       >
         <div className="absolute w-80 h-80 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
@@ -198,8 +198,8 @@ export default function CBTEngineLandingPage() {
       {/* ============================================================== */}
       <div
         className={`transition-all duration-1000 ease-out ${isLoading
-            ? "opacity-0 translate-y-3 filter blur-xs"
-            : "opacity-100 translate-y-0 filter-none"
+          ? "opacity-0 translate-y-3 filter blur-xs"
+          : "opacity-100 translate-y-0 filter-none"
           }`}
       >
         {/* NAVBAR RESPONSIF (TIDAK BERTUMPUK DI HP) */}

@@ -310,7 +310,7 @@ export default function StudentLoginPage() {
                                 <input
                                     type="text"
                                     required
-                                    placeholder="CONTOH: TKA18"
+                                    placeholder="Masukkan token disini..."
                                     value={formData.token}
                                     onChange={(e) => setFormData({ ...formData, token: e.target.value.toUpperCase() })}
                                     className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-black text-slate-900 focus:border-blue-600 outline-none text-xs text-center uppercase"

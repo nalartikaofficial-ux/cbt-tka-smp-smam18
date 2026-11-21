@@ -52,9 +52,10 @@ export interface MasterSession {
     status_akses: "DIBUKA" | "TERKUNCI" | "SELESAI";
     waktu_mulai: string;
     waktu_selesai: string;
+    durasi_bindo_detik: number;
+    durasi_mtk_detik: number;
 }
 
-// Kategori Capaian Resmi Kepmendikdasmen No. 56 Tahun 2026 (Skala 0,00 - 100,00)
 function getKepmendikdasmen56Badge(score: number) {
     const num = Number(score) || 0;
     if (num >= 95.0) {
@@ -107,7 +108,9 @@ export default function ProctorMasterDashboard() {
         token_resmi: "TKA18",
         status_akses: "DIBUKA",
         waktu_mulai: "2026-11-20T07:30",
-        waktu_selesai: "2026-11-20T11:30"
+        waktu_selesai: "2026-11-20T11:30",
+        durasi_bindo_detik: 4500,
+        durasi_mtk_detik: 4500
     });
     const [isSavingSchedule, setIsSavingSchedule] = useState(false);
     const [customMinutes, setCustomMinutes] = useState<number>(5);
@@ -158,7 +161,9 @@ export default function ProctorMasterDashboard() {
                     token_resmi: data.token_resmi || "TKA18",
                     status_akses: (data.status_akses as any) || "DIBUKA",
                     waktu_mulai: data.waktu_mulai ? String(data.waktu_mulai).substring(0, 16) : "2026-11-20T07:30",
-                    waktu_selesai: data.waktu_selesai ? String(data.waktu_selesai).substring(0, 16) : "2026-11-20T11:30"
+                    waktu_selesai: data.waktu_selesai ? String(data.waktu_selesai).substring(0, 16) : "2026-11-20T11:30",
+                    durasi_bindo_detik: Number(data?.durasi_bindo_detik ?? 4500),
+                    durasi_mtk_detik: Number(data?.durasi_mtk_detik ?? 4500)
                 });
             }
         } catch (err) {
@@ -283,6 +288,8 @@ export default function ProctorMasterDashboard() {
                     status_akses: updatedSession.status_akses,
                     waktu_mulai: updatedSession.waktu_mulai,
                     waktu_selesai: updatedSession.waktu_selesai,
+                    durasi_bindo_detik: Number(updatedSession.durasi_bindo_detik) || 4500,
+                    durasi_mtk_detik: Number(updatedSession.durasi_mtk_detik) || 4500,
                     updated_at: new Date().toISOString()
                 },
                 { onConflict: "id" }
@@ -291,7 +298,7 @@ export default function ProctorMasterDashboard() {
             if (error) throw error;
 
             setMasterSession(updatedSession);
-            alert("Jadwal dan sesi Tryout TKA SMP berhasil diperbarui di Supabase!");
+            alert("Jadwal dan durasi per mata uji Tryout TKA SMP berhasil diperbarui di Supabase!");
         } catch (err: any) {
             alert("Gagal menyimpan jadwal ke Supabase: " + (err?.message || "Kesalahan server"));
         } finally {
@@ -699,7 +706,7 @@ export default function ProctorMasterDashboard() {
             </header>
 
             <div className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6 print:p-0 print:m-0 print:space-y-0 print:w-full print:max-w-none text-left">
-                {/* 1. MASTER PANEL TOKEN & PENJADWALAN */}
+                {/* 1. MASTER PANEL TOKEN, DURASI SUBTES & PENJADWALAN */}
                 <div className="print-hidden bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-3xl p-4 sm:p-7 text-white shadow-lg space-y-4 sm:space-y-5">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/10 pb-3 sm:pb-4">
                         <div className="flex items-center gap-2.5 sm:gap-3">
@@ -711,7 +718,7 @@ export default function ProctorMasterDashboard() {
                                     PENGATURAN RUANG UJIAN TERPUSAT (30 BINDO & 30 MTK)
                                 </div>
                                 <h2 className="text-base sm:text-xl font-black text-white">
-                                    Token Resmi Sesi Tryout TKA SMP
+                                    Token Resmi & Durasi Subtes TKA SMP
                                 </h2>
                                 <p className="text-[11px] sm:text-xs text-blue-200">
                                     Status Sesi:{" "}
@@ -832,6 +839,84 @@ export default function ProctorMasterDashboard() {
                             />
                         </div>
 
+                        {/* Durasi Bahasa Indonesia (Menit & Detik) */}
+                        <div className="sm:col-span-1 lg:col-span-6 space-y-1">
+                            <label className="text-[10.5px] sm:text-[11px] font-bold text-blue-200 font-mono">
+                                DURASI BAHASA INDONESIA (30 SOAL):
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={300}
+                                        value={Math.floor((masterSession.durasi_bindo_detik || 0) / 60)}
+                                        onChange={(e) => {
+                                            const mins = Math.max(0, Number(e.target.value) || 0);
+                                            const secs = (masterSession.durasi_bindo_detik || 0) % 60;
+                                            setMasterSession({ ...masterSession, durasi_bindo_detik: mins * 60 + secs });
+                                        }}
+                                        className="w-full bg-transparent text-amber-300 font-mono font-black text-xs sm:text-sm outline-none"
+                                    />
+                                    <span className="text-[10px] font-mono text-slate-300 shrink-0">Menit</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={59}
+                                        value={(masterSession.durasi_bindo_detik || 0) % 60}
+                                        onChange={(e) => {
+                                            const mins = Math.floor((masterSession.durasi_bindo_detik || 0) / 60);
+                                            const secs = Math.min(59, Math.max(0, Number(e.target.value) || 0));
+                                            setMasterSession({ ...masterSession, durasi_bindo_detik: mins * 60 + secs });
+                                        }}
+                                        className="w-full bg-transparent text-amber-300 font-mono font-black text-xs sm:text-sm outline-none"
+                                    />
+                                    <span className="text-[10px] font-mono text-slate-300 shrink-0">Detik</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Durasi Matematika (Menit & Detik) */}
+                        <div className="sm:col-span-1 lg:col-span-6 space-y-1">
+                            <label className="text-[10.5px] sm:text-[11px] font-bold text-emerald-200 font-mono">
+                                DURASI MATEMATIKA (30 SOAL):
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={300}
+                                        value={Math.floor((masterSession.durasi_mtk_detik || 0) / 60)}
+                                        onChange={(e) => {
+                                            const mins = Math.max(0, Number(e.target.value) || 0);
+                                            const secs = (masterSession.durasi_mtk_detik || 0) % 60;
+                                            setMasterSession({ ...masterSession, durasi_mtk_detik: mins * 60 + secs });
+                                        }}
+                                        className="w-full bg-transparent text-emerald-300 font-mono font-black text-xs sm:text-sm outline-none"
+                                    />
+                                    <span className="text-[10px] font-mono text-slate-300 shrink-0">Menit</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={59}
+                                        value={(masterSession.durasi_mtk_detik || 0) % 60}
+                                        onChange={(e) => {
+                                            const mins = Math.floor((masterSession.durasi_mtk_detik || 0) / 60);
+                                            const secs = Math.min(59, Math.max(0, Number(e.target.value) || 0));
+                                            setMasterSession({ ...masterSession, durasi_mtk_detik: mins * 60 + secs });
+                                        }}
+                                        className="w-full bg-transparent text-emerald-300 font-mono font-black text-xs sm:text-sm outline-none"
+                                    />
+                                    <span className="text-[10px] font-mono text-slate-300 shrink-0">Detik</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="sm:col-span-2 lg:col-span-12 flex justify-end pt-1">
                             <button
                                 type="submit"
@@ -839,7 +924,7 @@ export default function ProctorMasterDashboard() {
                                 className="w-full sm:w-auto py-2.5 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-50 shadow-md"
                             >
                                 <Save className="w-4 h-4" />
-                                <span>{isSavingSchedule ? "Menyimpan ke Server..." : "Terapkan Jadwal Ujian"}</span>
+                                <span>{isSavingSchedule ? "Menyimpan ke Server..." : "Terapkan Jadwal & Durasi Ujian"}</span>
                             </button>
                         </div>
                     </form>

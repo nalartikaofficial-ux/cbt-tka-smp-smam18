@@ -655,6 +655,12 @@ export default function ExamResultPage() {
                                                 </span>
                                             </div>
 
+                                            {item.image_url && (
+                                                <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex justify-center">
+                                                    <img src={item.image_url} alt="Ilustrasi Soal" className="max-h-44 object-contain rounded-lg" />
+                                                </div>
+                                            )}
+
                                             <div className="font-bold text-slate-900 leading-relaxed">
                                                 <RenderLatex content={item.question} />
                                             </div>

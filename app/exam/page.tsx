@@ -550,10 +550,13 @@ export default function OfficialExamChamberPage() {
         localStorage.setItem("tka_result", JSON.stringify(finalReport));
         try { localStorage.removeItem("tka_draft_answers"); } catch { }
 
-        const cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "");
+        let cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "").trim();
+        if (cleanPhone.startsWith("62")) cleanPhone = "0" + cleanPhone.slice(2);
+
         if (cleanPhone) {
             try {
-                await supabase.from("tka_students").upsert(
+                // 1. Pastikan status "Selesai" & skor desimal tersimpan ke tka_students
+                const { error: stuErr } = await supabase.from("tka_students").upsert(
                     {
                         phone: cleanPhone,
                         name: studentSession?.name,
@@ -562,26 +565,57 @@ export default function OfficialExamChamberPage() {
                         interest: studentSession?.interest || "Umum",
                         status: "Selesai",
                         violations: snapshotViolations,
-                        score: computed.totalScore,
-                        bindo_score: computed.bindoScore,
-                        mtk_score: computed.mtkScore,
+                        score: Number(computed.totalScore.toFixed(2)),
+                        bindo_score: Number(computed.bindoScore.toFixed(2)),
+                        mtk_score: Number(computed.mtkScore.toFixed(2)),
                         waktu_selesai: finishTime
                     },
                     { onConflict: "phone" }
                 );
 
-                await supabase.from("tka_results").insert({
+                if (stuErr) {
+                    // Fallback aman: pastikan status Selesai tetap terupdate meski kolom belum numeric
+                    await supabase
+                        .from("tka_students")
+                        .update({
+                            status: "Selesai",
+                            violations: snapshotViolations,
+                            score: Math.round(computed.totalScore),
+                            bindo_score: Math.round(computed.bindoScore),
+                            mtk_score: Math.round(computed.mtkScore),
+                            waktu_selesai: finishTime
+                        })
+                        .eq("phone", cleanPhone);
+                }
+
+                // 2. Simpan rincian jawaban jsonb ke tka_results untuk analisis rapor & grafik
+                const { error: resErr } = await supabase.from("tka_results").insert({
                     phone: cleanPhone,
                     student_name: studentSession?.name,
                     school: studentSession?.school || "SMP / MTs",
-                    total_score: computed.totalScore,
-                    bindo_score: computed.bindoScore,
-                    mtk_score: computed.mtkScore,
+                    total_score: Number(computed.totalScore.toFixed(2)),
+                    bindo_score: Number(computed.bindoScore.toFixed(2)),
+                    mtk_score: Number(computed.mtkScore.toFixed(2)),
                     predicate: computed.predicate,
                     is_tuntas_kkm: true,
                     violations: snapshotViolations,
                     answers: snapshotAnswers
                 });
+
+                if (resErr) {
+                    await supabase.from("tka_results").insert({
+                        phone: cleanPhone,
+                        student_name: studentSession?.name,
+                        school: studentSession?.school || "SMP / MTs",
+                        total_score: Math.round(computed.totalScore),
+                        bindo_score: Math.round(computed.bindoScore),
+                        mtk_score: Math.round(computed.mtkScore),
+                        predicate: computed.predicate,
+                        is_tuntas_kkm: true,
+                        violations: snapshotViolations,
+                        answers: snapshotAnswers
+                    });
+                }
             } catch (e) {
                 console.error("Gagal sinkronisasi skor ke Supabase:", e);
             }

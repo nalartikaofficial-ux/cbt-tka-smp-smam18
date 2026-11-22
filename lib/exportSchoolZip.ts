@@ -3,6 +3,10 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
 
 export interface ZipStudentPayload {
+    rankParallelOverall: number;
+    rankParallelBindo: number;
+    rankParallelMtk: number;
+    totalParallelFinished: number;
     rankInSchool: number;
     totalInSchool: number;
     rankBindo: number;
@@ -19,8 +23,6 @@ export interface ZipStudentPayload {
     schoolAvgBindo: number;
     schoolAvgMtk: number;
     schoolAvgOverall: number;
-    voucherText: string;
-    voucherCode: string;
     hexagonPoints: Array<{
         key: string;
         short: string;
@@ -131,16 +133,16 @@ function buildHexagonSvgString(axes: ZipStudentPayload["hexagonPoints"]): string
 }
 
 export async function generateSchoolReportsZip(
-    schoolName: string,
+    scopeLabel: string,
     studentsList: ZipStudentPayload[],
     officials: ZipOfficialsPayload,
-    onProgress?: (current: number, total: number, studentName: string) => void
+    onProgress?: (current: number, total: number, studentName: string) => void,
+    groupBySchoolFolders: boolean = false
 ) {
     const zip = new JSZip();
-    const cleanSchoolSlug = schoolName.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const cleanScopeSlug = scopeLabel.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
     const dateStr = new Date().toLocaleDateString("id-ID", { dateStyle: "long" });
 
-    // Container tersembunyi ukuran A4 presisi (794px @96dpi)
     const host = document.createElement("div");
     host.style.position = "fixed";
     host.style.left = "-99999px";
@@ -158,7 +160,6 @@ export async function generateSchoolReportsZip(
 
             const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-            // ==================== HALAMAN 1: SHTKA & GRAFIK DIAGNOSTIK ====================
             const barsHtml = stu.sevenCompetencies
                 .map((c) => {
                     const isMtk = c.subject === "MTK";
@@ -183,7 +184,7 @@ export async function generateSchoolReportsZip(
                 .join("");
 
             host.innerHTML = `
-                <div style="width:794px;padding:26px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
+                <div style="width:794px;padding:24px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
                         <img src="/logo-timsim.jpg" style="width:62px;height:62px;object-fit:contain;" crossorigin="anonymous" />
                         <div style="flex:1;text-align:center;">
@@ -195,9 +196,9 @@ export async function generateSchoolReportsZip(
                         <div style="width:62px;"></div>
                     </div>
                     <div style="border-bottom:2.5px solid #000;margin-top:6px;"></div>
-                    <div style="border-bottom:1px solid #000;margin-top:2px;margin-bottom:12px;"></div>
+                    <div style="border-bottom:1px solid #000;margin-top:2px;margin-bottom:10px;"></div>
 
-                    <div style="text-align:center;margin-bottom:10px;">
+                    <div style="text-align:center;margin-bottom:8px;">
                         <div style="font-size:13px;font-weight:900;text-decoration:underline;text-transform:uppercase;">
                             SERTIFIKAT HASIL & LAPORAN DIAGNOSTIK TRYOUT TKA SMP/MTs (SHTKA)
                         </div>
@@ -206,67 +207,71 @@ export async function generateSchoolReportsZip(
                         </div>
                     </div>
 
-                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;background:#f8fafc;">
+                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10px;margin-bottom:8px;background:#f8fafc;">
                         <tr>
-                            <td style="padding:5px 8px;width:18%;color:#475569;">Nama Peserta</td>
-                            <td style="padding:5px 8px;width:37%;font-weight:bold;">: ${stu.name}</td>
-                            <td style="padding:5px 8px;width:20%;color:#475569;">No. WhatsApp</td>
-                            <td style="padding:5px 8px;font-family:monospace;font-weight:bold;">: ${stu.phone}</td>
+                            <td style="padding:4px 8px;width:18%;color:#475569;">Nama Peserta</td>
+                            <td style="padding:4px 8px;width:36%;font-weight:bold;">: ${stu.name}</td>
+                            <td style="padding:4px 8px;width:22%;color:#475569;">Peringkat Paralel</td>
+                            <td style="padding:4px 8px;font-family:monospace;font-weight:900;color:#1e3a8a;">: Rank #${stu.rankParallelOverall} dari ${stu.totalParallelFinished} Peserta</td>
                         </tr>
                         <tr>
-                            <td style="padding:5px 8px;color:#475569;">Asal Sekolah</td>
-                            <td style="padding:5px 8px;font-weight:bold;">: ${stu.school} (Kelas ${stu.grade})</td>
-                            <td style="padding:5px 8px;color:#475569;">Status Dokumen</td>
-                            <td style="padding:5px 8px;font-family:monospace;font-weight:bold;color:#0f172a;">: Resmi Terverifikasi Server</td>
+                            <td style="padding:4px 8px;color:#475569;">Asal Sekolah</td>
+                            <td style="padding:4px 8px;font-weight:bold;">: ${stu.school} (Kelas ${stu.grade})</td>
+                            <td style="padding:4px 8px;color:#475569;">Peringkat Sekolah</td>
+                            <td style="padding:4px 8px;font-family:monospace;font-weight:bold;color:#0f172a;">: Rank #${stu.rankInSchool} dari ${stu.totalInSchool} Siswa</td>
                         </tr>
                     </table>
 
-                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10.5px;margin-bottom:4px;">
+                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10px;margin-bottom:4px;">
                         <thead>
-                            <tr style="background:#f1f5f9;font-family:monospace;font-size:9.5px;">
-                                <th style="border:1px solid #000;padding:6px;text-align:left;">MATA UJI TKA SMP/MTs</th>
-                                <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">NILAI ANAK</th>
-                                <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">RERATA SMP</th>
-                                <th style="border:1px solid #000;padding:6px;text-align:center;width:90px;">KATEGORI</th>
-                                <th style="border:1px solid #000;padding:6px;text-align:center;width:135px;">PERINGKAT DI SEKOLAH</th>
+                            <tr style="background:#f1f5f9;font-family:monospace;font-size:9px;">
+                                <th style="border:1px solid #000;padding:5px;text-align:left;">MATA UJI TKA SMP/MTs</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:72px;">NILAI ANAK</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:72px;">RERATA SMP</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:75px;">KATEGORI</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:115px;">RANK SEKOLAH</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:115px;">RANK PARALEL</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td style="border:1px solid #000;padding:6px;">
+                                <td style="border:1px solid #000;padding:5px;">
                                     <strong>1. Bahasa Indonesia (BINDO)</strong>
-                                    <div style="font-size:8.5px;color:#475569;">Pemahaman Tekstual, Inferensial & Evaluasi/Apresiasi</div>
+                                    <div style="font-size:8px;color:#475569;">Pemahaman Tekstual, Inferensial & Evaluasi/Apresiasi</div>
                                 </td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;font-weight:900;color:#1e3a8a;">${fmtID(stu.bindoScore)}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgBindo)}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-weight:bold;">${stu.bindoCategory}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;font-weight:bold;">Rank #${stu.rankBindo} dari ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#1e3a8a;">${fmtID(stu.bindoScore)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgBindo)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-weight:bold;">${stu.bindoCategory}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;">#${stu.rankBindo} / ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;">#${stu.rankParallelBindo} / ${stu.totalParallelFinished}</td>
                             </tr>
                             <tr>
-                                <td style="border:1px solid #000;padding:6px;">
+                                <td style="border:1px solid #000;padding:5px;">
                                     <strong>2. Matematika (MTK)</strong>
-                                    <div style="font-size:8.5px;color:#475569;">Bilangan, Aljabar, Geometri & Pengukuran, Data & Peluang</div>
+                                    <div style="font-size:8px;color:#475569;">Bilangan, Aljabar, Geometri & Pengukuran, Data & Peluang</div>
                                 </td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;font-weight:900;color:#065f46;">${fmtID(stu.mtkScore)}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgMtk)}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-weight:bold;">${stu.mtkCategory}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;font-weight:bold;">Rank #${stu.rankMtk} dari ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#065f46;">${fmtID(stu.mtkScore)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgMtk)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-weight:bold;">${stu.mtkCategory}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;">#${stu.rankMtk} / ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#065f46;">#${stu.rankParallelMtk} / ${stu.totalParallelFinished}</td>
                             </tr>
                             <tr style="background:#f8fafc;font-weight:bold;">
-                                <td style="border:1px solid #000;padding:6px;">RATA-RATA GABUNGAN (INDEKS PEMERINGKATAN)</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;font-size:11.5px;">${fmtID(stu.overallScore)}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgOverall)}</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-size:9px;color:#64748b;">Per Mata Uji</td>
-                                <td style="border:1px solid #000;padding:6px;text-align:center;font-family:monospace;font-weight:900;color:#92400e;">Rank #${stu.rankInSchool} dari ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;">RATA-RATA GABUNGAN (INDEKS PEMERINGKATAN)</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-size:11px;">${fmtID(stu.overallScore)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgOverall)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-size:8.5px;color:#64748b;">Per Mata Uji</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#92400e;">#${stu.rankInSchool} / ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#1e3a8a;">#${stu.rankParallelOverall} / ${stu.totalParallelFinished}</td>
                             </tr>
                         </tbody>
                     </table>
 
-                    <div style="font-size:8.5px;color:#475569;font-family:monospace;font-style:italic;margin-bottom:10px;">
-                        *Keterangan Rerata SMP: Dihitung otomatis dari rata-rata skor seluruh peserta yang telah menyelesaikan ujian dari asal sekolah <strong>${stu.school}</strong> (${stu.totalInSchool} peserta selesai).
+                    <div style="font-size:8px;color:#475569;font-family:monospace;font-style:italic;margin-bottom:8px;">
+                        *Keterangan: <strong>Rerata SMP</strong> dihitung dari rata-rata skor peserta selesai asal <strong>${stu.school}</strong> (${stu.totalInSchool} siswa), sedangkan <strong>Rank Paralel</strong> membandingkan seluruh ${stu.totalParallelFinished} peserta lintas sekolah.
                     </div>
 
-                    <div style="display:flex;gap:12px;border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#f8fafc;margin-bottom:10px;">
+                    <div style="display:flex;gap:12px;border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#f8fafc;margin-bottom:8px;">
                         <div style="width:42%;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;">
                             <div style="font-size:9px;font-weight:bold;font-family:monospace;margin-bottom:2px;">GRAFIK HEKSAGONAL TREN KOMPETENSI</div>
                             <div style="font-size:8px;color:#64748b;margin-bottom:4px;">Biru = Skor Anak • Oranye = Rerata Sekolah</div>
@@ -287,7 +292,7 @@ export async function generateSchoolReportsZip(
                         </div>
                     </div>
 
-                    <div style="border:1px solid #000;padding:7px 10px;font-size:9px;margin-bottom:10px;background:#ffffff;">
+                    <div style="border:1px solid #000;padding:7px 10px;font-size:9px;margin-bottom:8px;background:#ffffff;">
                         <div style="font-weight:bold;font-family:monospace;font-size:8.5px;text-transform:uppercase;">KETERANGAN ACUAN PENILAIAN RESMI TKA JENJANG SMP/MTs:</div>
                         <div style="font-size:8px;color:#334155;margin-top:2px;line-height:1.35;">
                             Hasil Tryout Tes Kemampuan Akademik (TKA) SMP/MTs dilaporkan dalam rentang nilai <strong>0,00 – 100,00</strong> menggunakan pembobotan tingkat kesulitan butir soal (tidak menggunakan batas kelulusan/KKM). Kategori capaian ditetapkan secara terpisah per mata uji:
@@ -394,14 +399,21 @@ export async function generateSchoolReportsZip(
             const pdfBlob = pdf.output("blob");
             const safeStudentName = stu.name.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
             const rankPrefix = String(stu.rankInSchool).padStart(2, "0");
-            zip.file(`Rank_${rankPrefix}_${safeStudentName}_SHTKA.pdf`, pdfBlob);
+            const schoolFolderSlug = stu.school.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+            const fileName = `Rank_${rankPrefix}_${safeStudentName}_SHTKA.pdf`;
+
+            if (groupBySchoolFolders) {
+                zip.folder(schoolFolderSlug)?.file(fileName, pdfBlob);
+            } else {
+                zip.file(fileName, pdfBlob);
+            }
         }
 
         const zipBlob = await zip.generateAsync({ type: "blob" });
         const downloadUrl = URL.createObjectURL(zipBlob);
         const a = document.createElement("a");
         a.href = downloadUrl;
-        a.download = `Paket_Rapor_SHTKA_${cleanSchoolSlug || "Semua_Sekolah"}_${new Date().toISOString().slice(0, 10)}.zip`;
+        a.download = `Paket_Rapor_SHTKA_${cleanScopeSlug || "Semua_Sekolah"}_${new Date().toISOString().slice(0, 10)}.zip`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
+import * as XLSX from "xlsx";
 
 export interface ZipStudentPayload {
     rankParallelOverall: number;
@@ -62,6 +63,279 @@ function fmtID(n: number): string {
     });
 }
 
+// ============================================================================
+// 1. GENERATOR EXCEL ASLI (.XLSX) — BUKAN CSV
+// ============================================================================
+export function exportRankingToExcelXlsx(
+    mode: "PARALLEL" | "SCHOOL",
+    scopeTitle: string,
+    studentsList: ZipStudentPayload[]
+) {
+    const sorted = [...studentsList].sort((a, b) =>
+        mode === "SCHOOL" ? a.rankInSchool - b.rankInSchool : a.rankParallelOverall - b.rankParallelOverall
+    );
+
+    const rows = sorted.map((s) =>
+        mode === "SCHOOL"
+            ? {
+                "Rank Sekolah": s.rankInSchool,
+                "Rank Paralel": s.rankParallelOverall,
+                "Nama Peserta": s.name,
+                Kelas: s.grade,
+                "Nilai B. Indonesia": Number(s.bindoScore.toFixed(2)),
+                "Kategori BINDO": s.bindoCategory,
+                "Nilai Matematika": Number(s.mtkScore.toFixed(2)),
+                "Kategori MTK": s.mtkCategory,
+                "Rata-Rata Nilai": Number(s.overallScore.toFixed(2))
+            }
+            : {
+                "Rank Paralel": s.rankParallelOverall,
+                "Nama Peserta": s.name,
+                "Asal Sekolah (SMP/MTs)": s.school,
+                Kelas: s.grade,
+                "Rank di Sekolahnya": `#${s.rankInSchool} dari ${s.totalInSchool}`,
+                "Nilai B. Indonesia": Number(s.bindoScore.toFixed(2)),
+                "Kategori BINDO": s.bindoCategory,
+                "Nilai Matematika": Number(s.mtkScore.toFixed(2)),
+                "Kategori MTK": s.mtkCategory,
+                "Rata-Rata Nilai": Number(s.overallScore.toFixed(2))
+            }
+    );
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] =
+        mode === "SCHOOL"
+            ? [
+                { wch: 14 },
+                { wch: 14 },
+                { wch: 30 },
+                { wch: 8 },
+                { wch: 18 },
+                { wch: 16 },
+                { wch: 18 },
+                { wch: 16 },
+                { wch: 18 }
+            ]
+            : [
+                { wch: 14 },
+                { wch: 30 },
+                { wch: 32 },
+                { wch: 8 },
+                { wch: 20 },
+                { wch: 18 },
+                { wch: 16 },
+                { wch: 18 },
+                { wch: 16 },
+                { wch: 18 }
+            ];
+
+    const wb = XLSX.utils.book_new();
+    const sheetName = mode === "SCHOOL" ? "Peringkat Sekolah" : "Peringkat Paralel";
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+    const slug = scopeTitle.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const prefix = mode === "SCHOOL" ? `Tabel_Peringkat_${slug}` : "Tabel_Peringkat_Paralel_Semua_Sekolah";
+    XLSX.writeFile(wb, `${prefix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+// ============================================================================
+// 2. GENERATOR PDF REKAP TABEL PERINGKAT (MULTI-HALAMAN UNTUK RATUSAN/RIBUAN)
+// ============================================================================
+export async function buildRankingTablePdfBlob(
+    mode: "PARALLEL" | "SCHOOL",
+    scopeTitle: string,
+    studentsList: ZipStudentPayload[],
+    officials: ZipOfficialsPayload
+): Promise<Blob> {
+    const sorted = [...studentsList].sort((a, b) =>
+        mode === "SCHOOL" ? a.rankInSchool - b.rankInSchool : a.rankParallelOverall - b.rankParallelOverall
+    );
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const dateStr = new Date().toLocaleDateString("id-ID", { dateStyle: "long" });
+
+    // Bagi baris secara bertahap agar muat rapi di tiap halaman A4 (28 baris hal 1, 36 baris hal berikutnya)
+    const pages: ZipStudentPayload[][] = [];
+    if (sorted.length === 0) {
+        pages.push([]);
+    } else {
+        pages.push(sorted.slice(0, 28));
+        for (let idx = 28; idx < sorted.length; idx += 36) {
+            pages.push(sorted.slice(idx, idx + 36));
+        }
+    }
+
+    const host = document.createElement("div");
+    host.style.position = "fixed";
+    host.style.left = "-99999px";
+    host.style.top = "0";
+    host.style.width = "794px";
+    host.style.background = "#ffffff";
+    host.style.color = "#0f172a";
+    host.style.fontFamily = "Arial, Helvetica, sans-serif";
+    document.body.appendChild(host);
+
+    try {
+        for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+            const chunk = pages[pIdx];
+            const isFirst = pIdx === 0;
+            const isLast = pIdx === pages.length - 1;
+
+            const headerHtml = isFirst
+                ? `
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                        <img src="/logo-timsim.jpg" style="width:62px;height:62px;object-fit:contain;" crossorigin="anonymous" />
+                        <div style="flex:1;text-align:center;">
+                            <div style="font-size:10px;font-weight:bold;text-transform:uppercase;">MAJELIS PENDIDIKAN DASAR DAN MENENGAH DAN PENDIDIKAN NONFORMAL</div>
+                            <div style="font-size:9.5px;font-weight:bold;text-transform:uppercase;">PIMPINAN DAERAH MUHAMMADIYAH JAKARTA SELATAN</div>
+                            <div style="font-size:18px;font-weight:900;color:#1e3a8a;text-transform:uppercase;margin:2px 0;">SMA MUHAMMADIYAH 18 JAKARTA</div>
+                            <div style="font-size:9px;color:#475569;">Jl. Panjang No.19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp. (021) 7235544</div>
+                        </div>
+                        <div style="width:62px;"></div>
+                    </div>
+                    <div style="border-bottom:2.5px solid #000;margin-top:6px;"></div>
+                    <div style="border-bottom:1px solid #000;margin-top:2px;margin-bottom:10px;"></div>
+
+                    <div style="text-align:center;margin-bottom:10px;">
+                        <div style="font-size:12.5px;font-weight:900;text-decoration:underline;text-transform:uppercase;">
+                            ${mode === "SCHOOL"
+                    ? `DAFTAR PERINGKAT HASIL TRYOUT TKA SMP/MTs — ${scopeTitle}`
+                    : "DAFTAR PERINGKAT PARALEL LINTAS SEKOLAH TRYOUT TKA SMP/MTs"
+                }
+                        </div>
+                        <div style="font-size:9.5px;font-family:monospace;color:#334155;margin-top:2px;">
+                            Total Peserta: ${sorted.length} Siswa • Skala Nilai 0,00 – 100,00 Berbobot Tingkat Kesulitan Soal
+                        </div>
+                    </div>
+                `
+                : `
+                    <div style="display:flex;justify-content:space-between;font-size:9px;font-family:monospace;color:#475569;border-bottom:1px solid #cbd5e1;padding-bottom:4px;margin-bottom:8px;">
+                        <span>${mode === "SCHOOL"
+                    ? `DAFTAR PERINGKAT TRYOUT TKA SMP — ${scopeTitle}`
+                    : "DAFTAR PERINGKAT PARALEL LINTAS SEKOLAH TRYOUT TKA SMP"
+                }</span>
+                        <span>Halaman ${pIdx + 1} dari ${pages.length}</span>
+                    </div>
+                `;
+
+            const tableHeadHtml =
+                mode === "SCHOOL"
+                    ? `
+                        <tr style="background:#f1f5f9;font-family:monospace;font-size:9.5px;">
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:68px;">RANK SMP</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:78px;">PARALEL</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:left;">NAMA PESERTA</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:54px;">KELAS</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:95px;">NILAI BINDO</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:95px;">NILAI MTK</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:95px;">RATA-RATA</th>
+                        </tr>
+                    `
+                    : `
+                        <tr style="background:#f1f5f9;font-family:monospace;font-size:9.5px;">
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:65px;">RANK</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:left;">NAMA PESERTA</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:left;width:210px;">ASAL SEKOLAH (SMP/MTs)</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:72px;">RANK SMP</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">NILAI BINDO</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">NILAI MTK</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">RATA-RATA</th>
+                        </tr>
+                    `;
+
+            const tableRowsHtml = chunk
+                .map((s) =>
+                    mode === "SCHOOL"
+                        ? `
+                            <tr>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;">#${s.rankInSchool}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;color:#1e3a8a;">#${s.rankParallelOverall} / ${s.totalParallelFinished}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;font-weight:bold;">${s.name}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;">${s.grade}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;">${fmtID(s.bindoScore)}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#065f46;">${fmtID(s.mtkScore)}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;background:#f8fafc;">${fmtID(s.overallScore)}</td>
+                            </tr>
+                        `
+                        : `
+                            <tr>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;">#${s.rankParallelOverall}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;font-weight:bold;">${s.name}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;font-size:9px;">${s.school}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;">#${s.rankInSchool}/${s.totalInSchool}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;">${fmtID(s.bindoScore)}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#065f46;">${fmtID(s.mtkScore)}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;background:#f8fafc;">${fmtID(s.overallScore)}</td>
+                            </tr>
+                        `
+                )
+                .join("");
+
+            const footerHtml = isLast
+                ? `
+                    <div style="display:flex;justify-content:flex-end;font-size:10.5px;margin-top:16px;">
+                        <div style="width:280px;text-align:center;">
+                            <div>Jakarta, ${dateStr}</div>
+                            <div style="font-weight:bold;">Kepala SMA Muhammadiyah 18 Jakarta</div>
+                            <div style="height:86px;display:flex;align-items:center;justify-content:center;margin:4px 0;">
+                                ${officials.kepsekSignatureUrl ? `<img src="${officials.kepsekSignatureUrl}" style="max-height:84px;max-width:240px;object-fit:contain;" />` : ""}
+                            </div>
+                            <div style="font-weight:bold;text-decoration:underline;">${officials.kepalaSekolahNama}</div>
+                            <div style="font-size:9.5px;font-family:monospace;">NBM. ${officials.kepalaSekolahNbm}</div>
+                        </div>
+                    </div>
+                `
+                : "";
+
+            host.innerHTML = `
+                <div style="width:794px;padding:24px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
+                    ${headerHtml}
+                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10px;">
+                        <thead>${tableHeadHtml}</thead>
+                        <tbody>${tableRowsHtml}</tbody>
+                    </table>
+                    ${footerHtml}
+                </div>
+            `;
+
+            const canvas = await html2canvas(host, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+            const imgData = canvas.toDataURL("image/jpeg", 0.92);
+            const imgHeight = (canvas.height * 210) / canvas.width;
+
+            if (pIdx > 0) pdf.addPage();
+            pdf.addImage(imgData, "JPEG", 0, 0, 210, Math.min(297, imgHeight));
+        }
+
+        return pdf.output("blob");
+    } finally {
+        document.body.removeChild(host);
+    }
+}
+
+export async function downloadOfficialRankingPdf(
+    mode: "PARALLEL" | "SCHOOL",
+    scopeTitle: string,
+    studentsList: ZipStudentPayload[],
+    officials: ZipOfficialsPayload
+) {
+    const blob = await buildRankingTablePdfBlob(mode, scopeTitle, studentsList, officials);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const slug = scopeTitle.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+    a.href = url;
+    a.download =
+        mode === "SCHOOL"
+            ? `Rekap_Peringkat_${slug}_${new Date().toISOString().slice(0, 10)}.pdf`
+            : `Rekap_Peringkat_Paralel_Lintas_Sekolah_${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// 3. GENERATOR PAKET .ZIP RAPOR LENGKAP + REKAP PERINGKAT SEKOLAH
+// ============================================================================
 function buildHexagonSvgString(axes: ZipStudentPayload["hexagonPoints"]): string {
     const cx = 135;
     const cy = 118;
@@ -142,6 +416,26 @@ export async function generateSchoolReportsZip(
     const zip = new JSZip();
     const cleanScopeSlug = scopeLabel.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
     const dateStr = new Date().toLocaleDateString("id-ID", { dateStyle: "long" });
+
+    // Sertakan pula PDF Rekap Tabel Peringkat Resmi di dalam ZIP
+    if (!groupBySchoolFolders) {
+        const recapBlob = await buildRankingTablePdfBlob("SCHOOL", scopeLabel, studentsList, officials);
+        zip.file(`00_REKAP_PERINGKAT_${cleanScopeSlug}.pdf`, recapBlob);
+    } else {
+        const parallelRecapBlob = await buildRankingTablePdfBlob("PARALLEL", "Semua Sekolah Mitra", studentsList, officials);
+        zip.file(`00_REKAP_PERINGKAT_PARALEL_SEMUA_SEKOLAH.pdf`, parallelRecapBlob);
+
+        const bySch: Record<string, ZipStudentPayload[]> = {};
+        studentsList.forEach((s) => {
+            if (!bySch[s.school]) bySch[s.school] = [];
+            bySch[s.school].push(s);
+        });
+        for (const [schName, schStudents] of Object.entries(bySch)) {
+            const schSlug = schName.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+            const schRecapBlob = await buildRankingTablePdfBlob("SCHOOL", schName, schStudents, officials);
+            zip.folder(schSlug)?.file(`00_REKAP_PERINGKAT_${schSlug}.pdf`, schRecapBlob);
+        }
+    }
 
     const host = document.createElement("div");
     host.style.position = "fixed";

@@ -170,24 +170,28 @@ function resolveStudentAnswerForQuestion(q: any, idxInSubtest: number, studentAn
     return undefined;
 }
 
-// Evaluasi kebenaran 1 butir soal + format teks jawaban siswa untuk lampiran rapor
+// Evaluasi kebenaran 1 butir soal (otomatis mendeteksi PG_SEDERHANA, PGK_MCMA, dan PGK_KATEGORI)
 function evaluateStudentItemDetail(q: any, userAns: any) {
-    const qType = q.type || "PG_SEDERHANA";
     const keyMap: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
     const revMap = ["A", "B", "C", "D", "E"];
     const rawKey = String(q.kunci || "A").toUpperCase().trim();
+
+    const rawType = String(q.type || "").toUpperCase().trim();
+    const isKategori = rawType === "PGK_KATEGORI" || rawKey.includes("|");
+    const isMcma = !isKategori && (rawType === "PGK_MCMA" || rawKey.includes(","));
 
     if (userAns === undefined || userAns === null) {
         return { fraction: 0, status: "KOSONG" as const, studentAnsLabel: "-", keyLabel: rawKey };
     }
 
-    if (qType === "PGK_MCMA") {
-        const correctArr: number[] = Array.isArray(q.multiAnswers)
-            ? q.multiAnswers
-            : rawKey
-                .split(",")
-                .map((k) => keyMap[k.trim()])
-                .filter((n) => n !== undefined);
+    if (isMcma) {
+        const correctArr: number[] =
+            Array.isArray(q.multiAnswers) && q.multiAnswers.length > 0
+                ? q.multiAnswers
+                : rawKey
+                    .split(",")
+                    .map((k) => keyMap[k.trim()])
+                    .filter((n) => n !== undefined);
         const userArr: number[] = Array.isArray(userAns) ? userAns : [];
         const matchCount = userArr.filter((val) => correctArr.includes(val)).length;
         const wrongCount = userArr.filter((val) => !correctArr.includes(val)).length;
@@ -197,12 +201,12 @@ function evaluateStudentItemDetail(q: any, userAns: any) {
         return { fraction: frac, status, studentAnsLabel: studentLabel, keyLabel: rawKey };
     }
 
-    if (qType === "PGK_KATEGORI") {
+    if (isKategori) {
         const optionsList: string[] =
             Array.isArray(q.options) && q.options.length > 0
                 ? q.options.map((opt: any) => (typeof opt === "string" ? opt : String(opt?.text ?? "")))
                 : [q.opsi_a, q.opsi_b, q.opsi_c, q.opsi_d, q.opsi_e].filter((v) => v && String(v).trim().length > 0);
-        const catKeys = String(q.kunci || "").split("|").map((k) => k.trim());
+        const catKeys = rawKey.split("|").map((k) => k.trim());
         const statementsList =
             Array.isArray(q.statements) && q.statements.length > 0
                 ? q.statements
@@ -215,9 +219,14 @@ function evaluateStudentItemDetail(q: any, userAns: any) {
         let correctCount = 0;
         const userLabels: string[] = [];
         statementsList.forEach((st: any, idx: number) => {
-            const val = userAns?.[st.id] ?? userAns?.[`st_${idx}`];
+            const val =
+                userAns?.[st.id] ??
+                userAns?.[`st_${idx}`] ??
+                (typeof userAns === "object" ? Object.values(userAns)[idx] : undefined);
             if (val) userLabels.push(String(val));
-            if (val === st.correctCategory) correctCount++;
+            if (String(val || "").toUpperCase().trim() === String(st.correctCategory || "").toUpperCase().trim()) {
+                correctCount++;
+            }
         });
         const frac = statementsList.length > 0 ? correctCount / statementsList.length : 0;
         const status = frac >= 0.99 ? ("BENAR" as const) : frac > 0 ? ("PARSIAL" as const) : ("SALAH" as const);
@@ -709,7 +718,9 @@ export default function AdminAnalyticsTkaSmpPage() {
         const cleanPhone = normalizePhoneDigits(stu.phone);
 
         const matchedResult = rawResultsList.find(
-            (r) => normalizePhoneDigits(r.phone || "") === cleanPhone
+            (r) =>
+                (cleanPhone && normalizePhoneDigits(r.phone || "") === cleanPhone) ||
+                String(r.student_name || "").toUpperCase().trim() === stu.name
         );
         const studentAnswers = matchedResult?.answers || {};
         const hasAnswerData = Object.keys(studentAnswers).length > 0 && questionsBank.length > 0;
@@ -811,7 +822,8 @@ export default function AdminAnalyticsTkaSmpPage() {
             weakestAxis: sortedHex[sortedHex.length - 1],
             schoolAvgBindo,
             schoolAvgMtk,
-            schoolAvgOverall
+            schoolAvgOverall,
+            schoolFinishedCount: schoolGroup.length
         };
     }, [selectedStudentForReport, rawResultsList, questionsBank, questionWeightsMap, students]);
 
@@ -1641,6 +1653,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         </tr>
                                     ))}
                                 </tbody>
+
                             </table>
                         </div>
                     </div>
@@ -1851,6 +1864,11 @@ export default function AdminAnalyticsTkaSmpPage() {
                                             </tr>
                                         </tbody>
                                     </table>
+
+                                    <div className="text-[9px] text-slate-600 font-mono italic -mt-2">
+                                        *Keterangan Rerata SMP: Dihitung otomatis dari rata-rata skor seluruh peserta yang telah menyelesaikan ujian dari asal sekolah{" "}
+                                        <strong>{stu.school}</strong> ({diag.schoolFinishedCount} peserta selesai).
+                                    </div>
 
                                     {/* GRAFIK DIAGNOSTIK: RADAR HEKSAGONAL + GRAFIK BATANG PER KISI-KISI */}
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border border-slate-300 rounded-2xl p-3 bg-slate-50/40">

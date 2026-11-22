@@ -318,7 +318,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                     .select("*")
                     .order("subtes_code", { ascending: true })
                     .order("no_soal", { ascending: true }),
-                supabase.from("tka_results").select("*").order("created_at", { ascending: false })
+                supabase.from("tka_results").select("*").order("submitted_at", { ascending: false })
             ]);
 
             if (stuRes.error) {

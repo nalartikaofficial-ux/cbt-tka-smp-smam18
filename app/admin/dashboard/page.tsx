@@ -16,13 +16,16 @@ import {
     X,
     BookOpen,
     Calculator,
-    Phone,
     BarChart3,
     Layers,
     Target,
     Download,
     School,
-    Award
+    Award,
+    Upload,
+    CheckCircle2,
+    XCircle,
+    MinusCircle
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -74,8 +77,8 @@ const HEXAGON_AXES = [
     { key: "Geometri, Data & Peluang", short: "Geo & Data", subject: "MTK", elements: ["Geometri & Pengukuran", "Data & Peluang"] }
 ];
 
-// Kategori Capaian Resmi Kepmendikdasmen No. 56 Tahun 2026 (Skala 0,00 - 100,00)
-function getKepmendikdasmen56Detail(score: number, subject: "BINDO" | "MTK" | "GENERAL" = "BINDO") {
+// Kategori Capaian Resmi TKA SMP/MTs Kemendikdasmen (Cut-Off Terpisah per Mata Uji)
+function getOfficialTkaCategory(score: number, subject: "BINDO" | "MTK" = "BINDO") {
     const num = Number(score) || 0;
     const isMtk = subject === "MTK";
     const baikCutOff = isMtk ? 56.67 : 76.67;
@@ -87,7 +90,7 @@ function getKepmendikdasmen56Detail(score: number, subject: "BINDO" | "MTK" | "G
             badge: "bg-indigo-50 text-indigo-800 border-indigo-200",
             barColor: "bg-indigo-600",
             voucher: "Voucher Beasiswa Istimewa Bebas Biaya SPP / Uang Pangkal s.d. 100%",
-            note: "Predikat khusus bagi peserta didik dengan penguasaan materi dan kemampuan bernalar sangat tinggi."
+            note: "Predikat khusus dengan penguasaan materi dan kemampuan bernalar sangat tinggi."
         };
     }
     if (num >= baikCutOff) {
@@ -145,61 +148,108 @@ function mapQuestionToOfficialElement(subtesCode: string, rawMateri?: string): s
     }
 }
 
-// Evaluasi kebenaran 1 butir soal untuk seorang siswa (mendukung PG_SEDERHANA, PGK_MCMA, PGK_KATEGORI)
-function evaluateStudentItemFraction(q: any, userAns: any): number {
-    if (userAns === undefined || userAns === null) return 0;
+// Pencarian jawaban siswa yang fleksibel (mendukung UUID soal, BINDO_1/MTK_1, atau no_soal)
+function resolveStudentAnswerForQuestion(q: any, idxInSubtest: number, studentAnswers: Record<string, any>) {
+    if (!studentAnswers || typeof studentAnswers !== "object") return undefined;
+    const code = String(q.subtes_code || "").toUpperCase().includes("MTK") ? "MTK" : "BINDO";
+    const noSoal = Number(q.no_soal) || idxInSubtest + 1;
+
+    const candidateKeys = [
+        String(q.id),
+        `${code}_${noSoal}`,
+        `${code}_${idxInSubtest + 1}`,
+        `${code}_${idxInSubtest}`,
+        String(noSoal)
+    ];
+
+    for (const k of candidateKeys) {
+        if (k && studentAnswers[k] !== undefined && studentAnswers[k] !== null) {
+            return studentAnswers[k];
+        }
+    }
+    return undefined;
+}
+
+// Evaluasi kebenaran 1 butir soal + format teks jawaban siswa untuk lampiran rapor
+function evaluateStudentItemDetail(q: any, userAns: any) {
     const qType = q.type || "PG_SEDERHANA";
     const keyMap: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
+    const revMap = ["A", "B", "C", "D", "E"];
+    const rawKey = String(q.kunci || "A").toUpperCase().trim();
+
+    if (userAns === undefined || userAns === null) {
+        return { fraction: 0, status: "KOSONG" as const, studentAnsLabel: "-", keyLabel: rawKey };
+    }
 
     if (qType === "PGK_MCMA") {
         const correctArr: number[] = Array.isArray(q.multiAnswers)
             ? q.multiAnswers
-            : String(q.kunci || "A")
-                .toUpperCase()
+            : rawKey
                 .split(",")
                 .map((k) => keyMap[k.trim()])
                 .filter((n) => n !== undefined);
         const userArr: number[] = Array.isArray(userAns) ? userAns : [];
         const matchCount = userArr.filter((val) => correctArr.includes(val)).length;
         const wrongCount = userArr.filter((val) => !correctArr.includes(val)).length;
-        return Math.max(0, (matchCount - wrongCount) / (correctArr.length || 1));
+        const frac = Math.max(0, (matchCount - wrongCount) / (correctArr.length || 1));
+        const studentLabel = userArr.length > 0 ? userArr.map((i) => revMap[i] || i).join(", ") : "-";
+        const status = frac >= 0.99 ? ("BENAR" as const) : frac > 0 ? ("PARSIAL" as const) : ("SALAH" as const);
+        return { fraction: frac, status, studentAnsLabel: studentLabel, keyLabel: rawKey };
     }
 
     if (qType === "PGK_KATEGORI") {
-        const optionsList: string[] = Array.isArray(q.options) && q.options.length > 0
-            ? q.options.map((opt: any) => (typeof opt === "string" ? opt : String(opt?.text ?? "")))
-            : [q.opsi_a, q.opsi_b, q.opsi_c, q.opsi_d, q.opsi_e].filter((v) => v && String(v).trim().length > 0);
+        const optionsList: string[] =
+            Array.isArray(q.options) && q.options.length > 0
+                ? q.options.map((opt: any) => (typeof opt === "string" ? opt : String(opt?.text ?? "")))
+                : [q.opsi_a, q.opsi_b, q.opsi_c, q.opsi_d, q.opsi_e].filter((v) => v && String(v).trim().length > 0);
         const catKeys = String(q.kunci || "").split("|").map((k) => k.trim());
-        const statementsList = Array.isArray(q.statements) && q.statements.length > 0
-            ? q.statements
-            : optionsList.map((stmtText, sIdx) => ({
-                id: `st_${sIdx}`,
-                statement: stmtText,
-                correctCategory: catKeys[sIdx] || "Benar"
-            }));
+        const statementsList =
+            Array.isArray(q.statements) && q.statements.length > 0
+                ? q.statements
+                : optionsList.map((stmtText, sIdx) => ({
+                    id: `st_${sIdx}`,
+                    statement: stmtText,
+                    correctCategory: catKeys[sIdx] || "Benar"
+                }));
 
         let correctCount = 0;
+        const userLabels: string[] = [];
         statementsList.forEach((st: any, idx: number) => {
             const val = userAns?.[st.id] ?? userAns?.[`st_${idx}`];
+            if (val) userLabels.push(String(val));
             if (val === st.correctCategory) correctCount++;
         });
-        return statementsList.length > 0 ? correctCount / statementsList.length : 0;
+        const frac = statementsList.length > 0 ? correctCount / statementsList.length : 0;
+        const status = frac >= 0.99 ? ("BENAR" as const) : frac > 0 ? ("PARSIAL" as const) : ("SALAH" as const);
+        return {
+            fraction: frac,
+            status,
+            studentAnsLabel: userLabels.length > 0 ? userLabels.join(" | ") : "-",
+            keyLabel: rawKey
+        };
     }
 
     // PG_SEDERHANA
-    const rawKey = String(q.kunci || "A").toUpperCase().trim();
     const targetIdx = typeof q.singleAnswer === "number" ? q.singleAnswer : (keyMap[rawKey] ?? 0);
+    let isRight = false;
+    let studentLabel = "-";
     if (typeof userAns === "number") {
-        return userAns === targetIdx ? 1 : 0;
+        isRight = userAns === targetIdx;
+        studentLabel = revMap[userAns] || String(userAns);
+    } else if (typeof userAns === "string") {
+        isRight = userAns.toUpperCase().trim() === rawKey;
+        studentLabel = userAns.toUpperCase().trim();
     }
-    if (typeof userAns === "string") {
-        return userAns.toUpperCase().trim() === rawKey ? 1 : 0;
-    }
-    return 0;
+    return {
+        fraction: isRight ? 1 : 0,
+        status: isRight ? ("BENAR" as const) : ("SALAH" as const),
+        studentAnsLabel: studentLabel,
+        keyLabel: rawKey
+    };
 }
 
 export default function AdminAnalyticsTkaSmpPage() {
-    const [students, setStudents] = useState<TkaStudentResult[]>([]);
+    const [rawStudents, setRawStudents] = useState<TkaStudentResult[]>([]);
     const [questionsBank, setQuestionsBank] = useState<any[]>([]);
     const [rawResultsList, setRawResultsList] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -211,12 +261,43 @@ export default function AdminAnalyticsTkaSmpPage() {
     const [officials, setOfficials] = useState({
         kepalaSekolahNama: "Drs. H. Ahmad Dahlan, M.Pd.",
         kepalaSekolahNbm: "882.118.001",
-        koordinatorNama: "Fadhillah Umar, S.Pd.",
-        koordinatorNbm: "118.2026.091",
-        koordinatorJabatan: "Koordinator Kurikulum & Asesmen PPDB"
+        kepsekSignatureUrl: ""
     });
 
     const [selectedStudentForReport, setSelectedStudentForReport] = useState<TkaStudentResult | null>(null);
+
+    // Muat gambar TTD tersimpan dari localStorage
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            try {
+                const savedOfficials = localStorage.getItem("tka_officials_config");
+                if (savedOfficials) {
+                    setOfficials((prev) => ({ ...prev, ...JSON.parse(savedOfficials) }));
+                }
+            } catch { }
+        }
+    }, []);
+
+    const updateOfficialsField = (patch: Partial<typeof officials>) => {
+        setOfficials((prev) => {
+            const next = { ...prev, ...patch };
+            try {
+                localStorage.setItem("tka_officials_config", JSON.stringify(next));
+            } catch { }
+            return next;
+        });
+    };
+
+    const handleSignatureUpload = (file?: File) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === "string") {
+                updateOfficialsField({ kepsekSignatureUrl: reader.result });
+            }
+        };
+        reader.readAsDataURL(file);
+    };
 
     const fetchAllAnalyticsData = async () => {
         setIsLoading(true);
@@ -255,7 +336,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                         waktu_selesai: item.waktu_selesai || ""
                     };
                 });
-                setStudents(normalized);
+                setRawStudents(normalized);
             }
 
             if (!qRes.error && Array.isArray(qRes.data)) {
@@ -292,6 +373,173 @@ export default function AdminAnalyticsTkaSmpPage() {
 
         fetchAllAnalyticsData();
     }, []);
+
+    // =========================================================================
+    // TAHAP 1: BOBOT KESULITAN SOAL EMPIRIS + SKOR DESIMAL AKURAT (0,00 - 100,00)
+    // =========================================================================
+    const { questionWeightsMap, itemAnalysisList, elementAnalysisList } = useMemo(() => {
+        const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
+        const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
+
+        const weightsMap: Record<string, number> = {};
+
+        const computeForList = (qList: any[], subCode: "BINDO" | "MTK") =>
+            qList.map((q: any, idx: number) => {
+                const qId = String(q.id);
+                const element = mapQuestionToOfficialElement(subCode, q.materi);
+                const rawKey = String(q.kunci || "A").toUpperCase().trim();
+
+                let totalAttempt = 0;
+                let correctCount = 0;
+                const optionCounts = [0, 0, 0, 0, 0];
+
+                rawResultsList.forEach((res) => {
+                    const userAns = resolveStudentAnswerForQuestion(q, idx, res.answers || {});
+                    if (userAns !== undefined && userAns !== null) {
+                        totalAttempt++;
+                        if (typeof userAns === "number" && userAns >= 0 && userAns <= 4) {
+                            optionCounts[userAns]++;
+                        } else if (Array.isArray(userAns)) {
+                            userAns.forEach((optI: number) => {
+                                if (optI >= 0 && optI <= 4) optionCounts[optI]++;
+                            });
+                        }
+                        const evalRes = evaluateStudentItemDetail(q, userAns);
+                        if (evalRes.fraction >= 0.99) correctCount++;
+                    }
+                });
+
+                const pRatio = totalAttempt > 0 ? correctCount / totalAttempt : 0.5;
+                const pIndex = totalAttempt > 0 ? Number((pRatio * 100).toFixed(2)) : 0;
+
+                // Bobot statistik TKA: kombinasi bobot soal di bank soal + tingkat kesulitan empiris (1 - P)
+                const baseDiff = Number(q.difficulty) > 1 ? Number(q.difficulty) : 1 + (1 - pRatio) * 0.85;
+                const finalWeight = Number(baseDiff.toFixed(4));
+                weightsMap[qId] = finalWeight;
+
+                let difficultyLabel = "Sedang";
+                let difficultyBadge = "bg-blue-50 text-blue-800 border-blue-200";
+                if (totalAttempt === 0) {
+                    difficultyLabel = "Belum Diuji";
+                    difficultyBadge = "bg-slate-100 text-slate-500 border-slate-200";
+                } else if (pIndex > 70) {
+                    difficultyLabel = "Mudah";
+                    difficultyBadge = "bg-emerald-50 text-emerald-800 border-emerald-200";
+                } else if (pIndex < 30) {
+                    difficultyLabel = "Sukar";
+                    difficultyBadge = "bg-rose-50 text-rose-800 border-rose-200";
+                }
+
+                return {
+                    id: qId,
+                    no_soal: q.no_soal || idx + 1,
+                    idxInSubtest: idx,
+                    subtes_code: subCode,
+                    element,
+                    pertanyaan: String(q.pertanyaan || ""),
+                    kunci: rawKey,
+                    totalAttempt,
+                    correctCount,
+                    pIndex,
+                    weight: finalWeight,
+                    difficultyLabel,
+                    difficultyBadge,
+                    optionCounts,
+                    rawQuestion: q
+                };
+            });
+
+        const allItems = [...computeForList(bindoQs, "BINDO"), ...computeForList(mtkQs, "MTK")];
+
+        const scopedItems = allItems.map((it) => {
+            if (selectedSchool === "ALL") return it;
+            const scopedResults = rawResultsList.filter(
+                (r) => String(r.school || "").toUpperCase().trim() === selectedSchool
+            );
+            let att = 0;
+            let corr = 0;
+            const opts = [0, 0, 0, 0, 0];
+            scopedResults.forEach((res) => {
+                const uAns = resolveStudentAnswerForQuestion(it.rawQuestion, it.idxInSubtest, res.answers || {});
+                if (uAns !== undefined && uAns !== null) {
+                    att++;
+                    if (typeof uAns === "number" && uAns >= 0 && uAns <= 4) opts[uAns]++;
+                    if (evaluateStudentItemDetail(it.rawQuestion, uAns).fraction >= 0.99) corr++;
+                }
+            });
+            const pIdx = att > 0 ? Number(((corr / att) * 100).toFixed(2)) : 0;
+            return { ...it, totalAttempt: att, correctCount: corr, pIndex: pIdx, optionCounts: opts };
+        });
+
+        const elements = OFFICIAL_COMPETENCIES.map((comp) => {
+            const matchedItems = scopedItems.filter((it) => it.element === comp.code && it.totalAttempt > 0);
+            const totalAnswers = matchedItems.reduce((sum, it) => sum + it.totalAttempt, 0);
+            const totalCorrects = matchedItems.reduce((sum, it) => sum + it.correctCount, 0);
+            const masteryPct = totalAnswers > 0 ? Number(((totalCorrects / totalAnswers) * 100).toFixed(2)) : 0;
+            const cat = getOfficialTkaCategory(masteryPct, comp.subject === "MTK" ? "MTK" : "BINDO");
+
+            return {
+                ...comp,
+                questionCount: scopedItems.filter((it) => it.element === comp.code).length,
+                testedQuestionCount: matchedItems.length,
+                masteryPct,
+                category: totalAnswers > 0 ? cat.level : "Belum Ada Data",
+                badge: totalAnswers > 0 ? cat.badge : "bg-slate-100 text-slate-500 border-slate-200",
+                barColor: totalAnswers > 0 ? cat.barColor : "bg-slate-300"
+            };
+        });
+
+        return { questionWeightsMap: weightsMap, itemAnalysisList: scopedItems, elementAnalysisList: elements };
+    }, [questionsBank, rawResultsList, selectedSchool]);
+
+    // Hitung ulang skor desimal akurat (2 angka di belakang koma) untuk tiap siswa dari answers jsonb
+    const students = useMemo<TkaStudentResult[]>(() => {
+        const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
+        const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
+
+        return rawStudents.map((stu) => {
+            const matchedRes = rawResultsList.find(
+                (r) => normalizePhoneDigits(r.phone || "") === stu.phone
+            );
+            const ansObj = matchedRes?.answers || {};
+            const hasAnswers = Object.keys(ansObj).length > 0 && questionsBank.length > 0;
+
+            if (!hasAnswers) {
+                return stu;
+            }
+
+            let bindoEarned = 0,
+                bindoTotalW = 0;
+            bindoQs.forEach((q, idx) => {
+                const w = questionWeightsMap[String(q.id)] || 1;
+                const uAns = resolveStudentAnswerForQuestion(q, idx, ansObj);
+                const frac = evaluateStudentItemDetail(q, uAns).fraction;
+                bindoEarned += frac * w;
+                bindoTotalW += w;
+            });
+
+            let mtkEarned = 0,
+                mtkTotalW = 0;
+            mtkQs.forEach((q, idx) => {
+                const w = questionWeightsMap[String(q.id)] || 1;
+                const uAns = resolveStudentAnswerForQuestion(q, idx, ansObj);
+                const frac = evaluateStudentItemDetail(q, uAns).fraction;
+                mtkEarned += frac * w;
+                mtkTotalW += w;
+            });
+
+            const calcBindo = bindoTotalW > 0 ? Number(((bindoEarned / bindoTotalW) * 100).toFixed(2)) : stu.bindoScore;
+            const calcMtk = mtkTotalW > 0 ? Number(((mtkEarned / mtkTotalW) * 100).toFixed(2)) : stu.mtkScore;
+            const calcOverall = Number(((calcBindo + calcMtk) / 2).toFixed(2));
+
+            return {
+                ...stu,
+                bindoScore: calcBindo,
+                mtkScore: calcMtk,
+                score: calcOverall
+            };
+        });
+    }, [rawStudents, rawResultsList, questionsBank, questionWeightsMap]);
 
     // Hitung Peringkat Internal Masing-Masing Sekolah (BINDO, MTK, Rerata)
     const rankedStudentsWithSchoolPos = useMemo(() => {
@@ -418,7 +666,7 @@ export default function AdminAnalyticsTkaSmpPage() {
         });
     }, [rankedStudentsWithSchoolPos, selectedSchool, searchQuery]);
 
-    // Statistik Agregat Berdasarkan Kepmendikdasmen No. 56 Tahun 2026
+    // Statistik Agregat
     const overallStats = useMemo(() => {
         const scopeStudents =
             selectedSchool === "ALL" ? students : students.filter((s) => s.school === selectedSchool);
@@ -444,176 +692,82 @@ export default function AdminAnalyticsTkaSmpPage() {
         const totalPelanggaran = finished.reduce((acc, curr) => acc + (Number(curr.violations) || 0), 0);
         const integritasRate = Math.max(0, 100 - totalPelanggaran * 3);
 
-        const countCategories = (scores: number[]) => ({
-            istimewa: scores.filter((v) => v >= 95.0).length,
-            baik: scores.filter((v) => v >= 76.67 && v < 95.0).length,
-            memadai: scores.filter((v) => v >= 50.0 && v < 76.67).length,
-            kurang: scores.filter((v) => v < 50.0).length
-        });
-
-        const bindoScores = finished.map((s) => Number(s.bindoScore) || 0);
-        const mtkScores = finished.map((s) => Number(s.mtkScore) || 0);
-
-        const bindoDist = {
-            istimewa: bindoScores.filter((v) => v >= 95.0).length,
-            baik: bindoScores.filter((v) => v >= 76.67 && v < 95.0).length,
-            memadai: bindoScores.filter((v) => v >= 50.0 && v < 76.67).length,
-            kurang: bindoScores.filter((v) => v < 50.0).length
-        };
-
-        const mtkDist = {
-            istimewa: mtkScores.filter((v) => v >= 95.0).length,
-            baik: mtkScores.filter((v) => v >= 56.67 && v < 95.0).length,
-            memadai: mtkScores.filter((v) => v >= 33.33 && v < 56.67).length,
-            kurang: mtkScores.filter((v) => v < 33.33).length
-        };
-
         return {
             totalProspek,
             totalSelesai,
             avgScore,
             avgBindo,
             avgMtk,
-            integritasRate,
-            bindoDist,
-            mtkDist
+            integritasRate
         };
     }, [students, selectedSchool]);
 
-    // Analisis Butir Soal & 7 Elemen Kompetensi Agregat
-    const { itemAnalysisList, elementAnalysisList } = useMemo(() => {
-        const scopedResults =
-            selectedSchool === "ALL"
-                ? rawResultsList
-                : rawResultsList.filter((r) => String(r.school || "").toUpperCase().trim() === selectedSchool);
-
-        const items = questionsBank.map((q: any, idx: number) => {
-            const code = String(q.subtes_code || "").toUpperCase().includes("MTK") ? "MTK" : "BINDO";
-            const qId = String(q.id);
-            const element = mapQuestionToOfficialElement(code, q.materi);
-            const rawKey = String(q.kunci || "A").toUpperCase().trim();
-
-            let totalAttempt = 0;
-            let correctCount = 0;
-            const optionCounts = [0, 0, 0, 0, 0];
-
-            scopedResults.forEach((res) => {
-                const ansObj = res.answers || {};
-                const userAns = ansObj[qId];
-                if (userAns !== undefined && userAns !== null) {
-                    totalAttempt++;
-                    if (typeof userAns === "number" && userAns >= 0 && userAns <= 4) {
-                        optionCounts[userAns]++;
-                    } else if (Array.isArray(userAns)) {
-                        userAns.forEach((optI: number) => {
-                            if (optI >= 0 && optI <= 4) optionCounts[optI]++;
-                        });
-                    }
-                    const frac = evaluateStudentItemFraction(q, userAns);
-                    if (frac >= 0.99) correctCount++;
-                }
-            });
-
-            const pIndex = totalAttempt > 0 ? Number(((correctCount / totalAttempt) * 100).toFixed(2)) : 0;
-            let difficultyLabel = "Sedang";
-            let difficultyBadge = "bg-blue-50 text-blue-800 border-blue-200";
-            if (totalAttempt === 0) {
-                difficultyLabel = "Belum Diuji";
-                difficultyBadge = "bg-slate-100 text-slate-500 border-slate-200";
-            } else if (pIndex > 70) {
-                difficultyLabel = "Mudah";
-                difficultyBadge = "bg-emerald-50 text-emerald-800 border-emerald-200";
-            } else if (pIndex < 30) {
-                difficultyLabel = "Sukar";
-                difficultyBadge = "bg-rose-50 text-rose-800 border-rose-200";
-            }
-
-            return {
-                id: qId,
-                no_soal: q.no_soal || idx + 1,
-                subtes_code: code,
-                element,
-                pertanyaan: String(q.pertanyaan || ""),
-                kunci: rawKey,
-                totalAttempt,
-                correctCount,
-                pIndex,
-                difficultyLabel,
-                difficultyBadge,
-                optionCounts
-            };
-        });
-
-        const elements = OFFICIAL_COMPETENCIES.map((comp) => {
-            const matchedItems = items.filter((it) => it.element === comp.code && it.totalAttempt > 0);
-            const totalAnswers = matchedItems.reduce((sum, it) => sum + it.totalAttempt, 0);
-            const totalCorrects = matchedItems.reduce((sum, it) => sum + it.correctCount, 0);
-            const masteryPct = totalAnswers > 0 ? Number(((totalCorrects / totalAnswers) * 100).toFixed(2)) : 0;
-            const cat = getKepmendikdasmen56Detail(masteryPct);
-
-            return {
-                ...comp,
-                questionCount: items.filter((it) => it.element === comp.code).length,
-                testedQuestionCount: matchedItems.length,
-                masteryPct,
-                category: totalAnswers > 0 ? cat.level : "Belum Ada Data",
-                badge: totalAnswers > 0 ? cat.badge : "bg-slate-100 text-slate-500 border-slate-200",
-                barColor: totalAnswers > 0 ? cat.barColor : "bg-slate-300"
-            };
-        });
-
-        return { itemAnalysisList: items, elementAnalysisList: elements };
-    }, [questionsBank, rawResultsList, selectedSchool]);
-
-    // Analisis Kisi-Kisi Individual untuk Rapor Siswa yang Sedang Dibuka
+    // Diagnostik Individual Lengkap per Kisi-Kisi & Rincian 60 Butir Soal Anak
     const selectedStudentDiagnostic = useMemo(() => {
         if (!selectedStudentForReport) return null;
         const stu = selectedStudentForReport;
         const cleanPhone = normalizePhoneDigits(stu.phone);
 
-        // Cari record jawaban terbaru siswa di tka_results
         const matchedResult = rawResultsList.find(
             (r) => normalizePhoneDigits(r.phone || "") === cleanPhone
         );
         const studentAnswers = matchedResult?.answers || {};
         const hasAnswerData = Object.keys(studentAnswers).length > 0 && questionsBank.length > 0;
 
-        // Hitung persentase tiap 7 kisi-kisi untuk anak ini
-        const sevenCompetencyStats = OFFICIAL_COMPETENCIES.map((comp) => {
-            const compQuestions = questionsBank.filter((q) => {
-                const code = String(q.subtes_code || "").toUpperCase().includes("MTK") ? "MTK" : "BINDO";
-                return mapQuestionToOfficialElement(code, q.materi) === comp.code;
+        const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
+        const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
+
+        // Rincian 60 butir soal untuk anak ini
+        const buildStudentItems = (qList: any[], subCode: "BINDO" | "MTK") =>
+            qList.map((q, idx) => {
+                const uAns = resolveStudentAnswerForQuestion(q, idx, studentAnswers);
+                const detail = evaluateStudentItemDetail(q, uAns);
+                const element = mapQuestionToOfficialElement(subCode, q.materi);
+                const weight = questionWeightsMap[String(q.id)] || 1;
+                return {
+                    id: String(q.id),
+                    no_soal: Number(q.no_soal) || idx + 1,
+                    subtes_code: subCode,
+                    element,
+                    pertanyaan: String(q.pertanyaan || ""),
+                    weight,
+                    ...detail
+                };
             });
 
-            const totalQ = compQuestions.length;
+        const studentItemRows = [
+            ...buildStudentItems(bindoQs, "BINDO"),
+            ...buildStudentItems(mtkQs, "MTK")
+        ];
+
+        // Hitung skor/persentase tiap 7 kisi-kisi secara independen (bukan sama rata!)
+        const sevenCompetencyStats = OFFICIAL_COMPETENCIES.map((comp) => {
+            const compItems = studentItemRows.filter((it) => it.element === comp.code);
+            const totalQ = compItems.length;
             let earnedWeighted = 0;
             let totalWeighted = 0;
+            let rawCorrect = 0;
 
-            if (hasAnswerData && totalQ > 0) {
-                compQuestions.forEach((q) => {
-                    const w = Number(q.difficulty) || 1;
-                    const userAns = studentAnswers[String(q.id)];
-                    earnedWeighted += evaluateStudentItemFraction(q, userAns) * w;
-                    totalWeighted += w;
-                });
-            }
+            compItems.forEach((it) => {
+                earnedWeighted += it.fraction * it.weight;
+                totalWeighted += it.weight;
+                if (it.fraction >= 0.99) rawCorrect++;
+            });
 
-            // Fallback proporsional berbasis skor subtes jika data answers lama belum tersimpan
-            const fallbackPct = comp.subject === "MTK" ? stu.mtkScore : stu.bindoScore;
             const pct =
                 hasAnswerData && totalWeighted > 0
                     ? Number(((earnedWeighted / totalWeighted) * 100).toFixed(2))
-                    : Number(fallbackPct.toFixed(2));
+                    : 0;
 
             return {
                 ...comp,
                 totalQ,
-                correctEquivalent: Number(earnedWeighted.toFixed(1)),
+                rawCorrect,
                 pct
             };
         });
 
-        // Hitung 6 Sumbu Heksagonal (Anak vs Rata-Rata Sekolah)
+        // Rata-rata sekolah sebagai garis pembanding di Grafik Heksagonal
         const schoolGroup = students.filter(
             (s) => s.school === stu.school && (s.status.toLowerCase().includes("selesai") || s.score > 0)
         );
@@ -635,7 +789,7 @@ export default function AdminAnalyticsTkaSmpPage() {
             const totalQ = matchedComps.reduce((s, c) => s + c.totalQ, 0);
             const weightedSum = matchedComps.reduce((s, c) => s + c.pct * (c.totalQ || 1), 0);
             const totalWeight = matchedComps.reduce((s, c) => s + (c.totalQ || 1), 0);
-            const studentPct = totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(1)) : 0;
+            const studentPct = totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(2)) : 0;
             const schoolPct = axis.subject === "MTK" ? schoolAvgMtk : schoolAvgBindo;
 
             return {
@@ -650,6 +804,7 @@ export default function AdminAnalyticsTkaSmpPage() {
 
         return {
             hasAnswerData,
+            studentItemRows,
             sevenCompetencyStats,
             hexagonPoints,
             strongestAxis: sortedHex[0],
@@ -658,7 +813,7 @@ export default function AdminAnalyticsTkaSmpPage() {
             schoolAvgMtk,
             schoolAvgOverall
         };
-    }, [selectedStudentForReport, rawResultsList, questionsBank, students]);
+    }, [selectedStudentForReport, rawResultsList, questionsBank, questionWeightsMap, students]);
 
     const handleExportCsvLeads = () => {
         if (filteredStudents.length === 0) return;
@@ -668,8 +823,8 @@ export default function AdminAnalyticsTkaSmpPage() {
 
         const rows = filteredStudents
             .map((s, idx) => {
-                const bCat = getKepmendikdasmen56Detail(s.bindoScore).level;
-                const mCat = getKepmendikdasmen56Detail(s.mtkScore).level;
+                const bCat = getOfficialTkaCategory(s.bindoScore, "BINDO").level;
+                const mCat = getOfficialTkaCategory(s.mtkScore, "MTK").level;
                 return [
                     idx + 1,
                     esc(s.school),
@@ -746,7 +901,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                 width: 100% !important;
                 color: #000000 !important;
                 font-family: 'Times New Roman', Times, serif !important;
-                font-size: 10pt !important;
+                font-size: 9.5pt !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
               }
@@ -761,6 +916,10 @@ export default function AdminAnalyticsTkaSmpPage() {
                 padding: 0 !important;
                 width: 100% !important;
                 max-width: 100% !important;
+              }
+              .page-break-before {
+                page-break-before: always !important;
+                break-before: page !important;
               }
               .kop-divider-thick {
                 border-bottom: 2.5px solid #000000 !important;
@@ -801,7 +960,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 DASHBOARD RAPOR, DIAGNOSTIK & PERINGKAT TKA SMP
                             </div>
                             <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">
-                                Kepmendikdasmen No. 56/2026 & Perkaban No. 047/H/AN/2025 • SMA Muhammadiyah 18 Jakarta
+                                Skala 0,00–100,00 Berbobot Kesulitan Soal • SMA Muhammadiyah 18 Jakarta
                             </div>
                         </div>
                     </div>
@@ -828,7 +987,7 @@ export default function AdminAnalyticsTkaSmpPage() {
             </header>
 
             <div className="max-w-7xl w-full mx-auto p-3 sm:p-5 lg:p-6 space-y-4 sm:space-y-6 text-left">
-                {/* FILTER SEKOLAH ASAL SMP GLOBAL UNTUK SELURUH ANALISIS */}
+                {/* FILTER SEKOLAH ASAL SMP GLOBAL */}
                 <div className="print-hidden bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                         <div className="text-xs font-black text-slate-900">Filter Cakupan Analisis Sekolah Asal (SMP/MTs Mitra)</div>
@@ -864,7 +1023,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                             {formatScoreID(overallStats.avgBindo)}
                         </div>
                         <div className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
-                            Kategori: <strong>{getKepmendikdasmen56Detail(overallStats.avgBindo).level}</strong>
+                            Kategori: <strong>{getOfficialTkaCategory(overallStats.avgBindo, "BINDO").level}</strong>
                         </div>
                     </div>
 
@@ -877,7 +1036,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                             {formatScoreID(overallStats.avgMtk)}
                         </div>
                         <div className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
-                            Kategori: <strong>{getKepmendikdasmen56Detail(overallStats.avgMtk, "MTK").level}</strong>
+                            Kategori: <strong>{getOfficialTkaCategory(overallStats.avgMtk, "MTK").level}</strong>
                         </div>
                     </div>
 
@@ -909,7 +1068,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                     </div>
                 </div>
 
-                {/* BAR NAVIGASI 4 TAB ANALISIS LENGKAP */}
+                {/* BAR NAVIGASI 4 TAB */}
                 <div className="print-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 bg-slate-200/80 p-1.5 rounded-2xl border border-slate-300">
                     <button
                         type="button"
@@ -938,7 +1097,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                             }`}
                     >
                         <Layers className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>3. Analisis 7 Elemen Materi</span>
+                        <span>3. Rekap 7 Elemen Materi</span>
                     </button>
 
                     <button
@@ -948,7 +1107,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                             }`}
                     >
                         <Target className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>4. Analisis Butir Soal ({itemAnalysisList.length})</span>
+                        <span>4. Rekap Butir Soal ({itemAnalysisList.length})</span>
                     </button>
                 </div>
 
@@ -957,7 +1116,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                 {/* ============================================================== */}
                 {activeTab === "prospek" && (
                     <div className="print-hidden space-y-5">
-                        {/* Tabel Rapor Siswa & Peringkat Per Pelajaran di Sekolah Masing-Masing */}
                         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 space-y-4 shadow-2xs">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                                 <div>
@@ -965,7 +1123,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         Rapor Individual Siswa & Peringkat Internal Sekolah ({filteredStudents.length} Siswa)
                                     </h3>
                                     <p className="text-[11px] text-slate-500">
-                                        Klik <strong>Cetak Rapor & Grafik</strong> untuk mencetak SHTKA lengkap dengan Grafik Heksagonal 6 Kisi-Kisi, Grafik Batang, dan Peringkat Anak di Sekolahnya.
+                                        Klik <strong>Cetak Rapor & Analisis Butir</strong> untuk mencetak Rapor Multi-Halaman A4 (SHTKA + Grafik Heksagonal + Grafik Batang Kisi-Kisi + Rincian 60 Butir Soal Anak).
                                     </p>
                                 </div>
 
@@ -1004,13 +1162,13 @@ export default function AdminAnalyticsTkaSmpPage() {
                                             <th className="p-3 text-center">Rank MTK<br /><span className="text-[9px] font-normal">(di Sekolahnya)</span></th>
                                             <th className="p-3 text-center">Rata-Rata</th>
                                             <th className="p-3 text-center">Rank Rerata<br /><span className="text-[9px] font-normal">(di Sekolahnya)</span></th>
-                                            <th className="p-3 text-right">Rapor Diagnostik</th>
+                                            <th className="p-3 text-right">Rapor Anak (A4)</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 font-medium">
                                         {filteredStudents.map((s, idx) => {
-                                            const bindoCat = getKepmendikdasmen56Detail(s.bindoScore);
-                                            const mtkCat = getKepmendikdasmen56Detail(s.mtkScore);
+                                            const bindoCat = getOfficialTkaCategory(s.bindoScore, "BINDO");
+                                            const mtkCat = getOfficialTkaCategory(s.mtkScore, "MTK");
 
                                             return (
                                                 <tr key={`${s.phone}_${idx}`} className="hover:bg-slate-50/70">
@@ -1060,7 +1218,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                                             className="px-3 py-1.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
                                                         >
                                                             <Printer className="w-3.5 h-3.5" />
-                                                            <span>Cetak Rapor & Grafik</span>
+                                                            <span>Cetak Rapor & Analisis Butir</span>
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -1071,41 +1229,71 @@ export default function AdminAnalyticsTkaSmpPage() {
                             </div>
                         </div>
 
-                        {/* Pengaturan Pejabat Penandatangan */}
-                        <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-2xs space-y-3.5">
-                            <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
-                                <SlidersHorizontal className="w-4 h-4 text-blue-700 shrink-0" />
-                                <h3 className="font-bold text-xs sm:text-sm text-slate-900">
-                                    Pengaturan Pejabat Penandatangan Rapor SHTKA
-                                </h3>
+                        {/* PENGATURAN KEPALA SEKOLAH & UPLOAD TANDA TANGAN OTOMATIS */}
+                        <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2.5 gap-1">
+                                <div className="flex items-center gap-2">
+                                    <SlidersHorizontal className="w-4 h-4 text-blue-700 shrink-0" />
+                                    <h3 className="font-bold text-xs sm:text-sm text-slate-900">
+                                        Pengaturan Pengesahan Kepala Sekolah & Tanda Tangan Otomatis
+                                    </h3>
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-400">Otomatis tercetak pada Rapor Anak & Klasemen Sekolah</span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                                <div className="space-y-1">
-                                    <label className="font-bold font-mono text-slate-700 text-[10.5px]">NAMA KEPALA SEKOLAH:</label>
+
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end text-xs">
+                                <div className="md:col-span-5 space-y-1">
+                                    <label className="font-bold font-mono text-slate-600 text-[10.5px]">NAMA KEPALA SEKOLAH:</label>
                                     <input
                                         type="text"
                                         value={officials.kepalaSekolahNama}
-                                        onChange={(e) => setOfficials({ ...officials, kepalaSekolahNama: e.target.value })}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold outline-none text-xs"
+                                        onChange={(e) => updateOfficialsField({ kepalaSekolahNama: e.target.value })}
+                                        placeholder="Masukkan nama & gelar Kepala Sekolah..."
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-bold outline-none focus:border-blue-600 text-xs"
                                     />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="font-bold font-mono text-slate-700 text-[10.5px]">NIP / NBM KEPALA SEKOLAH:</label>
+
+                                <div className="md:col-span-3 space-y-1">
+                                    <label className="font-bold font-mono text-slate-600 text-[10.5px]">NBM / NIP:</label>
                                     <input
                                         type="text"
                                         value={officials.kepalaSekolahNbm}
-                                        onChange={(e) => setOfficials({ ...officials, kepalaSekolahNbm: e.target.value })}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono outline-none text-xs"
+                                        onChange={(e) => updateOfficialsField({ kepalaSekolahNbm: e.target.value })}
+                                        placeholder="Masukkan NBM..."
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-mono font-bold outline-none focus:border-blue-600 text-xs"
                                     />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="font-bold font-mono text-slate-700 text-[10.5px]">NAMA KOORDINATOR:</label>
-                                    <input
-                                        type="text"
-                                        value={officials.koordinatorNama}
-                                        onChange={(e) => setOfficials({ ...officials, koordinatorNama: e.target.value })}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold outline-none text-xs"
-                                    />
+
+                                <div className="md:col-span-4 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                                    <label className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 text-blue-900 font-bold text-[11px] inline-flex items-center gap-1.5 cursor-pointer shrink-0">
+                                        <Upload className="w-3.5 h-3.5" />
+                                        <span>{officials.kepsekSignatureUrl ? "Ganti Gambar TTD" : "Upload Gambar TTD"}</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleSignatureUpload(e.target.files?.[0])}
+                                        />
+                                    </label>
+
+                                    {officials.kepsekSignatureUrl ? (
+                                        <div className="flex items-center gap-2">
+                                            <img
+                                                src={officials.kepsekSignatureUrl}
+                                                alt="TTD Kepala Sekolah"
+                                                className="h-9 object-contain bg-white px-2 rounded border border-slate-200"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => updateOfficialsField({ kepsekSignatureUrl: "" })}
+                                                className="text-[10px] text-rose-600 hover:underline font-bold cursor-pointer"
+                                            >
+                                                Hapus
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <span className="text-[10px] font-mono text-slate-400 pr-2">PNG / JPG</span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1113,7 +1301,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                 )}
 
                 {/* ============================================================== */}
-                {/* TAB 2: KLASEMEN PERINGKAT ANTAR-SEKOLAH (SELURUH SMP/MTs)      */}
+                {/* TAB 2: KLASEMEN PERINGKAT ANTAR-SEKOLAH (KOP RESMI + TTD)      */}
                 {/* ============================================================== */}
                 {activeTab === "sekolah" && (
                     <div className="space-y-5">
@@ -1125,7 +1313,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         <span>Klasemen Peringkat Sekolah Peserta Tryout TKA SMP ({schoolRankings.length} Sekolah)</span>
                                     </h3>
                                     <p className="text-xs text-slate-500">
-                                        Pemeringkatan resmi seluruh SMP/MTs berdasarkan Rerata Gabungan Bahasa Indonesia & Matematika setelah ujian selesai.
+                                        Pemeringkatan resmi seluruh SMP/MTs berdasarkan Rerata Gabungan Bahasa Indonesia & Matematika (skala 0,00–100,00 berbobot).
                                     </p>
                                 </div>
 
@@ -1144,8 +1332,50 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         className="px-4 py-2 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
                                     >
                                         <Printer className="w-3.5 h-3.5" />
-                                        <span>Cetak Klasemen (A4)</span>
+                                        <span>Cetak Klasemen Resmi (A4)</span>
                                     </button>
+                                </div>
+                            </div>
+
+                            {/* KOP SURAT RESMI BERLOGO UNTUK CETAK KLASEMEN ANTAR-SEKOLAH */}
+                            <div className="hidden print:block pb-2">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="w-20 h-20 shrink-0 flex items-center justify-center">
+                                        <img
+                                            src="/logo-timsim.jpg"
+                                            alt="Logo SMA Muhammadiyah 18 Jakarta"
+                                            className="w-full h-full object-contain"
+                                        />
+                                    </div>
+                                    <div className="flex-1 text-center space-y-0.5 font-sans">
+                                        <h3 className="text-[11px] font-bold tracking-wider uppercase leading-tight text-slate-800">
+                                            MAJELIS PENDIDIKAN DASAR DAN MENENGAH DAN PENDIDIKAN NONFORMAL
+                                        </h3>
+                                        <h4 className="text-[10.5px] font-bold tracking-wide uppercase leading-tight text-slate-700">
+                                            PIMPINAN DAERAH MUHAMMADIYAH JAKARTA SELATAN
+                                        </h4>
+                                        <h1 className="text-xl font-black uppercase tracking-tight text-[#1e3a8a]">
+                                            SMA MUHAMMADIYAH 18 JAKARTA
+                                        </h1>
+                                        <p className="text-[10px] font-bold font-mono uppercase text-slate-700">
+                                            TERAKREDITASI "A" • NPSN: 20107319
+                                        </p>
+                                        <p className="text-[9.5px] text-slate-600">
+                                            Jl. Panjang No. 19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp: (021) 7235544
+                                        </p>
+                                    </div>
+                                    <div className="w-20 shrink-0" />
+                                </div>
+                                <div className="w-full kop-divider-thick mt-2" />
+                                <div className="w-full kop-divider-thin mt-[2px]" />
+
+                                <div className="text-center pt-4 pb-2 space-y-0.5">
+                                    <h2 className="text-sm font-black underline uppercase tracking-wide">
+                                        KLASEMEN PERINGKAT ANTAR-SEKOLAH TRYOUT TKA JENJANG SMP/MTs TAHUN 2026
+                                    </h2>
+                                    <p className="text-[10px] font-mono text-slate-700">
+                                        Berdasarkan Rerata Nilai Bahasa Indonesia, Matematika & Indeks Gabungan (Skala 0,00 – 100,00)
+                                    </p>
                                 </div>
                             </div>
 
@@ -1223,76 +1453,54 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             )}
 
-                            {/* Kop Cetak Klasemen Sekolah (Muncul saat Print A4) */}
-                            <div className="hidden print:block text-center pb-2">
-                                <h3 className="text-[11px] font-bold uppercase font-sans">
-                                    MAJELIS PENDIDIKAN DASAR DAN MENENGAH PDM JAKARTA SELATAN
-                                </h3>
-                                <h1 className="text-xl font-black uppercase font-sans">SMA MUHAMMADIYAH 18 JAKARTA</h1>
-                                <p className="text-[10px] text-slate-600 font-sans">
-                                    KLASEMEN PERINGKAT ANTAR-SEKOLAH TRYOUT TKA JENJANG SMP TAHUN 2026
-                                </p>
-                                <div className="w-full kop-divider-thick mt-1.5" />
-                                <div className="w-full kop-divider-thin mt-[2px]" />
-                            </div>
-
                             {/* Tabel Klasemen Sekolah */}
-                            <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                                <table className="w-full text-left text-xs border-collapse min-w-[740px]">
-                                    <thead className="bg-slate-50 border-b border-slate-200 font-mono text-[10.5px] text-slate-700">
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200 print:rounded-none print:border-slate-900">
+                                <table className="w-full text-left text-xs border-collapse min-w-[740px] print:min-w-0">
+                                    <thead className="bg-slate-50 border-b border-slate-200 print:border-slate-900 font-mono text-[10.5px] text-slate-700">
                                         <tr>
-                                            <th className="p-3.5 text-center w-24">Peringkat Sekolah</th>
-                                            <th className="p-3.5">Nama Sekolah (SMP / MTs)</th>
-                                            <th className="p-3.5 text-center">Peserta Selesai</th>
-                                            <th className="p-3.5 text-center">Rerata Bahasa Indonesia</th>
-                                            <th className="p-3.5 text-center">Rerata Matematika</th>
-                                            <th className="p-3.5 text-center">Rata-Rata Sekolah</th>
-                                            <th className="p-3.5 text-center">Predikat Sekolah</th>
+                                            <th className="p-3 text-center w-24 border-r border-slate-200 print:border-slate-900">Peringkat</th>
+                                            <th className="p-3 border-r border-slate-200 print:border-slate-900">Nama Sekolah (SMP / MTs)</th>
+                                            <th className="p-3 text-center border-r border-slate-200 print:border-slate-900">Peserta</th>
+                                            <th className="p-3 text-center border-r border-slate-200 print:border-slate-900">Rerata BINDO</th>
+                                            <th className="p-3 text-center border-r border-slate-200 print:border-slate-900">Rerata MTK</th>
+                                            <th className="p-3 text-center">Rata-Rata Sekolah</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 font-medium">
-                                        {schoolRankings.map((sch) => {
-                                            const cat = getKepmendikdasmen56Detail(sch.avgOverall);
-                                            return (
-                                                <tr key={sch.school} className="hover:bg-slate-50/70">
-                                                    <td className="p-3.5 text-center font-mono">
-                                                        <span
-                                                            className={`px-2.5 py-1 rounded-lg font-black text-xs ${sch.rank === 1
-                                                                ? "bg-amber-400 text-slate-950"
-                                                                : sch.rank === 2
-                                                                    ? "bg-slate-200 text-slate-900"
-                                                                    : sch.rank === 3
-                                                                        ? "bg-orange-200 text-orange-950"
-                                                                        : "bg-blue-50 text-blue-900"
-                                                                }`}
-                                                        >
-                                                            #{sch.rank}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3.5 font-black text-slate-900">{sch.school}</td>
-                                                    <td className="p-3.5 text-center font-mono text-slate-600">
-                                                        <strong>{sch.totalFinished}</strong> / {sch.totalRegistered} Siswa
-                                                    </td>
-                                                    <td className="p-3.5 text-center font-mono font-bold text-blue-900">
-                                                        {formatScoreID(sch.avgBindo)}
-                                                    </td>
-                                                    <td className="p-3.5 text-center font-mono font-bold text-emerald-800">
-                                                        {formatScoreID(sch.avgMtk)}
-                                                    </td>
-                                                    <td className="p-3.5 text-center font-mono font-black text-sm text-slate-900">
-                                                        {formatScoreID(sch.avgOverall)}
-                                                    </td>
-                                                    <td className="p-3.5 text-center">
-                                                        <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border ${cat.badge}`}>
-                                                            {cat.level}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                    <tbody className="divide-y divide-slate-200 print:divide-slate-400 font-medium">
+                                        {schoolRankings.map((sch) => (
+                                            <tr key={sch.school} className="hover:bg-slate-50/70">
+                                                <td className="p-3 text-center font-mono border-r border-slate-200 print:border-slate-400">
+                                                    <span
+                                                        className={`px-2.5 py-1 rounded-lg font-black text-xs ${sch.rank === 1
+                                                            ? "bg-amber-400 text-slate-950"
+                                                            : sch.rank === 2
+                                                                ? "bg-slate-200 text-slate-900"
+                                                                : sch.rank === 3
+                                                                    ? "bg-orange-200 text-orange-950"
+                                                                    : "bg-blue-50 text-blue-900"
+                                                            }`}
+                                                    >
+                                                        #{sch.rank}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 font-black text-slate-900 border-r border-slate-200 print:border-slate-400">{sch.school}</td>
+                                                <td className="p-3 text-center font-mono text-slate-600 border-r border-slate-200 print:border-slate-400">
+                                                    <strong>{sch.totalFinished}</strong> / {sch.totalRegistered}
+                                                </td>
+                                                <td className="p-3 text-center font-mono font-bold text-blue-900 border-r border-slate-200 print:border-slate-400">
+                                                    {formatScoreID(sch.avgBindo)}
+                                                </td>
+                                                <td className="p-3 text-center font-mono font-bold text-emerald-800 border-r border-slate-200 print:border-slate-400">
+                                                    {formatScoreID(sch.avgMtk)}
+                                                </td>
+                                                <td className="p-3 text-center font-mono font-black text-sm text-slate-900">
+                                                    {formatScoreID(sch.avgOverall)}
+                                                </td>
+                                            </tr>
+                                        ))}
                                         {schoolRankings.length === 0 && (
                                             <tr>
-                                                <td colSpan={7} className="text-center py-8 text-slate-400">
+                                                <td colSpan={6} className="text-center py-8 text-slate-400">
                                                     Belum ada sekolah peserta yang terdaftar di database.
                                                 </td>
                                             </tr>
@@ -1300,21 +1508,40 @@ export default function AdminAnalyticsTkaSmpPage() {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Pengesahan & TTD Otomatis Kepala Sekolah saat Print Klasemen Sekolah */}
+                            <div className="hidden print:flex justify-end pt-8 text-xs font-sans">
+                                <div className="w-64 text-center">
+                                    <p>Jakarta, {new Date().toLocaleDateString("id-ID", { dateStyle: "long" })}</p>
+                                    <p className="font-bold">Kepala SMA Muhammadiyah 18 Jakarta</p>
+                                    <div className="h-16 flex items-center justify-center my-1">
+                                        {officials.kepsekSignatureUrl && (
+                                            <img
+                                                src={officials.kepsekSignatureUrl}
+                                                alt="TTD Kepala Sekolah"
+                                                className="max-h-16 object-contain"
+                                            />
+                                        )}
+                                    </div>
+                                    <p className="font-bold underline">{officials.kepalaSekolahNama}</p>
+                                    <p className="text-[10px] font-mono">NBM. {officials.kepalaSekolahNbm}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {/* ============================================================== */}
-                {/* TAB 3: ANALISIS 7 ELEMEN MATERI (PERKABAN NO. 047/H/AN/2025)   */}
+                {/* TAB 3: REKAP 7 ELEMEN MATERI (PERKABAN NO. 047/H/AN/2025)     */}
                 {/* ============================================================== */}
                 {activeTab === "materi" && (
                     <div className="print-hidden bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-7 shadow-2xs space-y-5">
                         <div className="border-b border-slate-100 pb-3.5">
                             <h3 className="text-sm sm:text-base font-black text-slate-900">
-                                Pemetaan Penguasaan 7 Elemen Materi TKA SMP (Perkaban No. 047/H/AN/2025)
+                                Pemetaan Kolektif 7 Elemen Materi TKA SMP (Perkaban No. 047/H/AN/2025)
                             </h3>
                             <p className="text-xs text-slate-500">
-                                Diagnostik tingkat ketepatan jawaban siswa pada setiap elemen kompetensi Bahasa Indonesia (3 kompetensi) dan Matematika (4 elemen).
+                                Rekap tingkat ketepatan jawaban seluruh peserta pada setiap elemen kompetensi Bahasa Indonesia dan Matematika.
                             </p>
                         </div>
 
@@ -1358,16 +1585,16 @@ export default function AdminAnalyticsTkaSmpPage() {
                 )}
 
                 {/* ============================================================== */}
-                {/* TAB 4: ANALISIS BUTIR SOAL (ITEM ANALYSIS & DISTRACTOR)        */}
+                {/* TAB 4: REKAP BUTIR SOAL KOLEKTIF                               */}
                 {/* ============================================================== */}
                 {activeTab === "butir" && (
                     <div className="print-hidden bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-7 shadow-2xs space-y-4">
                         <div className="border-b border-slate-100 pb-3.5">
                             <h3 className="text-sm sm:text-base font-black text-slate-900">
-                                Analisis Kualitas Butir Soal (Tingkat Kesukaran Empiris & Sebaran Opsi)
+                                Analisis Kualitas Butir Soal Kolektif (Indeks Kesukaran Empiris & Bobot)
                             </h3>
                             <p className="text-xs text-slate-500">
-                                Mengevaluasi persentase siswa menjawab benar (Indeks P) serta distribusi pemilihan opsi A–E untuk mendeteksi efektivitas pengecoh.
+                                Persentase jawaban benar (Indeks P) serta bobot kesulitan soal yang digunakan dalam perhitungan skor TKA SMP.
                             </p>
                         </div>
 
@@ -1381,8 +1608,8 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         <th className="p-3">Cuplikan Pertanyaan</th>
                                         <th className="p-3 text-center w-16">Kunci</th>
                                         <th className="p-3 text-center w-24">Benar (%)</th>
+                                        <th className="p-3 text-center w-20">Bobot</th>
                                         <th className="p-3 text-center w-28">Kesukaran</th>
-                                        <th className="p-3 text-center w-44">Sebaran Opsi (A–E)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -1405,25 +1632,14 @@ export default function AdminAnalyticsTkaSmpPage() {
                                             <td className="p-3 text-center font-mono font-bold">
                                                 {it.totalAttempt > 0 ? `${formatScoreID(it.pIndex)}%` : "-"}
                                             </td>
+                                            <td className="p-3 text-center font-mono text-slate-600">{it.weight.toFixed(2)}</td>
                                             <td className="p-3 text-center">
                                                 <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold border ${it.difficultyBadge}`}>
                                                     {it.difficultyLabel}
                                                 </span>
                                             </td>
-                                            <td className="p-3 text-center font-mono text-[10.5px] text-slate-600">
-                                                {it.totalAttempt > 0
-                                                    ? `A:${it.optionCounts[0]} B:${it.optionCounts[1]} C:${it.optionCounts[2]} D:${it.optionCounts[3]}`
-                                                    : "Belum ada respon"}
-                                            </td>
                                         </tr>
                                     ))}
-                                    {itemAnalysisList.length === 0 && (
-                                        <tr>
-                                            <td colSpan={8} className="text-center py-8 text-slate-400">
-                                                Belum ada soal di bank soal Supabase.
-                                            </td>
-                                        </tr>
-                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -1432,16 +1648,15 @@ export default function AdminAnalyticsTkaSmpPage() {
             </div>
 
             {/* ======================================================================== */}
-            {/* MODAL CETAK RAPOR INDIVIDUAL ANAK + PERINGKAT SEKOLAH + GRAFIK DIAGNOSTIK */}
+            {/* MODAL CETAK RAPOR INDIVIDUAL ANAK MULTI-HALAMAN (SHTKA + GRAFIK + BUTIR) */}
             {/* ======================================================================== */}
             {selectedStudentForReport && selectedStudentDiagnostic && (() => {
                 const stu = selectedStudentForReport;
                 const diag = selectedStudentDiagnostic;
                 const bindoScore = Number(stu.bindoScore ?? stu.score ?? 0);
                 const mtkScore = Number(stu.mtkScore ?? stu.score ?? 0);
-                const bindoCat = getKepmendikdasmen56Detail(bindoScore);
-                const mtkCat = getKepmendikdasmen56Detail(mtkScore);
-                const overallCat = getKepmendikdasmen56Detail(stu.score);
+                const bindoCat = getOfficialTkaCategory(bindoScore, "BINDO");
+                const mtkCat = getOfficialTkaCategory(mtkScore, "MTK");
                 const bestCat = bindoScore >= mtkScore ? bindoCat : mtkCat;
                 const cleanPhone = normalizePhoneDigits(stu.phone);
                 const voucherCode = `M18-SHTKA-${cleanPhone.slice(-4) || "2026"}-${Math.round(stu.score)}`;
@@ -1488,10 +1703,10 @@ export default function AdminAnalyticsTkaSmpPage() {
                                     </div>
                                     <div className="min-w-0">
                                         <h3 className="font-bold text-xs sm:text-sm text-slate-900 truncate">
-                                            Rapor Hasil & Diagnostik Kompetensi: {stu.name}
+                                            Rapor Lengkap & Analisis Butir Soal: {stu.name}
                                         </h3>
                                         <p className="text-[10px] text-slate-500 font-mono truncate">
-                                            {stu.school} • Rank Sekolah #{stu.schoolRankOverall} dari {stu.schoolTotalFinished} Siswa
+                                            {stu.school} • Rank Sekolah #{stu.schoolRankOverall} dari {stu.schoolTotalFinished} Siswa (2 Halaman A4)
                                         </p>
                                     </div>
                                 </div>
@@ -1503,7 +1718,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         className="px-4 py-2 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
                                     >
                                         <Printer className="w-3.5 h-3.5" />
-                                        <span>Cetak Rapor Anak (PDF/A4)</span>
+                                        <span>Cetak Rapor Lengkap (PDF/A4)</span>
                                     </button>
                                     <button
                                         type="button"
@@ -1515,312 +1730,397 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             </div>
 
-                            {/* LEMBAR CETAK RAPOR A4 */}
-                            <div className="p-4 sm:p-8 overflow-y-auto flex-1 text-slate-900 space-y-4 print-sheet">
-                                {/* Kop Surat */}
-                                <div className="pb-1">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 flex items-center justify-center">
-                                            <img src="/logo-timsim.jpg" alt="Logo" className="w-full h-full object-contain" />
+                            {/* LEMBAR CETAK RAPOR MULTI-HALAMAN A4 */}
+                            <div className="p-4 sm:p-8 overflow-y-auto flex-1 text-slate-900 space-y-5 print-sheet">
+                                {/* ==================== HALAMAN 1: SHTKA, PERINGKAT & GRAFIK ==================== */}
+                                <div className="space-y-4">
+                                    {/* Kop Surat Resmi */}
+                                    <div className="pb-1">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="w-16 h-16 shrink-0 flex items-center justify-center">
+                                                <img src="/logo-timsim.jpg" alt="Logo SMA Muhammadiyah 18" className="w-full h-full object-contain" />
+                                            </div>
+                                            <div className="flex-1 text-center space-y-0.5 font-sans">
+                                                <h3 className="text-[10px] font-bold uppercase text-slate-800">
+                                                    MAJELIS PENDIDIKAN DASAR DAN MENENGAH DAN PENDIDIKAN NONFORMAL
+                                                </h3>
+                                                <h4 className="text-[9.5px] font-bold uppercase text-slate-700">
+                                                    PIMPINAN DAERAH MUHAMMADIYAH JAKARTA SELATAN
+                                                </h4>
+                                                <h1 className="text-base sm:text-xl font-black uppercase text-[#1e3a8a]">
+                                                    SMA MUHAMMADIYAH 18 JAKARTA
+                                                </h1>
+                                                <p className="text-[9.5px] text-slate-600">
+                                                    Jl. Panjang No.19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp. (021) 7235544
+                                                </p>
+                                            </div>
+                                            <div className="w-16 shrink-0" />
                                         </div>
-                                        <div className="flex-1 text-center space-y-0.5">
-                                            <h3 className="text-[10px] font-bold uppercase font-sans">
-                                                MAJELIS PENDIDIKAN DASAR DAN MENENGAH PDM JAKARTA SELATAN
-                                            </h3>
-                                            <h1 className="text-base sm:text-xl font-black uppercase font-sans">
-                                                SMA MUHAMMADIYAH 18 JAKARTA
-                                            </h1>
-                                            <p className="text-[9.5px] text-slate-600 font-sans">
-                                                Jl. Panjang No.19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp. (021) 7235544
-                                            </p>
-                                        </div>
-                                        <div className="w-14 shrink-0" />
+                                        <div className="w-full kop-divider-thick mt-1.5" />
+                                        <div className="w-full kop-divider-thin mt-[2px]" />
                                     </div>
-                                    <div className="w-full kop-divider-thick mt-1.5" />
-                                    <div className="w-full kop-divider-thin mt-[2px]" />
-                                </div>
 
-                                {/* Judul Rapor */}
-                                <div className="text-center space-y-0.5">
-                                    <h2 className="text-xs sm:text-sm font-black underline uppercase">
-                                        LAPORAN HASIL & DIAGNOSTIK KOMPETENSI TRYOUT TKA SMP/MTs (SHTKA)
-                                    </h2>
-                                    <p className="text-[10.5px] font-mono text-slate-700">
-                                        Standar Kepmendikdasmen No. 56 Tahun 2026 & Perkaban No. 047/H/AN/2025
-                                    </p>
-                                </div>
+                                    {/* Judul Rapor */}
+                                    <div className="text-center space-y-0.5">
+                                        <h2 className="text-xs sm:text-sm font-black underline uppercase">
+                                            SERTIFIKAT HASIL & LAPORAN DIAGNOSTIK TRYOUT TKA SMP/MTs (SHTKA)
+                                        </h2>
+                                        <p className="text-[10px] font-mono text-slate-700">
+                                            Skala 0,00 – 100,00 Berbobot Tingkat Kesulitan Soal (Tanpa Batas Kelulusan Sekolah)
+                                        </p>
+                                    </div>
 
-                                {/* Identitas Siswa */}
-                                <div className="border border-slate-900 p-2.5 bg-slate-50/50 text-[11px]">
-                                    <table className="w-full">
-                                        <tbody>
+                                    {/* Identitas Siswa */}
+                                    <div className="border border-slate-900 p-2.5 bg-slate-50/50 text-[11px]">
+                                        <table className="w-full">
+                                            <tbody>
+                                                <tr>
+                                                    <td className="py-0.5 w-[18%] text-slate-600">Nama Peserta</td>
+                                                    <td className="py-0.5 w-[37%] font-bold">: {stu.name}</td>
+                                                    <td className="py-0.5 w-[20%] text-slate-600">No. WhatsApp</td>
+                                                    <td className="py-0.5 font-mono font-bold">: {stu.phone}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="py-0.5 text-slate-600">Asal Sekolah</td>
+                                                    <td className="py-0.5 font-bold">: {stu.school} (Kelas {stu.grade})</td>
+                                                    <td className="py-0.5 text-slate-600">Kode Voucher</td>
+                                                    <td className="py-0.5 font-mono font-black text-blue-900">: {voucherCode}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Tabel Hasil Mata Uji & Peringkat Internal Sekolah */}
+                                    <table className="w-full text-[11px] border border-slate-900 text-left border-collapse">
+                                        <thead className="bg-slate-100 border-b border-slate-900 font-mono text-[9.5px]">
                                             <tr>
-                                                <td className="py-0.5 w-[18%] text-slate-600">Nama Peserta</td>
-                                                <td className="py-0.5 w-[37%] font-bold">: {stu.name}</td>
-                                                <td className="py-0.5 w-[20%] text-slate-600">No. WhatsApp</td>
-                                                <td className="py-0.5 font-mono font-bold">: {stu.phone}</td>
+                                                <th className="p-2 border-r border-slate-900">MATA UJI TKA SMP/MTs</th>
+                                                <th className="p-2 border-r border-slate-900 text-center w-24">NILAI ANAK</th>
+                                                <th className="p-2 border-r border-slate-900 text-center w-24">RERATA SMP</th>
+                                                <th className="p-2 border-r border-slate-900 text-center w-28">KATEGORI</th>
+                                                <th className="p-2 text-center w-36">PERINGKAT DI SEKOLAH</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-300 font-medium">
+                                            <tr>
+                                                <td className="p-2 border-r border-slate-300">
+                                                    <div className="font-bold">1. Bahasa Indonesia (BINDO)</div>
+                                                    <div className="text-[9px] text-slate-600">Pemahaman Tekstual, Inferensial & Evaluasi/Apresiasi</div>
+                                                </td>
+                                                <td className="p-2 text-center font-mono font-black text-blue-900 border-r border-slate-300">
+                                                    {formatScoreID(bindoScore)}
+                                                </td>
+                                                <td className="p-2 text-center font-mono text-slate-600 border-r border-slate-300">
+                                                    {formatScoreID(diag.schoolAvgBindo)}
+                                                </td>
+                                                <td className="p-2 text-center font-bold border-r border-slate-300">{bindoCat.level}</td>
+                                                <td className="p-2 text-center font-mono font-black text-blue-950">
+                                                    Rank #{stu.schoolRankBindo} dari {stu.schoolTotalFinished}
+                                                </td>
                                             </tr>
                                             <tr>
-                                                <td className="py-0.5 text-slate-600">Asal Sekolah</td>
-                                                <td className="py-0.5 font-bold">: {stu.school} (Kelas {stu.grade})</td>
-                                                <td className="py-0.5 text-slate-600">Kode Voucher</td>
-                                                <td className="py-0.5 font-mono font-black text-blue-900">: {voucherCode}</td>
+                                                <td className="p-2 border-r border-slate-300">
+                                                    <div className="font-bold">2. Matematika (MTK)</div>
+                                                    <div className="text-[9px] text-slate-600">Bilangan, Aljabar, Geometri & Pengukuran, Data & Peluang</div>
+                                                </td>
+                                                <td className="p-2 text-center font-mono font-black text-emerald-800 border-r border-slate-300">
+                                                    {formatScoreID(mtkScore)}
+                                                </td>
+                                                <td className="p-2 text-center font-mono text-slate-600 border-r border-slate-300">
+                                                    {formatScoreID(diag.schoolAvgMtk)}
+                                                </td>
+                                                <td className="p-2 text-center font-bold border-r border-slate-300">{mtkCat.level}</td>
+                                                <td className="p-2 text-center font-mono font-black text-emerald-950">
+                                                    Rank #{stu.schoolRankMtk} dari {stu.schoolTotalFinished}
+                                                </td>
+                                            </tr>
+                                            <tr className="bg-slate-50 font-bold">
+                                                <td className="p-2 border-r border-slate-300">
+                                                    RATA-RATA GABUNGAN (INDEKS PEMERINGKATAN)
+                                                </td>
+                                                <td className="p-2 text-center font-mono font-black text-sm text-slate-900 border-r border-slate-300">
+                                                    {formatScoreID(stu.score)}
+                                                </td>
+                                                <td className="p-2 text-center font-mono text-slate-700 border-r border-slate-300">
+                                                    {formatScoreID(diag.schoolAvgOverall)}
+                                                </td>
+                                                <td className="p-2 text-center text-[9.5px] text-slate-500 border-r border-slate-300">Per Mata Uji</td>
+                                                <td className="p-2 text-center font-mono font-black text-amber-900">
+                                                    Rank #{stu.schoolRankOverall} dari {stu.schoolTotalFinished}
+                                                </td>
                                             </tr>
                                         </tbody>
                                     </table>
-                                </div>
 
-                                {/* Tabel Hasil Mata Uji & Peringkat Internal Sekolah */}
-                                <table className="w-full text-[11px] border border-slate-900 text-left border-collapse">
-                                    <thead className="bg-slate-100 border-b border-slate-900 font-mono text-[9.5px]">
-                                        <tr>
-                                            <th className="p-2 border-r border-slate-900">MATA UJI / KOMPONEN</th>
-                                            <th className="p-2 border-r border-slate-900 text-center w-24">NILAI ANAK</th>
-                                            <th className="p-2 border-r border-slate-900 text-center w-24">RERATA SEKOLAH</th>
-                                            <th className="p-2 border-r border-slate-900 text-center w-28">KATEGORI</th>
-                                            <th className="p-2 text-center w-36">PERINGKAT DI SEKOLAH</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-300 font-medium">
-                                        <tr>
-                                            <td className="p-2 border-r border-slate-300">
-                                                <div className="font-bold">1. Bahasa Indonesia (BINDO)</div>
-                                                <div className="text-[9.5px] text-slate-600">Literasi Membaca Wacana Informasi & Sastra</div>
-                                            </td>
-                                            <td className="p-2 text-center font-mono font-black text-blue-900 border-r border-slate-300">
-                                                {formatScoreID(bindoScore)}
-                                            </td>
-                                            <td className="p-2 text-center font-mono text-slate-600 border-r border-slate-300">
-                                                {formatScoreID(diag.schoolAvgBindo)}
-                                            </td>
-                                            <td className="p-2 text-center font-bold border-r border-slate-300">{bindoCat.level}</td>
-                                            <td className="p-2 text-center font-mono font-black text-blue-950">
-                                                Peringkat #{stu.schoolRankBindo} dari {stu.schoolTotalFinished}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border-r border-slate-300">
-                                                <div className="font-bold">2. Matematika (MTK)</div>
-                                                <div className="text-[9.5px] text-slate-600">Numerasi, Aljabar, Geometri & Data Peluang</div>
-                                            </td>
-                                            <td className="p-2 text-center font-mono font-black text-emerald-800 border-r border-slate-300">
-                                                {formatScoreID(mtkScore)}
-                                            </td>
-                                            <td className="p-2 text-center font-mono text-slate-600 border-r border-slate-300">
-                                                {formatScoreID(diag.schoolAvgMtk)}
-                                            </td>
-                                            <td className="p-2 text-center font-bold border-r border-slate-300">{mtkCat.level}</td>
-                                            <td className="p-2 text-center font-mono font-black text-emerald-950">
-                                                Peringkat #{stu.schoolRankMtk} dari {stu.schoolTotalFinished}
-                                            </td>
-                                        </tr>
-                                        <tr className="bg-slate-50 font-bold">
-                                            <td className="p-2 border-r border-slate-300">
-                                                RATA-RATA GABUNGAN (INDEKS TKA SMP)
-                                            </td>
-                                            <td className="p-2 text-center font-mono font-black text-sm text-slate-900 border-r border-slate-300">
-                                                {formatScoreID(stu.score)}
-                                            </td>
-                                            <td className="p-2 text-center font-mono text-slate-700 border-r border-slate-300">
-                                                {formatScoreID(diag.schoolAvgOverall)}
-                                            </td>
-                                            <td className="p-2 text-center border-r border-slate-300">{overallCat.level}</td>
-                                            <td className="p-2 text-center font-mono font-black text-amber-900">
-                                                Peringkat #{stu.schoolRankOverall} dari {stu.schoolTotalFinished}
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-
-                                {/* GRAFIK DIAGNOSTIK: KIRI = RADAR HEKSAGONAL (6 KISI-KISI), KANAN = BAR CHART PERSENTASE PER KISI-KISI */}
-                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border border-slate-300 rounded-2xl p-3 bg-slate-50/40">
-                                    {/* KIRI: GRAFIK HEKSAGONAL 6 KOMPETENSI */}
-                                    <div className="md:col-span-5 bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5">
-                                        <div className="text-center">
-                                            <div className="text-[9.5px] font-mono font-black uppercase text-slate-900">
-                                                GRAFIK HEKSAGONAL TREN KOMPETENSI
+                                    {/* GRAFIK DIAGNOSTIK: RADAR HEKSAGONAL + GRAFIK BATANG PER KISI-KISI */}
+                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border border-slate-300 rounded-2xl p-3 bg-slate-50/40">
+                                        {/* KIRI: GRAFIK HEKSAGONAL 6 KOMPETENSI */}
+                                        <div className="md:col-span-5 bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between space-y-1">
+                                            <div className="text-center">
+                                                <div className="text-[9.5px] font-mono font-black uppercase text-slate-900">
+                                                    GRAFIK HEKSAGONAL TREN KOMPETENSI
+                                                </div>
+                                                <div className="text-[8.5px] text-slate-500">
+                                                    Biru = Skor Anak • Oranye = Rerata Sekolah
+                                                </div>
                                             </div>
-                                            <div className="text-[8.5px] text-slate-500">
-                                                Biru = Capaian Anak (%) • Oranye = Rerata Sekolah
+
+                                            <div className="flex justify-center">
+                                                <svg viewBox="0 0 270 245" className="w-full max-w-[230px] h-auto overflow-visible">
+                                                    {[25, 50, 75, 100].map((ring) => {
+                                                        const pts = axes
+                                                            .map((_, i) => {
+                                                                const p = getHexPoint(i, ring);
+                                                                return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+                                                            })
+                                                            .join(" ");
+                                                        const top = getHexPoint(0, ring);
+                                                        return (
+                                                            <g key={ring}>
+                                                                <polygon points={pts} fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
+                                                                <text x={top.x + 3} y={top.y + 3} className="fill-slate-400 font-mono text-[7px]">
+                                                                    {ring}
+                                                                </text>
+                                                            </g>
+                                                        );
+                                                    })}
+
+                                                    {axes.map((ax, i) => {
+                                                        const outer = getHexPoint(i, 100);
+                                                        return (
+                                                            <g key={ax.key}>
+                                                                <line x1={cx} y1={cy} x2={outer.x} y2={outer.y} stroke="#cbd5e1" strokeWidth="0.8" />
+                                                                <text
+                                                                    x={outer.lx}
+                                                                    y={outer.ly - 4}
+                                                                    textAnchor="middle"
+                                                                    dominantBaseline="middle"
+                                                                    className="fill-slate-800 font-mono text-[8.5px] font-bold"
+                                                                >
+                                                                    {ax.short}
+                                                                </text>
+                                                                <text
+                                                                    x={outer.lx}
+                                                                    y={outer.ly + 6}
+                                                                    textAnchor="middle"
+                                                                    dominantBaseline="middle"
+                                                                    className="fill-blue-800 font-mono text-[8px] font-black"
+                                                                >
+                                                                    ({formatScoreID(ax.studentPct)})
+                                                                </text>
+                                                            </g>
+                                                        );
+                                                    })}
+
+                                                    <polygon
+                                                        points={schoolHexPoly}
+                                                        fill="rgba(245, 158, 11, 0.08)"
+                                                        stroke="#d97706"
+                                                        strokeWidth="1.2"
+                                                        strokeDasharray="3 2"
+                                                    />
+                                                    <polygon
+                                                        points={studentHexPoly}
+                                                        fill="rgba(29, 78, 216, 0.25)"
+                                                        stroke="#1d4ed8"
+                                                        strokeWidth="2"
+                                                    />
+                                                    {axes.map((ax, i) => {
+                                                        const pt = getHexPoint(i, ax.studentPct);
+                                                        return (
+                                                            <circle
+                                                                key={ax.key}
+                                                                cx={pt.x}
+                                                                cy={pt.y}
+                                                                r="3"
+                                                                fill="#1e3a8a"
+                                                                stroke="#ffffff"
+                                                                strokeWidth="1"
+                                                            />
+                                                        );
+                                                    })}
+                                                </svg>
+                                            </div>
+
+                                            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[9px] text-slate-700 leading-snug">
+                                                <div>
+                                                    • Keunggulan Utama: <strong>{diag.strongestAxis?.key} ({formatScoreID(diag.strongestAxis?.studentPct || 0)})</strong>
+                                                </div>
+                                                <div>
+                                                    • Prioritas Perbaikan: <strong>{diag.weakestAxis?.key} ({formatScoreID(diag.weakestAxis?.studentPct || 0)})</strong>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div className="flex justify-center">
-                                            <svg viewBox="0 0 270 245" className="w-full max-w-[235px] h-auto overflow-visible">
-                                                {[25, 50, 75, 100].map((ring) => {
-                                                    const pts = axes
-                                                        .map((_, i) => {
-                                                            const p = getHexPoint(i, ring);
-                                                            return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
-                                                        })
-                                                        .join(" ");
-                                                    const top = getHexPoint(0, ring);
-                                                    return (
-                                                        <g key={ring}>
-                                                            <polygon points={pts} fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
-                                                            <text x={top.x + 3} y={top.y + 3} className="fill-slate-400 font-mono text-[7px]">
-                                                                {ring}%
-                                                            </text>
-                                                        </g>
-                                                    );
-                                                })}
-
-                                                {axes.map((ax, i) => {
-                                                    const outer = getHexPoint(i, 100);
-                                                    return (
-                                                        <g key={ax.key}>
-                                                            <line x1={cx} y1={cy} x2={outer.x} y2={outer.y} stroke="#cbd5e1" strokeWidth="0.8" />
-                                                            <text
-                                                                x={outer.lx}
-                                                                y={outer.ly - 4}
-                                                                textAnchor="middle"
-                                                                dominantBaseline="middle"
-                                                                className="fill-slate-800 font-mono text-[8.5px] font-bold"
-                                                            >
-                                                                {ax.short}
-                                                            </text>
-                                                            <text
-                                                                x={outer.lx}
-                                                                y={outer.ly + 6}
-                                                                textAnchor="middle"
-                                                                dominantBaseline="middle"
-                                                                className="fill-blue-800 font-mono text-[8px] font-black"
-                                                            >
-                                                                ({ax.studentPct}%)
-                                                            </text>
-                                                        </g>
-                                                    );
-                                                })}
-
-                                                <polygon
-                                                    points={schoolHexPoly}
-                                                    fill="rgba(245, 158, 11, 0.08)"
-                                                    stroke="#d97706"
-                                                    strokeWidth="1.2"
-                                                    strokeDasharray="3 2"
-                                                />
-                                                <polygon
-                                                    points={studentHexPoly}
-                                                    fill="rgba(29, 78, 216, 0.25)"
-                                                    stroke="#1d4ed8"
-                                                    strokeWidth="2"
-                                                />
-                                                {axes.map((ax, i) => {
-                                                    const pt = getHexPoint(i, ax.studentPct);
-                                                    return (
-                                                        <circle
-                                                            key={ax.key}
-                                                            cx={pt.x}
-                                                            cy={pt.y}
-                                                            r="3"
-                                                            fill="#1e3a8a"
-                                                            stroke="#ffffff"
-                                                            strokeWidth="1"
-                                                        />
-                                                    );
-                                                })}
-                                            </svg>
-                                        </div>
-
-                                        <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[9px] text-slate-700 leading-snug">
-                                            <div>
-                                                • Potensi Tertinggi: <strong>{diag.strongestAxis?.key} ({diag.strongestAxis?.studentPct}%)</strong>
+                                        {/* KANAN: GRAFIK BATANG SKOR & PERSENTASE PER KISI-KISI SOAL */}
+                                        <div className="md:col-span-7 bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between space-y-2">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                                <span className="text-[9.5px] font-mono font-black uppercase text-slate-900">
+                                                    GRAFIK CAPAIAN PER KISI-KISI & SUB-ELEMEN SOAL
+                                                </span>
+                                                <span className="text-[8.5px] font-mono text-slate-400">
+                                                    Skala 0,00 – 100,00
+                                                </span>
                                             </div>
-                                            <div>
-                                                • Prioritas Penguatan: <strong>{diag.weakestAxis?.key} ({diag.weakestAxis?.studentPct}%)</strong>
+
+                                            <div className="space-y-2 flex-1 justify-center flex flex-col">
+                                                {diag.sevenCompetencyStats.map((comp) => {
+                                                    const isMtk = comp.subject === "MTK";
+                                                    const cat = getOfficialTkaCategory(comp.pct, isMtk ? "MTK" : "BINDO");
+
+                                                    return (
+                                                        <div key={comp.code} className="space-y-0.5 text-[9.5px]">
+                                                            <div className="flex items-center justify-between font-mono">
+                                                                <span className="font-bold text-slate-800 truncate pr-2">
+                                                                    <span
+                                                                        className={`inline-block px-1 rounded text-[8px] mr-1 ${isMtk
+                                                                            ? "bg-emerald-100 text-emerald-900"
+                                                                            : "bg-blue-100 text-blue-900"
+                                                                            }`}
+                                                                    >
+                                                                        {comp.subject}
+                                                                    </span>
+                                                                    {comp.code}
+                                                                </span>
+                                                                <span className="font-black text-slate-900 shrink-0">
+                                                                    {comp.rawCorrect}/{comp.totalQ} Soal •{" "}
+                                                                    <span className="text-blue-900">{formatScoreID(comp.pct)}</span> ({cat.level})
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+                                                                <div
+                                                                    className={`h-full rounded-full ${cat.barColor}`}
+                                                                    style={{ width: `${Math.max(3, Math.min(100, comp.pct))}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="text-[8.5px] text-slate-500 font-mono border-t border-slate-100 pt-1 leading-snug">
+                                                *Setiap kisi-kisi dihitung terpisah berdasarkan bobot kesulitan butir soal pada elemen terkait.
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* KANAN: GRAFIK BATANG PERSENTASE PER KISI-KISI SOAL */}
-                                    <div className="md:col-span-7 bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between space-y-2">
-                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                                            <span className="text-[9.5px] font-mono font-black uppercase text-slate-900">
-                                                GRAFIK PERSENTASE CAPAIAN PER KISI-KISI SOAL
-                                            </span>
-                                            <span className="text-[8.5px] font-mono text-slate-400">
-                                                {diag.hasAnswerData ? "Berbasis Butir Soal" : "Estimasi Skor Subtes"}
+                                    {/* Rekomendasi PPDB & Catatan Resmi Cut-Off */}
+                                    <div className="p-2.5 border border-slate-900 bg-white text-[10px] space-y-1">
+                                        <div className="font-bold font-mono text-[9px] uppercase">
+                                            REKOMENDASI JALUR PRESTASI PPDB SMA MUHAMMADIYAH 18 JAKARTA:
+                                        </div>
+                                        <div className="font-bold text-blue-950 text-[10.5px]">
+                                            {bestCat.voucher} (Kode: <span className="font-mono">{voucherCode}</span>)
+                                        </div>
+                                        <p className="text-[8.5px] text-slate-600 leading-snug">
+                                            *Acuan Penilaian TKA SMP (Skala 0,00–100,00 berbobot tingkat kesulitan soal; tanpa batas kelulusan):{" "}
+                                            <strong>Bahasa Indonesia:</strong> Istimewa (≥95,00), Baik (76,67–94,99), Memadai (50,00–76,66), Kurang (≤50,00) |{" "}
+                                            <strong>Matematika:</strong> Istimewa (≥95,00), Baik (56,67–94,99), Memadai (33,33–56,66), Kurang (≤33,33).
+                                        </p>
+                                    </div>
+
+                                    {/* Tanda Tangan Kepala Sekolah (Otomatis dari Gambar Upload) */}
+                                    <div className="pt-2 flex justify-end text-[10.5px] border-t border-slate-300 font-sans">
+                                        <div className="w-64 text-center">
+                                            <p>Jakarta, {new Date().toLocaleDateString("id-ID", { dateStyle: "long" })}</p>
+                                            <p className="font-semibold">Kepala SMA Muhammadiyah 18 Jakarta</p>
+                                            <div className="h-14 flex items-center justify-center my-0.5">
+                                                {officials.kepsekSignatureUrl && (
+                                                    <img
+                                                        src={officials.kepsekSignatureUrl}
+                                                        alt="TTD Kepala Sekolah"
+                                                        className="max-h-14 object-contain"
+                                                    />
+                                                )}
+                                            </div>
+                                            <p className="font-bold underline">{officials.kepalaSekolahNama}</p>
+                                            <p className="text-[9px] font-mono">NBM. {officials.kepalaSekolahNbm}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* ==================== HALAMAN 2+: LAMPIRAN ANALISIS BUTIR SOAL ANAK ==================== */}
+                                {diag.studentItemRows.length > 0 && (
+                                    <div className="pt-6 border-t-2 border-dashed border-slate-300 print:border-none print:pt-0 page-break-before space-y-3">
+                                        <div className="flex items-center justify-between border-b-2 border-slate-900 pb-2">
+                                            <div>
+                                                <h3 className="text-xs sm:text-sm font-black uppercase text-slate-900">
+                                                    LAMPIRAN DIAGNOSTIK RINCIAN BUTIR SOAL PESERTA
+                                                </h3>
+                                                <p className="text-[10px] font-mono text-slate-600">
+                                                    Peserta: <strong>{stu.name}</strong> ({stu.school}) • Pemetaan Jawaban per Kisi-Kisi
+                                                </p>
+                                            </div>
+                                            <span className="text-[9.5px] font-mono font-bold px-2.5 py-1 bg-slate-100 border border-slate-300 rounded">
+                                                Total {diag.studentItemRows.length} Butir
                                             </span>
                                         </div>
 
-                                        <div className="space-y-2 flex-1 justify-center flex flex-col">
-                                            {diag.sevenCompetencyStats.map((comp) => {
-                                                const isMtk = comp.subject === "MTK";
-                                                const barColor =
-                                                    comp.pct >= 76.67
-                                                        ? "bg-emerald-600"
-                                                        : comp.pct >= 50
-                                                            ? isMtk
-                                                                ? "bg-teal-600"
-                                                                : "bg-blue-600"
-                                                            : "bg-rose-500";
-
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {(["BINDO", "MTK"] as const).map((subCode) => {
+                                                const rows = diag.studentItemRows.filter((r) => r.subtes_code === subCode);
                                                 return (
-                                                    <div key={comp.code} className="space-y-0.5 text-[9.5px]">
-                                                        <div className="flex items-center justify-between font-mono">
-                                                            <span className="font-bold text-slate-800 truncate pr-2">
-                                                                <span
-                                                                    className={`inline-block px-1 rounded text-[8px] mr-1 ${isMtk
-                                                                        ? "bg-emerald-100 text-emerald-900"
-                                                                        : "bg-blue-100 text-blue-900"
-                                                                        }`}
-                                                                >
-                                                                    {comp.subject}
-                                                                </span>
-                                                                {comp.code}
+                                                    <div key={subCode} className="border border-slate-900 overflow-hidden">
+                                                        <div className="bg-slate-100 border-b border-slate-900 px-2.5 py-1.5 font-mono font-black text-[10px] uppercase flex justify-between">
+                                                            <span>
+                                                                {subCode === "BINDO" ? "1. BAHASA INDONESIA" : "2. MATEMATIKA"} ({rows.length} Soal)
                                                             </span>
-                                                            <span className="font-black text-slate-900 shrink-0">
-                                                                {diag.hasAnswerData && comp.totalQ > 0
-                                                                    ? `${comp.correctEquivalent}/${comp.totalQ} (${comp.pct}%)`
-                                                                    : `${comp.pct}%`}
+                                                            <span>
+                                                                Benar: {rows.filter((r) => r.status === "BENAR").length} / {rows.length}
                                                             </span>
                                                         </div>
-                                                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
-                                                            <div
-                                                                className={`h-full rounded-full ${barColor}`}
-                                                                style={{ width: `${Math.max(4, Math.min(100, comp.pct))}%` }}
-                                                            />
-                                                        </div>
+                                                        <table className="w-full text-[9px] border-collapse">
+                                                            <thead className="bg-slate-50 border-b border-slate-400 font-mono">
+                                                                <tr>
+                                                                    <th className="p-1 border-r border-slate-300 text-center w-8">No</th>
+                                                                    <th className="p-1 border-r border-slate-300 text-left">Kisi-Kisi / Materi</th>
+                                                                    <th className="p-1 border-r border-slate-300 text-center w-12">Jwb</th>
+                                                                    <th className="p-1 border-r border-slate-300 text-center w-12">Kunci</th>
+                                                                    <th className="p-1 text-center w-16">Status</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-200">
+                                                                {rows.map((r) => (
+                                                                    <tr key={r.id}>
+                                                                        <td className="p-1 text-center font-mono font-bold border-r border-slate-200">
+                                                                            {r.no_soal}
+                                                                        </td>
+                                                                        <td className="p-1 border-r border-slate-200 truncate max-w-[140px]">
+                                                                            {r.element}
+                                                                        </td>
+                                                                        <td className="p-1 text-center font-mono font-bold border-r border-slate-200">
+                                                                            {r.studentAnsLabel}
+                                                                        </td>
+                                                                        <td className="p-1 text-center font-mono font-bold text-emerald-800 border-r border-slate-200">
+                                                                            {r.keyLabel}
+                                                                        </td>
+                                                                        <td className="p-1 text-center font-mono font-bold">
+                                                                            {r.status === "BENAR" ? (
+                                                                                <span className="text-emerald-700 inline-flex items-center gap-0.5">
+                                                                                    <CheckCircle2 className="w-2.5 h-2.5" /> Benar
+                                                                                </span>
+                                                                            ) : r.status === "PARSIAL" ? (
+                                                                                <span className="text-amber-700">Sebagian</span>
+                                                                            ) : r.status === "KOSONG" ? (
+                                                                                <span className="text-slate-400 inline-flex items-center gap-0.5">
+                                                                                    <MinusCircle className="w-2.5 h-2.5" /> Kosong
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-rose-700 inline-flex items-center gap-0.5">
+                                                                                    <XCircle className="w-2.5 h-2.5" /> Salah
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
                                                     </div>
                                                 );
                                             })}
                                         </div>
-
-                                        <div className="text-[8.5px] text-slate-500 font-mono border-t border-slate-100 pt-1">
-                                            *Keterangan warna batang: Hijau (≥76,67% Istimewa), Biru/Teal (50–76,66% Memadai), Merah (≤50% Kurang).
-                                        </div>
                                     </div>
-                                </div>
-
-                                {/* Rekomendasi Jalur Prestasi PPDB */}
-                                <div className="p-2.5 border border-slate-900 bg-white text-[10px] space-y-1">
-                                    <div className="font-bold font-mono text-[9.5px] uppercase">
-                                        REKOMENDASI JALUR PRESTASI PPDB SMA MUHAMMADIYAH 18 JAKARTA:
-                                    </div>
-                                    <p className="text-[9px] text-slate-600 leading-snug">
-                                        *Acuan Resmi TKA SMP (Skala 0,00–100,00 berbobot tingkat kesulitan soal; tanpa batas kelulusan sekolah):{" "}
-                                        <strong>Bahasa Indonesia:</strong> Istimewa (≥95,00), Baik (76,67–94,99), Memadai (50,00–76,66), Kurang (≤50,00) |{" "}
-                                        <strong>Matematika:</strong> Istimewa (≥95,00), Baik (56,67–94,99), Memadai (33,33–56,66), Kurang (≤33,33).
-                                    </p>
-                                </div>
-
-                                {/* Tanda Tangan Pejabat */}
-                                <div className="pt-3 grid grid-cols-2 text-[11px] text-center border-t border-slate-300">
-                                    <div>
-                                        <p>Mengetahui,</p>
-                                        <p className="font-semibold">Kepala SMA Muhammadiyah 18 Jakarta</p>
-                                        <div className="h-12" />
-                                        <p className="font-bold underline">{officials.kepalaSekolahNama}</p>
-                                        <p className="text-[9.5px] font-mono">NBM. {officials.kepalaSekolahNbm}</p>
-                                    </div>
-                                    <div>
-                                        <p>Jakarta, {new Date().toLocaleDateString("id-ID", { dateStyle: "long" })}</p>
-                                        <p className="font-semibold">{officials.koordinatorJabatan}</p>
-                                        <div className="h-12" />
-                                        <p className="font-bold underline">{officials.koordinatorNama}</p>
-                                        <p className="text-[9.5px] font-mono">NBM/NIP. {officials.koordinatorNbm}</p>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     </div>

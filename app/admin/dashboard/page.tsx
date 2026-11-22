@@ -27,10 +27,17 @@ import {
     XCircle,
     MinusCircle,
     FolderArchive,
-    ListOrdered
+    ListOrdered,
+    FileSpreadsheet,
+    FileText
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { generateSchoolReportsZip, ZipStudentPayload } from "@/lib/exportSchoolZip";
+import {
+    generateSchoolReportsZip,
+    downloadOfficialRankingPdf,
+    exportRankingToExcelXlsx,
+    ZipStudentPayload
+} from "@/lib/exportSchoolZip";
 
 export interface TkaStudentResult {
     phone: string;
@@ -136,7 +143,6 @@ function normalizePhoneDigits(raw: string): string {
     return digits;
 }
 
-// Normalisasi nama sekolah agar singkatan seperti TANGSEL menyatu dengan TANGERANG SELATAN
 function normalizeSchoolName(raw: string): string {
     return String(raw || "SMP / MTs")
         .toUpperCase()
@@ -150,7 +156,6 @@ function normalizeSchoolName(raw: string): string {
         .trim();
 }
 
-// Rapikan tampilan simbol Matematika LaTeX mentah pada cuplikan tabel
 function formatMathTextPreview(raw: string): string {
     const supMap: Record<string, string> = {
         "0": "⁰",
@@ -370,9 +375,9 @@ export default function AdminAnalyticsTkaSmpPage() {
 
     const [selectedStudentForReport, setSelectedStudentForReport] = useState<TkaStudentResult | null>(null);
 
-    const [isGeneratingZip, setIsGeneratingZip] = useState(false);
-    const [zipTargetSchool, setZipTargetSchool] = useState<string>("");
-    const [zipProgressText, setZipProgressText] = useState("");
+    const [isBusyExport, setIsBusyExport] = useState(false);
+    const [busyScopeKey, setBusyScopeKey] = useState<string>("");
+    const [busyStatusText, setBusyStatusText] = useState("");
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -802,7 +807,6 @@ export default function AdminAnalyticsTkaSmpPage() {
         });
     }, [rankedStudentsWithSchoolPos, selectedSchool, searchQuery]);
 
-    // Kelompokkan siswa berdasarkan sekolah (urut sesuai peringkat internal sekolah)
     const groupedBySchoolList = useMemo(() => {
         const groupsMap: Record<string, TkaStudentResult[]> = {};
         filteredStudents.forEach((s) => {
@@ -871,6 +875,221 @@ export default function AdminAnalyticsTkaSmpPage() {
             integritasRate
         };
     }, [students, selectedSchool]);
+
+    // Helper pembangun payload lengkap untuk ekspor PDF Tabel Ranking, Excel (.xlsx), dan Paket .ZIP
+    const buildExportPayloads = (targetStudents: TkaStudentResult[]): ZipStudentPayload[] => {
+        const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
+        const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
+
+        const schoolAvgLookup: Record<string, { b: number; m: number; o: number }> = {};
+        schoolRankings.forEach((sr) => {
+            schoolAvgLookup[sr.school] = {
+                b: sr.avgBindo,
+                m: sr.avgMtk,
+                o: sr.avgOverall
+            };
+        });
+
+        return targetStudents.map((stu) => {
+            const matchedResult = findMatchingResultRow(rawResultsList, stu.phone, stu.name);
+            const studentAnswers = parseAnswersJson(matchedResult?.answers);
+            const hasAnswerData = Object.keys(studentAnswers).length > 0 && questionsBank.length > 0;
+
+            const schAvgs = schoolAvgLookup[stu.school] || {
+                b: stu.bindoScore,
+                m: stu.mtkScore,
+                o: stu.score
+            };
+
+            const buildItems = (qList: any[], subCode: "BINDO" | "MTK", globalOffset: number) =>
+                qList.map((q, idx) => {
+                    const uAns = resolveStudentAnswerForQuestion(q, idx, globalOffset + idx, studentAnswers);
+                    const detail = evaluateStudentItemDetail(q, uAns);
+                    return {
+                        no_soal: Number(q.no_soal) || idx + 1,
+                        subtes_code: subCode,
+                        element: mapQuestionToOfficialElement(subCode, q.materi),
+                        weight: questionWeightsMap[String(q.id)] || 1,
+                        ...detail
+                    };
+                });
+
+            const itemRows = [
+                ...buildItems(bindoQs, "BINDO", 0),
+                ...buildItems(mtkQs, "MTK", bindoQs.length)
+            ];
+
+            const sevenCompetencies = OFFICIAL_COMPETENCIES.map((comp) => {
+                const compItems = itemRows.filter((it) => it.element === comp.code);
+                let earnedW = 0,
+                    totalW = 0,
+                    rawCorrect = 0;
+                compItems.forEach((it) => {
+                    earnedW += it.fraction * it.weight;
+                    totalW += it.weight;
+                    if (it.fraction >= 0.99) rawCorrect++;
+                });
+                const pct = hasAnswerData && totalW > 0 ? Number(((earnedW / totalW) * 100).toFixed(2)) : 0;
+                const cat = getOfficialTkaCategory(pct, comp.subject === "MTK" ? "MTK" : "BINDO");
+                return {
+                    code: comp.code,
+                    subject: comp.subject,
+                    rawCorrect,
+                    totalQ: compItems.length,
+                    pct,
+                    category: cat.level
+                };
+            });
+
+            const hexagonPoints = HEXAGON_AXES.map((ax) => {
+                const matched = sevenCompetencies.filter((c) => ax.elements.includes(c.code));
+                const wSum = matched.reduce((s, c) => s + c.pct * (c.totalQ || 1), 0);
+                const wTot = matched.reduce((s, c) => s + (c.totalQ || 1), 0);
+                return {
+                    key: ax.key,
+                    short: ax.short,
+                    studentPct: wTot > 0 ? Number((wSum / wTot).toFixed(2)) : 0,
+                    schoolPct: ax.subject === "MTK" ? schAvgs.m : schAvgs.b
+                };
+            });
+
+            const sortedHex = [...hexagonPoints].sort((a, b) => b.studentPct - a.studentPct);
+            const bindoCat = getOfficialTkaCategory(stu.bindoScore, "BINDO");
+            const mtkCat = getOfficialTkaCategory(stu.mtkScore, "MTK");
+
+            return {
+                rankParallelOverall: stu.parallelRankOverall || 1,
+                rankParallelBindo: stu.parallelRankBindo || 1,
+                rankParallelMtk: stu.parallelRankMtk || 1,
+                totalParallelFinished: stu.parallelTotalFinished || targetStudents.length,
+                rankInSchool: stu.schoolRankOverall || 1,
+                totalInSchool: stu.schoolTotalFinished || 1,
+                rankBindo: stu.schoolRankBindo || 1,
+                rankMtk: stu.schoolRankMtk || 1,
+                phone: stu.phone,
+                name: stu.name,
+                school: stu.school,
+                grade: stu.grade,
+                bindoScore: stu.bindoScore,
+                mtkScore: stu.mtkScore,
+                overallScore: stu.score,
+                bindoCategory: bindoCat.level,
+                mtkCategory: mtkCat.level,
+                schoolAvgBindo: schAvgs.b,
+                schoolAvgMtk: schAvgs.m,
+                schoolAvgOverall: schAvgs.o,
+                hexagonPoints,
+                strongestAxis: `${sortedHex[0]?.key} (${formatScoreID(sortedHex[0]?.studentPct || 0)})`,
+                weakestAxis: `${sortedHex[sortedHex.length - 1]?.key} (${formatScoreID(sortedHex[sortedHex.length - 1]?.studentPct || 0)})`,
+                sevenCompetencies,
+                itemRows: itemRows.map(({ weight: _w, ...rest }) => rest)
+            };
+        });
+    };
+
+    // Export Tabel Excel Asli (.XLSX)
+    const handleExportExcelXlsx = (schoolScope?: string) => {
+        const pool = schoolScope
+            ? rankedStudentsWithSchoolPos.filter((s) => s.school === schoolScope)
+            : filteredStudents;
+
+        if (pool.length === 0) return;
+        const payloads = buildExportPayloads(pool);
+        if (schoolScope) {
+            exportRankingToExcelXlsx("SCHOOL", schoolScope, payloads);
+        } else {
+            exportRankingToExcelXlsx(
+                selectedSchool !== "ALL" ? "SCHOOL" : "PARALLEL",
+                selectedSchool !== "ALL" ? selectedSchool : "Semua_Sekolah",
+                payloads
+            );
+        }
+    };
+
+    // Unduh 1 PDF Resmi Rekap Tabel Peringkat (Per Sekolah ATAU Paralel Lintas Sekolah)
+    const handleDownloadRankingTablePdf = async (mode: "PARALLEL" | "SCHOOL", schoolName?: string) => {
+        const pool =
+            mode === "SCHOOL" && schoolName
+                ? rankedStudentsWithSchoolPos.filter((s) => s.school === schoolName)
+                : filteredStudents;
+
+        const finishedPool = pool.filter(
+            (s) => s.status.toLowerCase().includes("selesai") || s.score > 0
+        );
+        const finalPool = finishedPool.length > 0 ? finishedPool : pool;
+
+        if (finalPool.length === 0) {
+            alert("Belum ada data peserta untuk dicetak.");
+            return;
+        }
+
+        const key = mode === "SCHOOL" ? `PDF_SCH_${schoolName}` : "PDF_PARALLEL";
+        setIsBusyExport(true);
+        setBusyScopeKey(key);
+        setBusyStatusText("Menyusun PDF Tabel...");
+
+        try {
+            const payloads = buildExportPayloads(finalPool);
+            await downloadOfficialRankingPdf(
+                mode,
+                mode === "SCHOOL" && schoolName ? schoolName : "Semua Sekolah Mitra",
+                payloads,
+                officials
+            );
+        } catch (err: any) {
+            alert("Gagal membuat PDF Rekap Tabel Peringkat: " + (err?.message || "Kesalahan browser"));
+        } finally {
+            setIsBusyExport(false);
+            setBusyScopeKey("");
+            setBusyStatusText("");
+        }
+    };
+
+    // Unduh Paket .ZIP (Rapor Individual + Rekap Peringkat Sekolah)
+    const handleDownloadZipReports = async (targetSchoolName: string | "ALL_SCHOOLS") => {
+        const pool =
+            targetSchoolName === "ALL_SCHOOLS"
+                ? rankedStudentsWithSchoolPos
+                : rankedStudentsWithSchoolPos.filter((s) => s.school === targetSchoolName);
+
+        const finishedPool = pool.filter(
+            (s) => s.status.toLowerCase().includes("selesai") || s.score > 0
+        );
+
+        if (finishedPool.length === 0) {
+            alert(
+                targetSchoolName === "ALL_SCHOOLS"
+                    ? "Belum ada peserta yang menyelesaikan ujian."
+                    : `Belum ada peserta dari ${targetSchoolName} yang menyelesaikan ujian.`
+            );
+            return;
+        }
+
+        const key = targetSchoolName === "ALL_SCHOOLS" ? "ZIP_ALL" : `ZIP_${targetSchoolName}`;
+        setIsBusyExport(true);
+        setBusyScopeKey(key);
+        setBusyStatusText(`Menyiapkan 0/${finishedPool.length}...`);
+
+        try {
+            const payloads = buildExportPayloads(finishedPool);
+            const scopeLabel = targetSchoolName === "ALL_SCHOOLS" ? "Semua_Sekolah_Mitra" : targetSchoolName;
+            await generateSchoolReportsZip(
+                scopeLabel,
+                payloads,
+                officials,
+                (curr, tot, sName) => {
+                    setBusyStatusText(`Memproses ${curr}/${tot}: ${sName}...`);
+                },
+                targetSchoolName === "ALL_SCHOOLS"
+            );
+        } catch (err: any) {
+            alert("Gagal membuat paket .ZIP rapor: " + (err?.message || "Kesalahan browser"));
+        } finally {
+            setIsBusyExport(false);
+            setBusyScopeKey("");
+            setBusyStatusText("");
+        }
+    };
 
     // Diagnostik Individual Lengkap per Kisi-Kisi & Rincian 60 Butir Soal Anak
     const selectedStudentDiagnostic = useMemo(() => {
@@ -980,228 +1199,32 @@ export default function AdminAnalyticsTkaSmpPage() {
         };
     }, [selectedStudentForReport, rawResultsList, questionsBank, questionWeightsMap, students]);
 
-    const handleExportCsvLeads = () => {
-        if (filteredStudents.length === 0) return;
-        const headers =
-            "Rank Paralel (Rerata),Rank Paralel (BINDO),Rank Paralel (MTK),Asal Sekolah SMP/MTs,Rank Sekolah (Rerata),Rank Sekolah (BINDO),Rank Sekolah (MTK),Nama Peserta,Kelas,No. WhatsApp,Nilai BINDO,Kategori BINDO,Nilai MTK,Kategori MTK,Rerata Indeks,Status\n";
-        const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-
-        const rows = filteredStudents
-            .map((s) => {
-                const bCat = getOfficialTkaCategory(s.bindoScore, "BINDO").level;
-                const mCat = getOfficialTkaCategory(s.mtkScore, "MTK").level;
-                return [
-                    esc(`#${s.parallelRankOverall} dari ${s.parallelTotalFinished}`),
-                    esc(`#${s.parallelRankBindo} dari ${s.parallelTotalFinished}`),
-                    esc(`#${s.parallelRankMtk} dari ${s.parallelTotalFinished}`),
-                    esc(s.school),
-                    esc(`#${s.schoolRankOverall} dari ${s.schoolTotalFinished}`),
-                    esc(`#${s.schoolRankBindo} dari ${s.schoolTotalFinished}`),
-                    esc(`#${s.schoolRankMtk} dari ${s.schoolTotalFinished}`),
-                    esc(s.name),
-                    esc(`Kelas ${s.grade}`),
-                    esc(s.phone),
-                    esc(formatScoreID(s.bindoScore)),
-                    esc(bCat),
-                    esc(formatScoreID(s.mtkScore)),
-                    esc(mCat),
-                    esc(formatScoreID(s.score)),
-                    esc(s.status)
-                ].join(",");
-            })
-            .join("\n");
-
-        const blob = new Blob(["\ufeff", headers + rows], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", `Rapor_Peringkat_Paralel_Siswa_TKA_SMP_${new Date().toISOString().slice(0, 10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const handleExportCsvSchools = () => {
+    const handleExportExcelSchools = () => {
         if (schoolRankings.length === 0) return;
-        const headers =
-            "Peringkat Sekolah,Nama Sekolah (SMP/MTs),Peserta Selesai,Total Terdaftar,Rerata Bahasa Indonesia,Rerata Matematika,Rerata Gabungan Sekolah\n";
-        const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-
-        const rows = schoolRankings
-            .map((sch) =>
-                [
-                    sch.rank,
-                    esc(sch.school),
-                    sch.totalFinished,
-                    sch.totalRegistered,
-                    esc(formatScoreID(sch.avgBindo)),
-                    esc(formatScoreID(sch.avgMtk)),
-                    esc(formatScoreID(sch.avgOverall))
-                ].join(",")
-            )
-            .join("\n");
-
-        const blob = new Blob(["\ufeff", headers + rows], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", `Peringkat_Antar_Sekolah_TKA_SMP_${new Date().toISOString().slice(0, 10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    // Fungsi terpadu untuk mengunduh paket .ZIP (bisa 1 sekolah tertentu ATAU semua sekolah sekaligus berfolder)
-    const handleDownloadZipReports = async (targetSchoolName: string | "ALL_SCHOOLS") => {
-        const pool =
-            targetSchoolName === "ALL_SCHOOLS"
-                ? rankedStudentsWithSchoolPos
-                : rankedStudentsWithSchoolPos.filter((s) => s.school === targetSchoolName);
-
-        const finishedPool = pool.filter(
-            (s) => s.status.toLowerCase().includes("selesai") || s.score > 0
-        );
-
-        if (finishedPool.length === 0) {
-            alert(
-                targetSchoolName === "ALL_SCHOOLS"
-                    ? "Belum ada peserta yang menyelesaikan ujian."
-                    : `Belum ada peserta dari ${targetSchoolName} yang menyelesaikan ujian.`
-            );
-            return;
-        }
-
-        setIsGeneratingZip(true);
-        setZipTargetSchool(targetSchoolName);
-        setZipProgressText(`Menyiapkan 0/${finishedPool.length}...`);
-
-        try {
-            const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
-            const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
-
-            // Hitung rerata masing-masing sekolah
-            const schoolAvgLookup: Record<string, { b: number; m: number; o: number }> = {};
-            schoolRankings.forEach((sr) => {
-                schoolAvgLookup[sr.school] = {
-                    b: sr.avgBindo,
-                    m: sr.avgMtk,
-                    o: sr.avgOverall
-                };
-            });
-
-            const payloads: ZipStudentPayload[] = finishedPool.map((stu) => {
-                const matchedResult = findMatchingResultRow(rawResultsList, stu.phone, stu.name);
-                const studentAnswers = parseAnswersJson(matchedResult?.answers);
-                const hasAnswerData = Object.keys(studentAnswers).length > 0 && questionsBank.length > 0;
-
-                const schAvgs = schoolAvgLookup[stu.school] || {
-                    b: stu.bindoScore,
-                    m: stu.mtkScore,
-                    o: stu.score
-                };
-
-                const buildItems = (qList: any[], subCode: "BINDO" | "MTK", globalOffset: number) =>
-                    qList.map((q, idx) => {
-                        const uAns = resolveStudentAnswerForQuestion(q, idx, globalOffset + idx, studentAnswers);
-                        const detail = evaluateStudentItemDetail(q, uAns);
-                        return {
-                            no_soal: Number(q.no_soal) || idx + 1,
-                            subtes_code: subCode,
-                            element: mapQuestionToOfficialElement(subCode, q.materi),
-                            weight: questionWeightsMap[String(q.id)] || 1,
-                            ...detail
-                        };
-                    });
-
-                const itemRows = [
-                    ...buildItems(bindoQs, "BINDO", 0),
-                    ...buildItems(mtkQs, "MTK", bindoQs.length)
-                ];
-
-                const sevenCompetencies = OFFICIAL_COMPETENCIES.map((comp) => {
-                    const compItems = itemRows.filter((it) => it.element === comp.code);
-                    let earnedW = 0,
-                        totalW = 0,
-                        rawCorrect = 0;
-                    compItems.forEach((it) => {
-                        earnedW += it.fraction * it.weight;
-                        totalW += it.weight;
-                        if (it.fraction >= 0.99) rawCorrect++;
-                    });
-                    const pct = hasAnswerData && totalW > 0 ? Number(((earnedW / totalW) * 100).toFixed(2)) : 0;
-                    const cat = getOfficialTkaCategory(pct, comp.subject === "MTK" ? "MTK" : "BINDO");
-                    return {
-                        code: comp.code,
-                        subject: comp.subject,
-                        rawCorrect,
-                        totalQ: compItems.length,
-                        pct,
-                        category: cat.level
-                    };
-                });
-
-                const hexagonPoints = HEXAGON_AXES.map((ax) => {
-                    const matched = sevenCompetencies.filter((c) => ax.elements.includes(c.code));
-                    const wSum = matched.reduce((s, c) => s + c.pct * (c.totalQ || 1), 0);
-                    const wTot = matched.reduce((s, c) => s + (c.totalQ || 1), 0);
-                    return {
-                        key: ax.key,
-                        short: ax.short,
-                        studentPct: wTot > 0 ? Number((wSum / wTot).toFixed(2)) : 0,
-                        schoolPct: ax.subject === "MTK" ? schAvgs.m : schAvgs.b
-                    };
-                });
-
-                const sortedHex = [...hexagonPoints].sort((a, b) => b.studentPct - a.studentPct);
-                const bindoCat = getOfficialTkaCategory(stu.bindoScore, "BINDO");
-                const mtkCat = getOfficialTkaCategory(stu.mtkScore, "MTK");
-
-                return {
-                    rankParallelOverall: stu.parallelRankOverall || 1,
-                    rankParallelBindo: stu.parallelRankBindo || 1,
-                    rankParallelMtk: stu.parallelRankMtk || 1,
-                    totalParallelFinished: stu.parallelTotalFinished || finishedPool.length,
-                    rankInSchool: stu.schoolRankOverall || 1,
-                    totalInSchool: stu.schoolTotalFinished || 1,
-                    rankBindo: stu.schoolRankBindo || 1,
-                    rankMtk: stu.schoolRankMtk || 1,
-                    phone: stu.phone,
-                    name: stu.name,
-                    school: stu.school,
-                    grade: stu.grade,
-                    bindoScore: stu.bindoScore,
-                    mtkScore: stu.mtkScore,
-                    overallScore: stu.score,
-                    bindoCategory: bindoCat.level,
-                    mtkCategory: mtkCat.level,
-                    schoolAvgBindo: schAvgs.b,
-                    schoolAvgMtk: schAvgs.m,
-                    schoolAvgOverall: schAvgs.o,
-                    hexagonPoints,
-                    strongestAxis: `${sortedHex[0]?.key} (${formatScoreID(sortedHex[0]?.studentPct || 0)})`,
-                    weakestAxis: `${sortedHex[sortedHex.length - 1]?.key} (${formatScoreID(sortedHex[sortedHex.length - 1]?.studentPct || 0)})`,
-                    sevenCompetencies,
-                    itemRows: itemRows.map(({ weight: _w, ...rest }) => rest)
-                };
-            });
-
-            const scopeLabel = targetSchoolName === "ALL_SCHOOLS" ? "Semua_Sekolah_Mitra" : targetSchoolName;
-            await generateSchoolReportsZip(
-                scopeLabel,
-                payloads,
-                officials,
-                (curr, tot, sName) => {
-                    setZipProgressText(`Memproses ${curr}/${tot}: ${sName}...`);
-                },
-                targetSchoolName === "ALL_SCHOOLS"
-            );
-        } catch (err: any) {
-            alert("Gagal membuat paket .ZIP rapor: " + (err?.message || "Kesalahan browser"));
-        } finally {
-            setIsGeneratingZip(false);
-            setZipTargetSchool("");
-            setZipProgressText("");
-        }
+        import("xlsx").then((XLSX) => {
+            const rows = schoolRankings.map((sch) => ({
+                "Peringkat Sekolah": sch.rank,
+                "Nama Sekolah (SMP/MTs)": sch.school,
+                "Peserta Selesai": sch.totalFinished,
+                "Total Terdaftar": sch.totalRegistered,
+                "Rerata Bahasa Indonesia": Number(sch.avgBindo.toFixed(2)),
+                "Rerata Matematika": Number(sch.avgMtk.toFixed(2)),
+                "Rerata Gabungan Sekolah": Number(sch.avgOverall.toFixed(2))
+            }));
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws["!cols"] = [
+                { wch: 18 },
+                { wch: 34 },
+                { wch: 16 },
+                { wch: 16 },
+                { wch: 24 },
+                { wch: 20 },
+                { wch: 24 }
+            ];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Klasemen Sekolah");
+            XLSX.writeFile(wb, `Peringkat_Antar_Sekolah_TKA_SMP_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        });
     };
 
     return (
@@ -1436,18 +1459,47 @@ export default function AdminAnalyticsTkaSmpPage() {
                 {/* ============================================================== */}
                 {activeTab === "prospek" && (
                     <div className="print-hidden space-y-5">
-                        {/* Toolbar Kontrol & Unduhan Paket .ZIP */}
                         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-6 space-y-4 shadow-2xs">
-                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
-                                <div>
-                                    <h3 className="text-sm sm:text-base font-black text-slate-900">
-                                        Rapor Individual, Peringkat Sekolah & Ranking Paralel ({filteredStudents.length} Peserta)
-                                    </h3>
-                                    <p className="text-[11px] text-slate-500">
-                                        Tampilkan ranking anak <strong>dikelompokkan per sekolah asal</strong> (siap unduh `.ZIP` per sekolah) atau <strong>Ranking Paralel</strong> lintas seluruh sekolah.
-                                    </p>
+                            {/* Baris 1: Judul & Deskripsi */}
+                            <div className="border-b border-slate-100 pb-3">
+                                <h3 className="text-sm sm:text-base font-black text-slate-900">
+                                    Rapor Individual, Rekap Peringkat Sekolah & Ranking Paralel ({filteredStudents.length} Peserta)
+                                </h3>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Unduh <strong>PDF Rekap Daftar Peringkat Resmi</strong> (per sekolah maupun paralel lintas sekolah), <strong>Excel (.xlsx)</strong>, atau paket lengkap <strong>.ZIP</strong> rapor individual siswa.
+                                </p>
+                            </div>
+
+                            {/* Baris 2: Toolbar Proporsional 1 Baris (Switch View + Search + Tombol Unduh) */}
+                            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 bg-slate-50/80 p-2.5 rounded-2xl border border-slate-200/80">
+                                {/* Kiri: Mode Tampilan */}
+                                <div className="inline-flex bg-slate-200/70 p-1 rounded-xl shrink-0 self-start">
+                                    <button
+                                        type="button"
+                                        onClick={() => setStudentViewMode("grouped")}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${studentViewMode === "grouped"
+                                            ? "bg-white text-blue-900 shadow-2xs"
+                                            : "text-slate-600 hover:text-slate-900"
+                                            }`}
+                                    >
+                                        <School className="w-3.5 h-3.5 text-blue-700" />
+                                        <span>Per Sekolah ({groupedBySchoolList.length})</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setStudentViewMode("parallel")}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${studentViewMode === "parallel"
+                                            ? "bg-white text-indigo-900 shadow-2xs"
+                                            : "text-slate-600 hover:text-slate-900"
+                                            }`}
+                                    >
+                                        <ListOrdered className="w-3.5 h-3.5 text-indigo-700" />
+                                        <span>Ranking Paralel ({filteredStudents.length})</span>
+                                    </button>
                                 </div>
 
+                                {/* Kanan: Cari + PDF Tabel Paralel + Excel (.xlsx) + ZIP Semua Sekolah */}
                                 <div className="flex flex-wrap items-center gap-2">
                                     <div className="relative">
                                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1456,69 +1508,53 @@ export default function AdminAnalyticsTkaSmpPage() {
                                             placeholder="Cari Nama / SMP / WA..."
                                             value={searchQuery}
                                             onChange={(e) => setSearchQuery(e.target.value)}
-                                            className="w-48 pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-blue-700"
+                                            className="w-44 sm:w-48 pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs outline-none focus:border-blue-700"
                                         />
                                     </div>
 
                                     <button
                                         type="button"
-                                        onClick={handleExportCsvLeads}
-                                        className="px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                                        onClick={() => handleDownloadRankingTablePdf("PARALLEL")}
+                                        disabled={isBusyExport}
+                                        className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-60"
+                                        title="Unduh 1 Dokumen PDF Resmi Tabel Ranking Keseluruhan Paralel Lintas Sekolah"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
-                                        <span>Export Excel / CSV</span>
+                                        <FileText className="w-3.5 h-3.5" />
+                                        <span>
+                                            {isBusyExport && busyScopeKey === "PDF_PARALLEL"
+                                                ? busyStatusText
+                                                : "PDF Tabel Ranking Paralel"}
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleExportExcelXlsx()}
+                                        className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                        title="Export Tabel Peringkat ke Microsoft Excel (.xlsx)"
+                                    >
+                                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                                        <span>Excel (.xlsx)</span>
                                     </button>
 
                                     <button
                                         type="button"
                                         onClick={() => handleDownloadZipReports("ALL_SCHOOLS")}
-                                        disabled={isGeneratingZip}
-                                        className="px-3.5 py-1.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-60"
+                                        disabled={isBusyExport}
+                                        className="px-3 py-1.5 rounded-xl bg-[#1e3a8a] hover:bg-blue-900 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-60"
+                                        title="Unduh Paket .ZIP Berisi Rekap Peringkat & Rapor PDF Seluruh Siswa dari Semua Sekolah"
                                     >
                                         <FolderArchive className="w-3.5 h-3.5" />
                                         <span>
-                                            {isGeneratingZip && zipTargetSchool === "ALL_SCHOOLS"
-                                                ? zipProgressText
-                                                : "Download Semua Sekolah (.ZIP)"}
+                                            {isBusyExport && busyScopeKey === "ZIP_ALL"
+                                                ? busyStatusText
+                                                : "Semua Sekolah (.ZIP)"}
                                         </span>
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Tombol Switch Mode Tampilan: Kelompok Per Sekolah vs Ranking Paralel */}
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                                    <button
-                                        type="button"
-                                        onClick={() => setStudentViewMode("grouped")}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${studentViewMode === "grouped"
-                                                ? "bg-white text-blue-900 shadow-2xs"
-                                                : "text-slate-600 hover:text-slate-900"
-                                            }`}
-                                    >
-                                        <School className="w-3.5 h-3.5 text-blue-700" />
-                                        <span>Kelompok per Sekolah ({groupedBySchoolList.length} Sekolah)</span>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => setStudentViewMode("parallel")}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${studentViewMode === "parallel"
-                                                ? "bg-white text-indigo-900 shadow-2xs"
-                                                : "text-slate-600 hover:text-slate-900"
-                                            }`}
-                                    >
-                                        <ListOrdered className="w-3.5 h-3.5 text-indigo-700" />
-                                        <span>Ranking Paralel Semua Siswa ({filteredStudents.length})</span>
-                                    </button>
-                                </div>
-
-                                <span className="text-[10.5px] font-mono text-slate-500">
-                                    *Setiap rapor memuat Rank Paralel & Rank Internal Sekolah sekaligus
-                                </span>
-                            </div>
-
-                            {/* MODE A: KELOMPOK PER SEKOLAH (DENGAN TOMBOL DOWNLOAD .ZIP MASING-MASING SEKOLAH) */}
+                            {/* MODE A: KELOMPOK PER SEKOLAH (DENGAN TOMBOL PDF REKAP RANKING + EXCEL + .ZIP DI TIAP SEKOLAH) */}
                             {studentViewMode === "grouped" && (
                                 <div className="space-y-4">
                                     {groupedBySchoolList.map((group) => (
@@ -1527,7 +1563,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                             className="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-2xs"
                                         >
                                             {/* Header Blok Sekolah */}
-                                            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
                                                 <div className="flex items-center gap-2.5">
                                                     <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
                                                         <School className="w-4 h-4" />
@@ -1543,19 +1579,47 @@ export default function AdminAnalyticsTkaSmpPage() {
                                                     </div>
                                                 </div>
 
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDownloadZipReports(group.school)}
-                                                    disabled={isGeneratingZip || group.finishedCount === 0}
-                                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 self-start sm:self-auto"
-                                                >
-                                                    <FolderArchive className="w-3.5 h-3.5" />
-                                                    <span>
-                                                        {isGeneratingZip && zipTargetSchool === group.school
-                                                            ? zipProgressText
-                                                            : `Download .ZIP (${group.finishedCount} Rapor PDF)`}
-                                                    </span>
-                                                </button>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDownloadRankingTablePdf("SCHOOL", group.school)}
+                                                        disabled={isBusyExport || group.members.length === 0}
+                                                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                                                        title={`Unduh 1 PDF Resmi Daftar Urut Peringkat Siswa ${group.school}`}
+                                                    >
+                                                        <FileText className="w-3.5 h-3.5 text-amber-600" />
+                                                        <span>
+                                                            {isBusyExport && busyScopeKey === `PDF_SCH_${group.school}`
+                                                                ? busyStatusText
+                                                                : "PDF Tabel Ranking Sekolah"}
+                                                        </span>
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleExportExcelXlsx(group.school)}
+                                                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                                        title={`Unduh Tabel Excel (.xlsx) Peringkat ${group.school}`}
+                                                    >
+                                                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                                        <span>Excel</span>
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDownloadZipReports(group.school)}
+                                                        disabled={isBusyExport || group.finishedCount === 0}
+                                                        className="px-3 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                                                        title={`Unduh Paket .ZIP Berisi Rekap Ranking + Rapor PDF Semua Anak ${group.school}`}
+                                                    >
+                                                        <FolderArchive className="w-3.5 h-3.5" />
+                                                        <span>
+                                                            {isBusyExport && busyScopeKey === `ZIP_${group.school}`
+                                                                ? busyStatusText
+                                                                : `Paket Rapor .ZIP (${group.finishedCount})`}
+                                                        </span>
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             {/* Tabel Peringkat Siswa di Dalam Sekolah Tersebut */}
@@ -1671,12 +1735,12 @@ export default function AdminAnalyticsTkaSmpPage() {
                                                         <td className="p-3 text-center font-mono">
                                                             <span
                                                                 className={`px-2.5 py-1 rounded-lg font-black text-xs ${s.parallelRankOverall === 1
-                                                                        ? "bg-amber-400 text-slate-950"
-                                                                        : s.parallelRankOverall === 2
-                                                                            ? "bg-slate-200 text-slate-900"
-                                                                            : s.parallelRankOverall === 3
-                                                                                ? "bg-orange-200 text-orange-950"
-                                                                                : "bg-indigo-50 text-indigo-900 border border-indigo-200"
+                                                                    ? "bg-amber-400 text-slate-950"
+                                                                    : s.parallelRankOverall === 2
+                                                                        ? "bg-slate-200 text-slate-900"
+                                                                        : s.parallelRankOverall === 3
+                                                                            ? "bg-orange-200 text-orange-950"
+                                                                            : "bg-indigo-50 text-indigo-900 border border-indigo-200"
                                                                     }`}
                                                             >
                                                                 #{s.parallelRankOverall}
@@ -1761,7 +1825,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         Pengaturan Pengesahan Kepala Sekolah & Tanda Tangan Otomatis
                                     </h3>
                                 </div>
-                                <span className="text-[10px] font-mono text-slate-400">Otomatis tercetak pada Rapor Anak, Paket .ZIP & Klasemen Sekolah</span>
+                                <span className="text-[10px] font-mono text-slate-400">Otomatis tercetak pada Rapor Anak, PDF Tabel Ranking, Paket .ZIP & Klasemen Sekolah</span>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end text-xs">
@@ -1843,11 +1907,11 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 <div className="flex items-center gap-2">
                                     <button
                                         type="button"
-                                        onClick={handleExportCsvSchools}
+                                        onClick={handleExportExcelSchools}
                                         className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
-                                        <span>Export Excel Sekolah</span>
+                                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                                        <span>Excel Sekolah (.xlsx)</span>
                                     </button>
                                     <button
                                         type="button"

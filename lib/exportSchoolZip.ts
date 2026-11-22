@@ -63,8 +63,29 @@ function fmtID(n: number): string {
     });
 }
 
+function renderSignatureBlockHtml(officials: ZipOfficialsPayload, dateStr: string): string {
+    const sigImg =
+        officials.kepsekSignatureUrl && officials.kepsekSignatureUrl.trim().length > 10
+            ? `<img src="${officials.kepsekSignatureUrl}" alt="TTD" style="height:74px;max-width:190px;width:auto;object-fit:contain;display:block;margin:0 auto;" />`
+            : `<div style="height:64px;"></div>`;
+
+    return `
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;font-size:10.5px;">
+            <div style="width:265px;text-align:center;line-height:1.35;">
+                <div>Jakarta, ${dateStr}</div>
+                <div style="font-weight:bold;">Kepala SMA Muhammadiyah 18 Jakarta</div>
+                <div style="height:76px;display:flex;align-items:center;justify-content:center;margin:2px 0;">
+                    ${sigImg}
+                </div>
+                <div style="font-weight:bold;text-decoration:underline;">${officials.kepalaSekolahNama}</div>
+                <div style="font-size:9.5px;font-family:monospace;">NBM. ${officials.kepalaSekolahNbm}</div>
+            </div>
+        </div>
+    `;
+}
+
 // ============================================================================
-// 1. GENERATOR EXCEL ASLI (.XLSX) — BUKAN CSV
+// 1. GENERATOR EXCEL ASLI (.XLSX)
 // ============================================================================
 export function exportRankingToExcelXlsx(
     mode: "PARALLEL" | "SCHOOL",
@@ -154,14 +175,13 @@ export async function buildRankingTablePdfBlob(
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const dateStr = new Date().toLocaleDateString("id-ID", { dateStyle: "long" });
 
-    // Bagi baris secara bertahap agar muat rapi di tiap halaman A4 (28 baris hal 1, 36 baris hal berikutnya)
     const pages: ZipStudentPayload[][] = [];
     if (sorted.length === 0) {
         pages.push([]);
     } else {
-        pages.push(sorted.slice(0, 28));
-        for (let idx = 28; idx < sorted.length; idx += 36) {
-            pages.push(sorted.slice(idx, idx + 36));
+        pages.push(sorted.slice(0, 26));
+        for (let idx = 26; idx < sorted.length; idx += 34) {
+            pages.push(sorted.slice(idx, idx + 34));
         }
     }
 
@@ -184,7 +204,7 @@ export async function buildRankingTablePdfBlob(
             const headerHtml = isFirst
                 ? `
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-                        <img src="/logo-timsim.jpg" style="width:62px;height:62px;object-fit:contain;" crossorigin="anonymous" />
+                        <img src="/logo-timsim.jpg" style="width:62px;height:62px;object-fit:contain;" />
                         <div style="flex:1;text-align:center;">
                             <div style="font-size:10px;font-weight:bold;text-transform:uppercase;">MAJELIS PENDIDIKAN DASAR DAN MENENGAH DAN PENDIDIKAN NONFORMAL</div>
                             <div style="font-size:9.5px;font-weight:bold;text-transform:uppercase;">PIMPINAN DAERAH MUHAMMADIYAH JAKARTA SELATAN</div>
@@ -199,19 +219,19 @@ export async function buildRankingTablePdfBlob(
                     <div style="text-align:center;margin-bottom:10px;">
                         <div style="font-size:12.5px;font-weight:900;text-decoration:underline;text-transform:uppercase;">
                             ${mode === "SCHOOL"
-                    ? `DAFTAR PERINGKAT HASIL TRYOUT TKA SMP/MTs — ${scopeTitle}`
+                    ? `DAFTAR PERINGKAT HASIL TRYOUT TKA SMP/MTs - ${scopeTitle}`
                     : "DAFTAR PERINGKAT PARALEL LINTAS SEKOLAH TRYOUT TKA SMP/MTs"
                 }
                         </div>
                         <div style="font-size:9.5px;font-family:monospace;color:#334155;margin-top:2px;">
-                            Total Peserta: ${sorted.length} Siswa • Skala Nilai 0,00 – 100,00 Berbobot Tingkat Kesulitan Soal
+                            Total Peserta: ${sorted.length} Siswa • Skala Nilai 0,00 - 100,00 Berbobot Tingkat Kesulitan Soal
                         </div>
                     </div>
                 `
                 : `
                     <div style="display:flex;justify-content:space-between;font-size:9px;font-family:monospace;color:#475569;border-bottom:1px solid #cbd5e1;padding-bottom:4px;margin-bottom:8px;">
                         <span>${mode === "SCHOOL"
-                    ? `DAFTAR PERINGKAT TRYOUT TKA SMP — ${scopeTitle}`
+                    ? `DAFTAR PERINGKAT TRYOUT TKA SMP - ${scopeTitle}`
                     : "DAFTAR PERINGKAT PARALEL LINTAS SEKOLAH TRYOUT TKA SMP"
                 }</span>
                         <span>Halaman ${pIdx + 1} dari ${pages.length}</span>
@@ -222,21 +242,21 @@ export async function buildRankingTablePdfBlob(
                 mode === "SCHOOL"
                     ? `
                         <tr style="background:#f1f5f9;font-family:monospace;font-size:9.5px;">
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:68px;">RANK SMP</th>
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:78px;">PARALEL</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:72px;white-space:nowrap;">RANK SMP</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:86px;white-space:nowrap;">PARALEL</th>
                             <th style="border:1px solid #000;padding:6px;text-align:left;">NAMA PESERTA</th>
                             <th style="border:1px solid #000;padding:6px;text-align:center;width:54px;">KELAS</th>
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:95px;">NILAI BINDO</th>
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:95px;">NILAI MTK</th>
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:95px;">RATA-RATA</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:92px;">NILAI BINDO</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:92px;">NILAI MTK</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:92px;">RATA-RATA</th>
                         </tr>
                     `
                     : `
                         <tr style="background:#f1f5f9;font-family:monospace;font-size:9.5px;">
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:65px;">RANK</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:62px;">RANK</th>
                             <th style="border:1px solid #000;padding:6px;text-align:left;">NAMA PESERTA</th>
-                            <th style="border:1px solid #000;padding:6px;text-align:left;width:210px;">ASAL SEKOLAH (SMP/MTs)</th>
-                            <th style="border:1px solid #000;padding:6px;text-align:center;width:72px;">RANK SMP</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:left;width:205px;">ASAL SEKOLAH (SMP/MTs)</th>
+                            <th style="border:1px solid #000;padding:6px;text-align:center;width:78px;white-space:nowrap;">RANK SMP</th>
                             <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">NILAI BINDO</th>
                             <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">NILAI MTK</th>
                             <th style="border:1px solid #000;padding:6px;text-align:center;width:85px;">RATA-RATA</th>
@@ -248,8 +268,8 @@ export async function buildRankingTablePdfBlob(
                     mode === "SCHOOL"
                         ? `
                             <tr>
-                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;">#${s.rankInSchool}</td>
-                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;color:#1e3a8a;">#${s.rankParallelOverall} / ${s.totalParallelFinished}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;white-space:nowrap;">#${s.rankInSchool}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;color:#1e3a8a;white-space:nowrap;">#${s.rankParallelOverall}/${s.totalParallelFinished}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;font-weight:bold;">${s.name}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;">${s.grade}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;">${fmtID(s.bindoScore)}</td>
@@ -259,10 +279,10 @@ export async function buildRankingTablePdfBlob(
                         `
                         : `
                             <tr>
-                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;">#${s.rankParallelOverall}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;white-space:nowrap;">#${s.rankParallelOverall}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;font-weight:bold;">${s.name}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;font-size:9px;">${s.school}</td>
-                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;">#${s.rankInSchool}/${s.totalInSchool}</td>
+                                <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;white-space:nowrap;">#${s.rankInSchool}/${s.totalInSchool}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;">${fmtID(s.bindoScore)}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#065f46;">${fmtID(s.mtkScore)}</td>
                                 <td style="border:1px solid #94a3b8;padding:5px;text-align:center;font-family:monospace;font-weight:900;background:#f8fafc;">${fmtID(s.overallScore)}</td>
@@ -271,21 +291,7 @@ export async function buildRankingTablePdfBlob(
                 )
                 .join("");
 
-            const footerHtml = isLast
-                ? `
-                    <div style="display:flex;justify-content:flex-end;font-size:10.5px;margin-top:16px;">
-                        <div style="width:280px;text-align:center;">
-                            <div>Jakarta, ${dateStr}</div>
-                            <div style="font-weight:bold;">Kepala SMA Muhammadiyah 18 Jakarta</div>
-                            <div style="height:86px;display:flex;align-items:center;justify-content:center;margin:4px 0;">
-                                ${officials.kepsekSignatureUrl ? `<img src="${officials.kepsekSignatureUrl}" style="max-height:84px;max-width:240px;object-fit:contain;" />` : ""}
-                            </div>
-                            <div style="font-weight:bold;text-decoration:underline;">${officials.kepalaSekolahNama}</div>
-                            <div style="font-size:9.5px;font-family:monospace;">NBM. ${officials.kepalaSekolahNbm}</div>
-                        </div>
-                    </div>
-                `
-                : "";
+            const footerHtml = isLast ? renderSignatureBlockHtml(officials, dateStr) : "";
 
             host.innerHTML = `
                 <div style="width:794px;padding:24px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
@@ -298,8 +304,9 @@ export async function buildRankingTablePdfBlob(
                 </div>
             `;
 
-            const canvas = await html2canvas(host, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-            const imgData = canvas.toDataURL("image/jpeg", 0.92);
+            await new Promise((r) => setTimeout(r, 40));
+            const canvas = await html2canvas(host, { scale: 2, allowTaint: true, backgroundColor: "#ffffff" });
+            const imgData = canvas.toDataURL("image/jpeg", 0.94);
             const imgHeight = (canvas.height * 210) / canvas.width;
 
             if (pIdx > 0) pdf.addPage();
@@ -397,7 +404,7 @@ function buildHexagonSvgString(axes: ZipStudentPayload["hexagonPoints"]): string
         })
         .join("");
 
-    return `<svg viewBox="0 0 270 235" width="230" height="200" xmlns="http://www.w3.org/2000/svg">
+    return `<svg viewBox="0 0 270 235" width="225" height="196" xmlns="http://www.w3.org/2000/svg">
         ${rings}
         ${axisLines}
         <polygon points="${schoolPoly}" fill="rgba(245,158,11,0.1)" stroke="#d97706" stroke-width="1.2" stroke-dasharray="3 2" />
@@ -417,7 +424,6 @@ export async function generateSchoolReportsZip(
     const cleanScopeSlug = scopeLabel.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
     const dateStr = new Date().toLocaleDateString("id-ID", { dateStyle: "long" });
 
-    // Sertakan pula PDF Rekap Tabel Peringkat Resmi di dalam ZIP
     if (!groupBySchoolFolders) {
         const recapBlob = await buildRankingTablePdfBlob("SCHOOL", scopeLabel, studentsList, officials);
         zip.file(`00_REKAP_PERINGKAT_${cleanScopeSlug}.pdf`, recapBlob);
@@ -464,12 +470,12 @@ export async function generateSchoolReportsZip(
                                 ? "#2563eb"
                                 : "#e11d48";
                     return `
-                        <div style="margin-bottom:6px;">
-                            <div style="display:flex;justify-content:space-between;font-size:9px;font-family:monospace;margin-bottom:2px;">
+                        <div style="margin-bottom:5px;">
+                            <div style="display:flex;justify-content:space-between;font-size:8.5px;font-family:monospace;margin-bottom:2px;">
                                 <span><strong>[${c.subject}]</strong> ${c.code}</span>
                                 <span><strong>${c.rawCorrect}/${c.totalQ}</strong> • ${fmtID(c.pct)} (${c.category})</span>
                             </div>
-                            <div style="width:100%;height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
+                            <div style="width:100%;height:6px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
                                 <div style="width:${Math.max(3, Math.min(100, c.pct))}%;height:100%;background:${color};"></div>
                             </div>
                         </div>
@@ -478,53 +484,53 @@ export async function generateSchoolReportsZip(
                 .join("");
 
             host.innerHTML = `
-                <div style="width:794px;padding:24px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
+                <div style="width:794px;padding:22px 34px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-                        <img src="/logo-timsim.jpg" style="width:62px;height:62px;object-fit:contain;" crossorigin="anonymous" />
+                        <img src="/logo-timsim.jpg" style="width:60px;height:60px;object-fit:contain;" />
                         <div style="flex:1;text-align:center;">
-                            <div style="font-size:10px;font-weight:bold;text-transform:uppercase;">MAJELIS PENDIDIKAN DASAR DAN MENENGAH DAN PENDIDIKAN NONFORMAL</div>
-                            <div style="font-size:9.5px;font-weight:bold;text-transform:uppercase;">PIMPINAN DAERAH MUHAMMADIYAH JAKARTA SELATAN</div>
-                            <div style="font-size:18px;font-weight:900;color:#1e3a8a;text-transform:uppercase;margin:2px 0;">SMA MUHAMMADIYAH 18 JAKARTA</div>
-                            <div style="font-size:9px;color:#475569;">Jl. Panjang No.19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp. (021) 7235544</div>
+                            <div style="font-size:9.5px;font-weight:bold;text-transform:uppercase;">MAJELIS PENDIDIKAN DASAR DAN MENENGAH DAN PENDIDIKAN NONFORMAL</div>
+                            <div style="font-size:9px;font-weight:bold;text-transform:uppercase;">PIMPINAN DAERAH MUHAMMADIYAH JAKARTA SELATAN</div>
+                            <div style="font-size:17px;font-weight:900;color:#1e3a8a;text-transform:uppercase;margin:2px 0;">SMA MUHAMMADIYAH 18 JAKARTA</div>
+                            <div style="font-size:8.5px;color:#475569;">Jl. Panjang No.19, Cipulir, Kebayoran Lama, Jakarta Selatan 12230 | Telp. (021) 7235544</div>
                         </div>
-                        <div style="width:62px;"></div>
+                        <div style="width:60px;"></div>
                     </div>
-                    <div style="border-bottom:2.5px solid #000;margin-top:6px;"></div>
-                    <div style="border-bottom:1px solid #000;margin-top:2px;margin-bottom:10px;"></div>
+                    <div style="border-bottom:2.5px solid #000;margin-top:5px;"></div>
+                    <div style="border-bottom:1px solid #000;margin-top:2px;margin-bottom:8px;"></div>
 
-                    <div style="text-align:center;margin-bottom:8px;">
-                        <div style="font-size:13px;font-weight:900;text-decoration:underline;text-transform:uppercase;">
+                    <div style="text-align:center;margin-bottom:7px;">
+                        <div style="font-size:12.5px;font-weight:900;text-decoration:underline;text-transform:uppercase;">
                             SERTIFIKAT HASIL & LAPORAN DIAGNOSTIK TRYOUT TKA SMP/MTs (SHTKA)
                         </div>
-                        <div style="font-size:9.5px;font-family:monospace;color:#334155;margin-top:2px;">
-                            Skala 0,00 – 100,00 Berbobot Tingkat Kesulitan Soal (Tanpa Batas Kelulusan Sekolah)
+                        <div style="font-size:9px;font-family:monospace;color:#334155;margin-top:2px;">
+                            Skala 0,00 - 100,00 Berbobot Tingkat Kesulitan Soal (Tanpa Batas Kelulusan Sekolah)
                         </div>
                     </div>
 
-                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10px;margin-bottom:8px;background:#f8fafc;">
+                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10px;margin-bottom:7px;background:#f8fafc;">
                         <tr>
-                            <td style="padding:4px 8px;width:18%;color:#475569;">Nama Peserta</td>
+                            <td style="padding:4px 8px;width:17%;color:#475569;">Nama Peserta</td>
                             <td style="padding:4px 8px;width:36%;font-weight:bold;">: ${stu.name}</td>
-                            <td style="padding:4px 8px;width:22%;color:#475569;">Peringkat Paralel</td>
-                            <td style="padding:4px 8px;font-family:monospace;font-weight:900;color:#1e3a8a;">: Rank #${stu.rankParallelOverall} dari ${stu.totalParallelFinished} Peserta</td>
+                            <td style="padding:4px 8px;width:21%;color:#475569;">Peringkat Paralel</td>
+                            <td style="padding:4px 8px;font-family:monospace;font-weight:900;color:#1e3a8a;white-space:nowrap;">: Rank #${stu.rankParallelOverall} dari ${stu.totalParallelFinished} Peserta</td>
                         </tr>
                         <tr>
                             <td style="padding:4px 8px;color:#475569;">Asal Sekolah</td>
                             <td style="padding:4px 8px;font-weight:bold;">: ${stu.school} (Kelas ${stu.grade})</td>
                             <td style="padding:4px 8px;color:#475569;">Peringkat Sekolah</td>
-                            <td style="padding:4px 8px;font-family:monospace;font-weight:bold;color:#0f172a;">: Rank #${stu.rankInSchool} dari ${stu.totalInSchool} Siswa</td>
+                            <td style="padding:4px 8px;font-family:monospace;font-weight:bold;color:#0f172a;white-space:nowrap;">: Rank #${stu.rankInSchool} dari ${stu.totalInSchool} Siswa</td>
                         </tr>
                     </table>
 
-                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:10px;margin-bottom:4px;">
+                    <table style="width:100%;border:1px solid #000;border-collapse:collapse;font-size:9.5px;margin-bottom:4px;">
                         <thead>
-                            <tr style="background:#f1f5f9;font-family:monospace;font-size:9px;">
+                            <tr style="background:#f1f5f9;font-family:monospace;font-size:8.5px;">
                                 <th style="border:1px solid #000;padding:5px;text-align:left;">MATA UJI TKA SMP/MTs</th>
-                                <th style="border:1px solid #000;padding:5px;text-align:center;width:72px;">NILAI ANAK</th>
-                                <th style="border:1px solid #000;padding:5px;text-align:center;width:72px;">RERATA SMP</th>
-                                <th style="border:1px solid #000;padding:5px;text-align:center;width:75px;">KATEGORI</th>
-                                <th style="border:1px solid #000;padding:5px;text-align:center;width:115px;">RANK SEKOLAH</th>
-                                <th style="border:1px solid #000;padding:5px;text-align:center;width:115px;">RANK PARALEL</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:68px;">NILAI ANAK</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:68px;">RERATA SMP</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:72px;">KATEGORI</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:96px;white-space:nowrap;">RANK SEKOLAH</th>
+                                <th style="border:1px solid #000;padding:5px;text-align:center;width:96px;white-space:nowrap;">RANK PARALEL</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -536,8 +542,8 @@ export async function generateSchoolReportsZip(
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#1e3a8a;">${fmtID(stu.bindoScore)}</td>
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgBindo)}</td>
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-weight:bold;">${stu.bindoCategory}</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;">#${stu.rankBindo} / ${stu.totalInSchool}</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;">#${stu.rankParallelBindo} / ${stu.totalParallelFinished}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;white-space:nowrap;">#${stu.rankBindo} / ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#1e3a8a;white-space:nowrap;">#${stu.rankParallelBindo} / ${stu.totalParallelFinished}</td>
                             </tr>
                             <tr>
                                 <td style="border:1px solid #000;padding:5px;">
@@ -547,70 +553,61 @@ export async function generateSchoolReportsZip(
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#065f46;">${fmtID(stu.mtkScore)}</td>
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgMtk)}</td>
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-weight:bold;">${stu.mtkCategory}</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;">#${stu.rankMtk} / ${stu.totalInSchool}</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#065f46;">#${stu.rankParallelMtk} / ${stu.totalParallelFinished}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;white-space:nowrap;">#${stu.rankMtk} / ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:bold;color:#065f46;white-space:nowrap;">#${stu.rankParallelMtk} / ${stu.totalParallelFinished}</td>
                             </tr>
                             <tr style="background:#f8fafc;font-weight:bold;">
                                 <td style="border:1px solid #000;padding:5px;">RATA-RATA GABUNGAN (INDEKS PEMERINGKATAN)</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-size:11px;">${fmtID(stu.overallScore)}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-size:10.5px;">${fmtID(stu.overallScore)}</td>
                                 <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;">${fmtID(stu.schoolAvgOverall)}</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-size:8.5px;color:#64748b;">Per Mata Uji</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#92400e;">#${stu.rankInSchool} / ${stu.totalInSchool}</td>
-                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#1e3a8a;">#${stu.rankParallelOverall} / ${stu.totalParallelFinished}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-size:8px;color:#64748b;">Per Mata Uji</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#92400e;white-space:nowrap;">#${stu.rankInSchool} / ${stu.totalInSchool}</td>
+                                <td style="border:1px solid #000;padding:5px;text-align:center;font-family:monospace;font-weight:900;color:#1e3a8a;white-space:nowrap;">#${stu.rankParallelOverall} / ${stu.totalParallelFinished}</td>
                             </tr>
                         </tbody>
                     </table>
 
-                    <div style="font-size:8px;color:#475569;font-family:monospace;font-style:italic;margin-bottom:8px;">
+                    <div style="font-size:8px;color:#475569;font-family:monospace;font-style:italic;margin-bottom:7px;">
                         *Keterangan: <strong>Rerata SMP</strong> dihitung dari rata-rata skor peserta selesai asal <strong>${stu.school}</strong> (${stu.totalInSchool} siswa), sedangkan <strong>Rank Paralel</strong> membandingkan seluruh ${stu.totalParallelFinished} peserta lintas sekolah.
                     </div>
 
-                    <div style="display:flex;gap:12px;border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#f8fafc;margin-bottom:8px;">
-                        <div style="width:42%;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;">
-                            <div style="font-size:9px;font-weight:bold;font-family:monospace;margin-bottom:2px;">GRAFIK HEKSAGONAL TREN KOMPETENSI</div>
-                            <div style="font-size:8px;color:#64748b;margin-bottom:4px;">Biru = Skor Anak • Oranye = Rerata Sekolah</div>
+                    <div style="display:flex;gap:10px;border:1px solid #cbd5e1;border-radius:10px;padding:8px;background:#f8fafc;margin-bottom:7px;">
+                        <div style="width:42%;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:7px;text-align:center;">
+                            <div style="font-size:8.5px;font-weight:bold;font-family:monospace;margin-bottom:2px;">GRAFIK HEKSAGONAL TREN KOMPETENSI</div>
+                            <div style="font-size:7.5px;color:#64748b;margin-bottom:3px;">Biru = Skor Anak • Oranye = Rerata Sekolah</div>
                             <div style="display:flex;justify-content:center;">${buildHexagonSvgString(stu.hexagonPoints)}</div>
-                            <div style="text-align:left;font-size:8.5px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px;margin-top:4px;">
+                            <div style="text-align:left;font-size:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px;margin-top:3px;">
                                 <div>• Keunggulan Utama: <strong>${stu.strongestAxis}</strong></div>
                                 <div>• Prioritas Perbaikan: <strong>${stu.weakestAxis}</strong></div>
                             </div>
                         </div>
-                        <div style="width:58%;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:8px;display:flex;flex-direction:column;justify-content:space-between;">
-                            <div style="font-size:9px;font-weight:bold;font-family:monospace;border-bottom:1px solid #f1f5f9;padding-bottom:4px;margin-bottom:6px;">
+                        <div style="width:58%;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:7px;display:flex;flex-direction:column;justify-content:space-between;">
+                            <div style="font-size:8.5px;font-weight:bold;font-family:monospace;border-bottom:1px solid #f1f5f9;padding-bottom:3px;margin-bottom:5px;">
                                 GRAFIK CAPAIAN PER KISI-KISI & SUB-ELEMEN SOAL
                             </div>
                             <div>${barsHtml}</div>
-                            <div style="font-size:8px;color:#64748b;font-family:monospace;border-top:1px solid #f1f5f9;padding-top:4px;">
+                            <div style="font-size:7.5px;color:#64748b;font-family:monospace;border-top:1px solid #f1f5f9;padding-top:3px;">
                                 *Setiap kisi-kisi dihitung terpisah berdasarkan bobot kesulitan butir soal pada elemen terkait.
                             </div>
                         </div>
                     </div>
 
-                    <div style="border:1px solid #000;padding:7px 10px;font-size:9px;margin-bottom:8px;background:#ffffff;">
-                        <div style="font-weight:bold;font-family:monospace;font-size:8.5px;text-transform:uppercase;">KETERANGAN ACUAN PENILAIAN RESMI TKA JENJANG SMP/MTs:</div>
-                        <div style="font-size:8px;color:#334155;margin-top:2px;line-height:1.35;">
-                            Hasil Tryout Tes Kemampuan Akademik (TKA) SMP/MTs dilaporkan dalam rentang nilai <strong>0,00 – 100,00</strong> menggunakan pembobotan tingkat kesulitan butir soal (tidak menggunakan batas kelulusan/KKM). Kategori capaian ditetapkan secara terpisah per mata uji:
-                            <strong>Bahasa Indonesia:</strong> Istimewa (≥95,00), Baik (76,67–94,99), Memadai (50,00–76,66), Kurang (<50,00) •
-                            <strong>Matematika:</strong> Istimewa (≥95,00), Baik (56,67–94,99), Memadai (33,33–56,66), Kurang (<33,33).
+                    <div style="border:1px solid #000;padding:6px 9px;font-size:8.5px;margin-bottom:4px;background:#ffffff;">
+                        <div style="font-weight:bold;font-family:monospace;font-size:8px;text-transform:uppercase;">KETERANGAN ACUAN PENILAIAN RESMI TKA JENJANG SMP/MTs:</div>
+                        <div style="font-size:7.8px;color:#334155;margin-top:2px;line-height:1.3;">
+                            Hasil Tryout Tes Kemampuan Akademik (TKA) SMP/MTs dilaporkan dalam rentang nilai <strong>0,00 - 100,00</strong> menggunakan pembobotan tingkat kesulitan butir soal (tidak menggunakan batas kelulusan/KKM). Kategori capaian ditetapkan secara terpisah per mata uji:
+                            <strong>Bahasa Indonesia:</strong> Istimewa (≥95,00), Baik (76,67-94,99), Memadai (50,00-76,66), Kurang (<50,00) •
+                            <strong>Matematika:</strong> Istimewa (≥95,00), Baik (56,67-94,99), Memadai (33,33-56,66), Kurang (<33,33).
                         </div>
                     </div>
 
-                    <div style="display:flex;justify-content:flex-end;font-size:10.5px;">
-                        <div style="width:280px;text-align:center;">
-                            <div>Jakarta, ${dateStr}</div>
-                            <div style="font-weight:bold;">Kepala SMA Muhammadiyah 18 Jakarta</div>
-                            <div style="height:86px;display:flex;align-items:center;justify-content:center;margin:4px 0;">
-                                ${officials.kepsekSignatureUrl ? `<img src="${officials.kepsekSignatureUrl}" style="max-height:84px;max-width:240px;object-fit:contain;" />` : ""}
-                            </div>
-                            <div style="font-weight:bold;text-decoration:underline;">${officials.kepalaSekolahNama}</div>
-                            <div style="font-size:9.5px;font-family:monospace;">NBM. ${officials.kepalaSekolahNbm}</div>
-                        </div>
-                    </div>
+                    ${renderSignatureBlockHtml(officials, dateStr)}
                 </div>
             `;
 
-            const canvasPage1 = await html2canvas(host, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-            const imgData1 = canvasPage1.toDataURL("image/jpeg", 0.92);
+            await new Promise((r) => setTimeout(r, 40));
+            const canvasPage1 = await html2canvas(host, { scale: 2, allowTaint: true, backgroundColor: "#ffffff" });
+            const imgData1 = canvasPage1.toDataURL("image/jpeg", 0.94);
             const imgHeight1 = (canvasPage1.height * 210) / canvasPage1.width;
             pdf.addImage(imgData1, "JPEG", 0, 0, 210, Math.min(297, imgHeight1));
 
@@ -634,7 +631,7 @@ export async function generateSchoolReportsZip(
                         .join("");
 
                 host.innerHTML = `
-                    <div style="width:794px;padding:28px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
+                    <div style="width:794px;padding:26px 36px;box-sizing:border-box;background:#ffffff;color:#0f172a;">
                         <div style="border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
                             <div>
                                 <div style="font-size:12px;font-weight:900;text-transform:uppercase;">LAMPIRAN DIAGNOSTIK RINCIAN BUTIR SOAL PESERTA</div>
@@ -683,8 +680,9 @@ export async function generateSchoolReportsZip(
                     </div>
                 `;
 
-                const canvasPage2 = await html2canvas(host, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-                const imgData2 = canvasPage2.toDataURL("image/jpeg", 0.92);
+                await new Promise((r) => setTimeout(r, 40));
+                const canvasPage2 = await html2canvas(host, { scale: 2, allowTaint: true, backgroundColor: "#ffffff" });
+                const imgData2 = canvasPage2.toDataURL("image/jpeg", 0.94);
                 const imgHeight2 = (canvasPage2.height * 210) / canvasPage2.width;
                 pdf.addPage();
                 pdf.addImage(imgData2, "JPEG", 0, 0, 210, Math.min(297, imgHeight2));

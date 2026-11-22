@@ -41,8 +41,12 @@ const TKA_SMP_SUBJECTS = [
 ];
 
 // Kategori Capaian Resmi Kepmendikdasmen No. 56 Tahun 2026 (Skala 0,00 - 100,00)
-export function getKepmendikdasmen56Category(score: number) {
+export function getKepmendikdasmen56Category(score: number, subject: "BINDO" | "MTK" = "BINDO") {
     const num = Number(score) || 0;
+    const isMtk = subject === "MTK";
+    const baikCutOff = isMtk ? 56.67 : 76.67;
+    const memadaiCutOff = isMtk ? 33.33 : 50.0;
+
     if (num >= 95.0) {
         return {
             label: "Istimewa",
@@ -51,7 +55,7 @@ export function getKepmendikdasmen56Category(score: number) {
                 "Predikat khusus bagi peserta didik dengan penguasaan materi dan penalaran tingkat tinggi yang sangat unggul."
         };
     }
-    if (num >= 76.67) {
+    if (num >= baikCutOff) {
         return {
             label: "Baik",
             badgeColor: "bg-emerald-100 text-emerald-900 border-emerald-300",
@@ -59,7 +63,7 @@ export function getKepmendikdasmen56Category(score: number) {
                 "Menggambarkan pemahaman materi yang kuat dan konsisten dalam mengaplikasikan konsep pada berbagai konteks."
         };
     }
-    if (num >= 50.0) {
+    if (num >= memadaiCutOff) {
         return {
             label: "Memadai",
             badgeColor: "bg-blue-100 text-blue-900 border-blue-300",
@@ -264,9 +268,9 @@ export function calculateTkaSmpScore(questionsList: any[], currentAnswers: Recor
         totalScore = mtkScore;
     }
 
-    const bindoCat = getKepmendikdasmen56Category(bindoScore);
-    const mtkCat = getKepmendikdasmen56Category(mtkScore);
-    const overallCat = getKepmendikdasmen56Category(totalScore);
+    const bindoCat = getKepmendikdasmen56Category(bindoScore, "BINDO");
+    const mtkCat = getKepmendikdasmen56Category(mtkScore, "MTK");
+    const overallCat = getKepmendikdasmen56Category(totalScore, "BINDO");
 
     return {
         bindoScore,
@@ -574,7 +578,7 @@ export default function OfficialExamChamberPage() {
                     bindo_score: computed.bindoScore,
                     mtk_score: computed.mtkScore,
                     predicate: computed.predicate,
-                    is_tuntas_kkm: computed.bindoScore >= 50 && computed.mtkScore >= 50,
+                    is_tuntas_kkm: true,
                     violations: snapshotViolations,
                     answers: snapshotAnswers
                 });

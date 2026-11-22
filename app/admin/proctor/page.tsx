@@ -56,15 +56,19 @@ export interface MasterSession {
     durasi_mtk_detik: number;
 }
 
-function getKepmendikdasmen56Badge(score: number) {
+function getKepmendikdasmen56Badge(score: number, subject: "BINDO" | "MTK" = "BINDO") {
     const num = Number(score) || 0;
+    const isMtk = subject === "MTK";
+    const baikCutOff = isMtk ? 56.67 : 76.67;
+    const memadaiCutOff = isMtk ? 33.33 : 50.0;
+
     if (num >= 95.0) {
         return { label: "Istimewa", color: "bg-indigo-100 text-indigo-800 border-indigo-300" };
     }
-    if (num >= 76.67) {
+    if (num >= baikCutOff) {
         return { label: "Baik", color: "bg-emerald-100 text-emerald-800 border-emerald-300" };
     }
-    if (num >= 50.0) {
+    if (num >= memadaiCutOff) {
         return { label: "Memadai", color: "bg-blue-100 text-blue-800 border-blue-300" };
     }
     return { label: "Kurang", color: "bg-rose-100 text-rose-800 border-rose-300" };
@@ -1609,7 +1613,7 @@ export default function ProctorMasterDashboard() {
                                         Buku Nilai Sertifikat Hasil Tryout TKA SMP (SHTKA)
                                     </h3>
                                     <p className="text-[11px] sm:text-xs text-slate-500">
-                                        Skala 0,00 – 100,00 per mata uji (Kepmendikdasmen No. 56/2026: Istimewa ≥95,00 | Baik 76,67–94,99 | Memadai 50,00–76,66 | Kurang ≤50,00).
+                                        Skala 0,00 – 100,00 per mata uji (Istimewa ≥95,00 | BINDO: Baik ≥76,67, Memadai ≥50,00 | MTK: Baik ≥56,67, Memadai ≥33,33).
                                     </p>
                                 </div>
                                 <button
@@ -1642,8 +1646,8 @@ export default function ProctorMasterDashboard() {
                                             .filter((s) => s.status.toLowerCase().includes("selesai") || Number(s.score) > 0)
                                             .sort((a, b) => Number(b.score) - Number(a.score))
                                             .map((s, idx) => {
-                                                const bindoCat = getKepmendikdasmen56Badge(s.bindoScore);
-                                                const mtkCat = getKepmendikdasmen56Badge(s.mtkScore);
+                                                const bindoCat = getKepmendikdasmen56Badge(s.bindoScore, "BINDO");
+                                                const mtkCat = getKepmendikdasmen56Badge(s.mtkScore, "MTK");
 
                                                 return (
                                                     <tr key={s.nisn} className="hover:bg-slate-50">

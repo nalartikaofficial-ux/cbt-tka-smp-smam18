@@ -88,7 +88,7 @@ export default function StudentLoginPage() {
             return;
         }
 
-        const inputToken = formData.token.toUpperCase().trim();
+        const inputToken = formData.token.toUpperCase().replace(/\s+/g, "").trim();
         if (!inputToken) {
             setErrorMsg("Token Sesi wajib diisi sesuai arahan panitia / pengawas ujian!");
             return;
@@ -230,7 +230,7 @@ export default function StudentLoginPage() {
                         </div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4 text-xs text-left">
+                    <form onSubmit={handleSubmit} autoComplete="off" className="space-y-3.5 sm:space-y-4 text-xs text-left">
                         <div className="space-y-1">
                             <label className="font-bold text-slate-700 font-mono flex items-center gap-1.5 text-[10.5px] sm:text-xs">
                                 <UserCheck className="w-3.5 h-3.5 text-blue-700" /> NAMA LENGKAP SISWA:
@@ -238,9 +238,13 @@ export default function StudentLoginPage() {
                             <input
                                 type="text"
                                 required
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="words"
+                                spellCheck={false}
                                 placeholder="CONTOH: MUHAMMAD RIZKI PRATAMA"
                                 value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs uppercase"
                             />
                         </div>
@@ -253,9 +257,13 @@ export default function StudentLoginPage() {
                                 <input
                                     type="text"
                                     required
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="characters"
+                                    spellCheck={false}
                                     placeholder="CONTOH: SMPN 161 JAKARTA"
                                     value={formData.school}
-                                    onChange={(e) => setFormData({ ...formData, school: e.target.value.toUpperCase() })}
+                                    onChange={(e) => setFormData({ ...formData, school: e.target.value })}
                                     className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-blue-600 outline-none text-xs uppercase"
                                 />
                             </div>
@@ -286,10 +294,11 @@ export default function StudentLoginPage() {
                                         +62
                                     </span>
                                     <input
-                                        type="text"
+                                        type="tel"
                                         required
                                         inputMode="numeric"
-                                        maxLength={12}
+                                        autoComplete="off"
+                                        maxLength={14}
                                         placeholder="81234567890"
                                         value={formData.phoneSuffix}
                                         onChange={(e) =>
@@ -310,9 +319,13 @@ export default function StudentLoginPage() {
                                 <input
                                     type="text"
                                     required
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="characters"
+                                    spellCheck={false}
                                     placeholder="Masukkan token disini..."
                                     value={formData.token}
-                                    onChange={(e) => setFormData({ ...formData, token: e.target.value.toUpperCase() })}
+                                    onChange={(e) => setFormData({ ...formData, token: e.target.value })}
                                     className="w-full px-3 sm:px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-black text-slate-900 focus:border-blue-600 outline-none text-xs text-center uppercase"
                                 />
                             </div>

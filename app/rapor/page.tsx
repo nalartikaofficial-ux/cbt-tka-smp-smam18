@@ -271,6 +271,73 @@ function triggerCrossBrowserPdfDownload(pdf: jsPDF, fileName: string) {
     setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
 }
 
+// Render elemen ke Canvas A4 Desktop (lebar tetap 840px) agar di layar HP tidak terpotong/gepeng
+async function captureA4DesktopCanvas(element: HTMLElement, targetId: string) {
+    return html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        windowWidth: 1120,
+        onclone: (clonedDoc) => {
+            const clonedEl = clonedDoc.getElementById(targetId);
+            if (clonedEl) {
+                clonedEl.style.width = "840px";
+                clonedEl.style.maxWidth = "840px";
+                clonedEl.style.minWidth = "840px";
+                clonedEl.style.padding = "28px 32px";
+                clonedEl.style.borderRadius = "0px";
+                clonedEl.style.boxShadow = "none";
+            }
+            // Paksa grid 2 kolom tetap berdampingan di PDF meskipun dirender dari HP
+            const twoColGrids = clonedDoc.querySelectorAll(".pdf-force-desktop-grid");
+            twoColGrids.forEach((node) => {
+                const el = node as HTMLElement;
+                el.style.display = "grid";
+                el.style.gridTemplateColumns = "repeat(12, minmax(0, 1fr))";
+                el.style.gap = "12px";
+            });
+            const col5 = clonedDoc.querySelectorAll(".pdf-col-5");
+            col5.forEach((node) => {
+                (node as HTMLElement).style.gridColumn = "span 5 / span 5";
+            });
+            const col7 = clonedDoc.querySelectorAll(".pdf-col-7");
+            col7.forEach((node) => {
+                (node as HTMLElement).style.gridColumn = "span 7 / span 7";
+            });
+            const twoSubGrids = clonedDoc.querySelectorAll(".pdf-force-2col");
+            twoSubGrids.forEach((node) => {
+                const el = node as HTMLElement;
+                el.style.display = "grid";
+                el.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+                el.style.gap = "12px";
+            });
+        }
+    });
+}
+
+function addCanvasFittedToA4Page(pdf: jsPDF, canvas: HTMLCanvasElement, isFirstPage: boolean) {
+    if (!isFirstPage) pdf.addPage();
+    const pageW = 210;
+    const pageH = 297;
+    const margin = 4;
+    const maxW = pageW - margin * 2;
+    const maxH = pageH - margin * 2;
+
+    let renderW = maxW;
+    let renderH = (canvas.height * renderW) / canvas.width;
+
+    // Jika tinggi melebihi 1 lembar A4, skalakan proporsional tanpa merusak rasio aspek
+    if (renderH > maxH) {
+        renderH = maxH;
+        renderW = (canvas.width * renderH) / canvas.height;
+    }
+
+    const offsetX = (pageW - renderW) / 2;
+    const imgData = canvas.toDataURL("image/jpeg", 0.94);
+    pdf.addImage(imgData, "JPEG", offsetX, margin, renderW, renderH);
+}
+
 function PrivateStudentReportContent() {
     const searchParams = useSearchParams();
     const initialPhone = normalizePhoneDigits(searchParams.get("p") || "");
@@ -509,32 +576,17 @@ function PrivateStudentReportContent() {
     const handleDownloadPdfFile = useCallback(async () => {
         if (!reportData || !page1Ref.current || isGeneratingPdf) return;
         setIsGeneratingPdf(true);
-        setPdfDownloadNotice("Sedang menyusun file PDF Sertifikat SHTKA Anda...");
+        setPdfDownloadNotice("Sedang menyusun file PDF Sertifikat SHTKA ukuran A4...");
 
         try {
             const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-            const canvas1 = await html2canvas(page1Ref.current, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: "#ffffff"
-            });
-            const imgData1 = canvas1.toDataURL("image/jpeg", 0.94);
-            const imgHeight1 = (canvas1.height * 210) / canvas1.width;
-            pdf.addImage(imgData1, "JPEG", 0, 0, 210, Math.min(297, imgHeight1));
+            const canvas1 = await captureA4DesktopCanvas(page1Ref.current, "shtka-page-1");
+            addCanvasFittedToA4Page(pdf, canvas1, true);
 
             if (page2Ref.current && reportData.itemRows.length > 0) {
-                const canvas2 = await html2canvas(page2Ref.current, {
-                    scale: 2,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: "#ffffff"
-                });
-                const imgData2 = canvas2.toDataURL("image/jpeg", 0.94);
-                const imgHeight2 = (canvas2.height * 210) / canvas2.width;
-                pdf.addPage();
-                pdf.addImage(imgData2, "JPEG", 0, 0, 210, Math.min(297, imgHeight2));
+                const canvas2 = await captureA4DesktopCanvas(page2Ref.current, "shtka-page-2");
+                addCanvasFittedToA4Page(pdf, canvas2, false);
             }
 
             const safeName = reportData.stu.name.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -543,7 +595,7 @@ function PrivateStudentReportContent() {
             setPdfDownloadNotice(`File "${fileName}" berhasil disiapkan! Cek folder Unduhan / Files perangkat Anda.`);
         } catch (err) {
             console.error("PDF capture error:", err);
-            setPdfDownloadNotice("Klik tombol Cetak A4 di samping lalu pilih Simpan sebagai PDF jika browser membatasi unduhan otomatis.");
+            setPdfDownloadNotice("Klik tombol Cetak A4 di samping lalu pilih Simpan sebagai PDF.");
         } finally {
             setIsGeneratingPdf(false);
         }
@@ -568,7 +620,6 @@ function PrivateStudentReportContent() {
         );
     }
 
-    // FORM VERIFIKASI KODE RAPOR PRIVAT (SAAT DIBUKA DARI LINK BALASAN WA HUMAS)
     if (!activeToken || accessError || !reportData) {
         return (
             <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
@@ -612,6 +663,10 @@ function PrivateStudentReportContent() {
                             </label>
                             <input
                                 type="text"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="characters"
+                                spellCheck={false}
                                 value={inputTokenCode}
                                 onChange={(e) => setInputTokenCode(e.target.value.toUpperCase())}
                                 placeholder="SHTKA-XXXXXX-XXXXX"
@@ -697,7 +752,7 @@ function PrivateStudentReportContent() {
                 }}
             />
 
-            {/* BAR AKSI UNDUH PDF (KOMPATIBEL SAFARI IOS, CHROME & FIREFOX) */}
+            {/* BAR AKSI UNDUH PDF */}
             <div className="no-print max-w-4xl mx-auto mb-4 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
@@ -740,7 +795,7 @@ function PrivateStudentReportContent() {
             </div>
 
             {/* LEMBAR RAPOR UTAMA A4 */}
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="max-w-4xl mx-auto space-y-6 overflow-x-auto">
                 {/* HALAMAN 1: SHTKA, GRAFIK HEKSAGONAL & KISI-KISI */}
                 <div
                     id="shtka-page-1"
@@ -879,8 +934,8 @@ function PrivateStudentReportContent() {
                         </tbody>
                     </table>
 
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border border-slate-300 rounded-xl p-3 bg-slate-50">
-                        <div className="md:col-span-5 bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col justify-between space-y-1.5">
+                    <div className="pdf-force-desktop-grid grid grid-cols-1 md:grid-cols-12 gap-3 border border-slate-300 rounded-xl p-3 bg-slate-50">
+                        <div className="pdf-col-5 md:col-span-5 bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col justify-between space-y-1.5">
                             <div className="text-center">
                                 <div className="text-[9px] font-mono font-black uppercase text-slate-900">
                                     GRAFIK HEKSAGONAL TREN KOMPETENSI
@@ -924,7 +979,7 @@ function PrivateStudentReportContent() {
                             </div>
                         </div>
 
-                        <div className="md:col-span-7 bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col justify-between space-y-2">
+                        <div className="pdf-col-7 md:col-span-7 bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col justify-between space-y-2">
                             <div className="flex items-center justify-between border-b border-slate-100 pb-1">
                                 <span className="text-[9px] font-mono font-black uppercase text-slate-900">
                                     GRAFIK CAPAIAN PER KISI-KISI & SUB-ELEMEN SOAL
@@ -1006,7 +1061,7 @@ function PrivateStudentReportContent() {
                             </span>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="pdf-force-2col grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {(["BINDO", "MTK"] as const).map((subCode) => {
                                 const rows = reportData.itemRows.filter((r) => r.subtes_code === subCode);
                                 return (

@@ -14,15 +14,19 @@ import {
     Maximize2,
     FastForward,
     Home,
-    Award,
     CheckSquare,
     Check,
     ArrowRight,
-    ShieldCheck
+    ShieldCheck,
+    MessageCircle,
+    Download,
+    ExternalLink
 } from "lucide-react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { supabase } from "@/lib/supabase";
+
+const SCHOOL_WHATSAPP_NUMBER = "6281779951229";
 
 // 2 MATA PELAJARAN UTAMA TKA SMP
 const TKA_SMP_SUBJECTS = [
@@ -84,6 +88,20 @@ export function formatScoreID(score: number): string {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
+}
+
+function generatePrivateReportToken(phone: string, name: string): string {
+    const cleanP = String(phone || "").replace(/\D/g, "");
+    const cleanN = String(name || "").toUpperCase().trim();
+    const raw = `${cleanP}|${cleanN}|SMAM18_TKA_2026`;
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) {
+        hash = (hash << 5) - hash + raw.charCodeAt(i);
+        hash |= 0;
+    }
+    const hexPart = Math.abs(hash).toString(16).toUpperCase().padStart(6, "0");
+    const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+    return `SHTKA-${hexPart}-${randPart}`;
 }
 
 function RenderLatex({ content }: { content?: any }) {
@@ -318,6 +336,7 @@ export default function OfficialExamChamberPage() {
     const [showSubtestConfirmModal, setShowSubtestConfirmModal] = useState(false);
     const [showViolationModal, setShowViolationModal] = useState(false);
     const [finalSavedReport, setFinalSavedReport] = useState<any>(null);
+    const [hasClickedWhatsappReport, setHasClickedWhatsappReport] = useState(false);
 
     useEffect(() => {
         answersRef.current = answers;
@@ -524,13 +543,26 @@ export default function OfficialExamChamberPage() {
         setIsIntermission(false);
         setIsSubmittingScore(true);
 
+        try {
+            if (typeof document !== "undefined" && document.fullscreenElement) {
+                document.exitFullscreen().catch(() => { });
+            }
+        } catch { }
+
         const snapshotAnswers = { ...answersRef.current };
         const snapshotViolations = violationsRef.current;
         const computed = calculateTkaSmpScore(allQuestionsList, snapshotAnswers);
         const finishTime = new Date().toLocaleTimeString("id-ID");
 
+        let cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "").trim();
+        if (cleanPhone.startsWith("62")) cleanPhone = "0" + cleanPhone.slice(2);
+
+        const reportToken = generatePrivateReportToken(cleanPhone, studentSession?.name || "");
+
         const finalReport = {
             student: studentSession,
+            cleanPhone,
+            reportToken,
             totalScore: computed.totalScore,
             bindoScore: computed.bindoScore,
             mtkScore: computed.mtkScore,
@@ -548,14 +580,13 @@ export default function OfficialExamChamberPage() {
 
         setFinalSavedReport(finalReport);
         localStorage.setItem("tka_result", JSON.stringify(finalReport));
-        try { localStorage.removeItem("tka_draft_answers"); } catch { }
-
-        let cleanPhone = String(studentSession?.phone || "").replace(/\D/g, "").trim();
-        if (cleanPhone.startsWith("62")) cleanPhone = "0" + cleanPhone.slice(2);
+        try {
+            localStorage.removeItem("tka_draft_answers");
+        } catch { }
 
         if (cleanPhone) {
             try {
-                // 1. Pastikan status "Selesai" & skor desimal tersimpan ke tka_students
+                // 1. Simpan status "Selesai", skor desimal & token rapor privat ke tka_students
                 const { error: stuErr } = await supabase.from("tka_students").upsert(
                     {
                         phone: cleanPhone,
@@ -568,24 +599,44 @@ export default function OfficialExamChamberPage() {
                         score: Number(computed.totalScore.toFixed(2)),
                         bindo_score: Number(computed.bindoScore.toFixed(2)),
                         mtk_score: Number(computed.mtkScore.toFixed(2)),
-                        waktu_selesai: finishTime
+                        waktu_selesai: finishTime,
+                        report_token: reportToken
                     },
                     { onConflict: "phone" }
                 );
 
                 if (stuErr) {
-                    // Fallback aman: pastikan status Selesai tetap terupdate meski kolom belum numeric
-                    await supabase
-                        .from("tka_students")
-                        .update({
+                    // Fallback aman jika kolom report_token belum ditambahkan di Supabase
+                    const { error: stuErr2 } = await supabase.from("tka_students").upsert(
+                        {
+                            phone: cleanPhone,
+                            name: studentSession?.name,
+                            school: studentSession?.school || "SMP / MTs",
+                            grade: studentSession?.grade || "9",
+                            interest: studentSession?.interest || "Umum",
                             status: "Selesai",
                             violations: snapshotViolations,
-                            score: Math.round(computed.totalScore),
-                            bindo_score: Math.round(computed.bindoScore),
-                            mtk_score: Math.round(computed.mtkScore),
+                            score: Number(computed.totalScore.toFixed(2)),
+                            bindo_score: Number(computed.bindoScore.toFixed(2)),
+                            mtk_score: Number(computed.mtkScore.toFixed(2)),
                             waktu_selesai: finishTime
-                        })
-                        .eq("phone", cleanPhone);
+                        },
+                        { onConflict: "phone" }
+                    );
+
+                    if (stuErr2) {
+                        await supabase
+                            .from("tka_students")
+                            .update({
+                                status: "Selesai",
+                                violations: snapshotViolations,
+                                score: Math.round(computed.totalScore),
+                                bindo_score: Math.round(computed.bindoScore),
+                                mtk_score: Math.round(computed.mtkScore),
+                                waktu_selesai: finishTime
+                            })
+                            .eq("phone", cleanPhone);
+                    }
                 }
 
                 // 2. Simpan rincian jawaban jsonb ke tka_results untuk analisis rapor & grafik
@@ -665,7 +716,9 @@ export default function OfficialExamChamberPage() {
         setAnswers((prev) => {
             const next = { ...prev, [currentQKey]: optIdx };
             answersRef.current = next;
-            try { localStorage.setItem("tka_draft_answers", JSON.stringify(next)); } catch { }
+            try {
+                localStorage.setItem("tka_draft_answers", JSON.stringify(next));
+            } catch { }
             return next;
         });
     };
@@ -678,7 +731,9 @@ export default function OfficialExamChamberPage() {
                 : [...existing, optIdx];
             const next = { ...prev, [currentQKey]: updated };
             answersRef.current = next;
-            try { localStorage.setItem("tka_draft_answers", JSON.stringify(next)); } catch { }
+            try {
+                localStorage.setItem("tka_draft_answers", JSON.stringify(next));
+            } catch { }
             return next;
         });
     };
@@ -689,7 +744,9 @@ export default function OfficialExamChamberPage() {
             const updated = { ...existing, [statementId]: choice };
             const next = { ...prev, [currentQKey]: updated };
             answersRef.current = next;
-            try { localStorage.setItem("tka_draft_answers", JSON.stringify(next)); } catch { }
+            try {
+                localStorage.setItem("tka_draft_answers", JSON.stringify(next));
+            } catch { }
             return next;
         });
     };
@@ -858,18 +915,34 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // SELESAI UJIAN & KONFIRMASI SHTKA PER MATA UJI
+    // SELESAI UJIAN: WAJIB KIRIM WA KE HUMAS UNTUK MENDAPATKAN TAUTAN RAPOR PDF
     if (isExamCompleted && finalSavedReport) {
+        const cleanPhone = finalSavedReport.cleanPhone || String(studentSession?.phone || "").replace(/\D/g, "");
+        const token = finalSavedReport.reportToken || "";
+        const waText = [
+            `LAPOR_TKA — SMA Muhammadiyah 18 Jakarta`,
+            `Assalamu'alaikum Admin Humas SMA Muhammadiyah 18 Jakarta.`,
+            `Saya telah menyelesaikan Tryout TKA SMP:`,
+            ``,
+            `Nama: ${studentSession?.name}`,
+            `Asal Sekolah: ${studentSession?.school} (Kelas ${studentSession?.grade || "9"})`,
+            `Kode Verifikasi Rapor: ${token}`,
+            ``,
+            `Mohon tautan untuk mengunduh Sertifikat Rapor SHTKA (PDF) saya. Terima kasih.`
+        ].join("\n");
+
+        const waUrl = `https://wa.me/${SCHOOL_WHATSAPP_NUMBER}?text=${encodeURIComponent(waText)}`;
+
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 flex items-center justify-center">
-                <div className="max-w-xl w-full bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 text-center space-y-6 shadow-xl relative overflow-hidden">
+                <div className="max-w-xl w-full bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 text-center space-y-5 shadow-xl relative overflow-hidden">
                     <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-600" />
 
                     <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto">
                         <CheckCircle2 className="w-8 h-8" />
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1">
                         <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10px] font-bold uppercase">
                             LEMBAR JAWABAN TERKUNCI DI SERVER
                         </span>
@@ -881,31 +954,55 @@ export default function OfficialExamChamberPage() {
                         </p>
                     </div>
 
-                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs text-slate-600 leading-relaxed">
-                        <div className="font-bold text-slate-900 flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0" />
-                            <span>Pengumuman Sertifikat Hasil Tryout TKA SMP (SHTKA)</span>
+                    {/* KOTAK KODE VERIFIKASI RAPOR PRIVAT */}
+                    <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1.5">
+                        <div className="text-[10.5px] font-mono font-bold uppercase text-blue-800">
+                            KODE VERIFIKASI RAPOR ANDA (SIMPAN / SALIN):
                         </div>
-                        <p>
-                            Seluruh jawaban <strong>Bahasa Indonesia</strong> dan <strong>Matematika</strong> Anda telah berhasil dikirimkan dan diamankan di server <strong>SMA Muhammadiyah 18 Jakarta</strong>.
-                        </p>
-                        <p>
-                            Sesuai ketentuan panitia, <strong>Rapor Nilai (Skala 0,00–100,00), Grafik Analisis Kompetensi per Kisi-Kisi, serta Peringkat Sekolah</strong> akan dibagikan secara resmi melalui <strong>Guru Pendamping / Panitia Pelaksana</strong> setelah seluruh sesi ujian selesai.
-                        </p>
+                        <div className="text-lg sm:text-xl font-mono font-black tracking-wider text-slate-900 bg-white py-2 px-4 rounded-xl border border-blue-200 inline-block select-all">
+                            {token}
+                        </div>
                     </div>
 
-                    <div className="pt-1">
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs text-slate-600 leading-relaxed">
+                        <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0" />
+                            <span>Cara Mengunduh Sertifikat Hasil Tryout TKA SMP (PDF)</span>
+                        </div>
+                        <ol className="list-decimal pl-4 space-y-1 text-[11.5px] text-slate-700 font-medium">
+                            <li>
+                                Klik tombol hijau <strong>“Kirim Laporan ke WA Humas Sekolah”</strong> di bawah ini, lalu tekan tombol <strong>Kirim</strong> pada aplikasi WhatsApp Anda.
+                            </li>
+                            <li>
+                                WhatsApp Humas <strong>SMA Muhammadiyah 18 Jakarta</strong> akan langsung membalas secara otomatis berisi <strong>tautan portal rapor</strong>.
+                            </li>
+                            <li>
+                                Buka tautan balasan tersebut dan masukkan <strong>Kode Verifikasi Rapor</strong> Anda di atas untuk langsung mengunduh file PDF rapor Anda.
+                            </li>
+                        </ol>
+                    </div>
+
+                    <div className="space-y-2.5 pt-1">
+                        <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3.5 px-5 bg-[#16a34a] hover:bg-[#15803d] text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2"
+                        >
+                            <MessageCircle className="w-4 h-4 shrink-0" />
+                            <span>Kirim Laporan ke WA Humas Sekolah</span>
+                            <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                        </a>
+
                         <button
+                            type="button"
                             onClick={() => {
-                                try {
-                                    if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
-                                } catch { }
                                 localStorage.removeItem("tka_result");
                                 router.push("/");
                             }}
-                            className="w-full py-3.5 bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                            className="w-full py-2.5 text-slate-500 hover:text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
                         >
-                            <Home className="w-4 h-4" />
+                            <Home className="w-3.5 h-3.5" />
                             <span>Selesai & Kembali ke Beranda</span>
                         </button>
                     </div>

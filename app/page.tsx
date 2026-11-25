@@ -14,7 +14,12 @@ import {
   Cpu,
   EyeOff,
   Play,
-  Award
+  Award,
+  Sparkles,
+  ZoomIn,
+  X,
+  MessageCircle,
+  ExternalLink
 } from "lucide-react";
 
 export default function CBTEngineLandingPage() {
@@ -29,6 +34,9 @@ export default function CBTEngineLandingPage() {
 
   // State opsi interaktif di Hero
   const [selectedOption, setSelectedOption] = useState<string>("B");
+
+  // State modal zoom flyer PPDB
+  const [previewFlyer, setPreviewFlyer] = useState<{ src: string; title: string } | null>(null);
 
   // 2. Animasi Hitung Metrik Hero (0 ke 100)
   const metricsRef = useRef<HTMLDivElement | null>(null);
@@ -117,6 +125,10 @@ export default function CBTEngineLandingPage() {
 
     return () => clearInterval(progressTimer);
   }, []);
+
+  const ppdbWaText = encodeURIComponent(
+    "Assalamu'alaikum Admin PPDB SMA Muhammadiyah 18 Jakarta. Saya peserta Tryout TKA SMP ingin menanyakan informasi pendaftaran peserta didik baru (PPDB 2026/2027)."
+  );
 
   return (
     <div className="min-h-screen bg-[#F1F5F9] text-slate-800 font-sans selection:bg-blue-700 selection:text-white relative overflow-x-hidden">
@@ -258,6 +270,14 @@ export default function CBTEngineLandingPage() {
                     >
                       <BarChart3 className="w-4 h-4 text-blue-700" />
                       <span>Struktur 60 Soal</span>
+                    </a>
+
+                    <a
+                      href="#info-ppdb"
+                      className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-bold text-xs sm:text-sm transition shadow-2xs flex items-center gap-2"
+                    >
+                      <Award className="w-4 h-4 text-amber-600" />
+                      <span>Brosur PPDB</span>
                     </a>
                   </div>
                 </div>
@@ -772,6 +792,122 @@ export default function CBTEngineLandingPage() {
             </div>
           </div>
         </section>
+
+        {/* SECTION 5: PROMOSI FLYER PPDB (DEPAN & BELAKANG) */}
+        <section id="info-ppdb" className="relative z-10 bg-gradient-to-b from-white to-slate-100/80 border-b border-slate-200/90 py-10 sm:py-14">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-5 sm:p-8 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5 text-left">
+                <div className="space-y-1.5">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-mono text-[10px] font-bold uppercase">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>SPMB / PPDB TAHUN AJARAN 2026–2027</span>
+                  </div>
+                  <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
+                    Brosur Resmi PPDB SMA Muhammadiyah 18 Jakarta
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Ketuk salah satu gambar brosur di bawah untuk memperbesar informasi program unggulan, jalur prestasi, dan rincian pendaftaran.
+                  </p>
+                </div>
+
+                <a
+                  href={`https://wa.me/6281779951229?text=${ppdbWaText}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 h-11 px-4 sm:px-5 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-xs inline-flex items-center justify-center gap-2 shadow-sm transition"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Tanya Info PPDB via WA</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                </a>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
+                {/* Flyer Depan */}
+                <div
+                  onClick={() =>
+                    setPreviewFlyer({
+                      src: "/flyer-ppdb-depan.jpg",
+                      title: "Brosur PPDB SMA Muhammadiyah 18 Jakarta — Halaman Depan"
+                    })
+                  }
+                  className="group rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden cursor-pointer shadow-xs hover:shadow-md hover:border-blue-300 transition flex flex-col justify-between"
+                >
+                  <div className="overflow-hidden bg-slate-100 flex items-center justify-center">
+                    <img
+                      src="/flyer-ppdb-depan.jpg"
+                      alt="Flyer PPDB SMA Muhammadiyah 18 Jakarta Depan"
+                      className="w-full h-auto object-contain group-hover:scale-[1.01] transition-transform duration-300"
+                    />
+                  </div>
+                  <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-800">
+                    <span>Halaman Depan — Profil & Program</span>
+                    <span className="inline-flex items-center gap-1 text-blue-700 font-mono text-[10.5px]">
+                      <ZoomIn className="w-3.5 h-3.5" /> Perbesar
+                    </span>
+                  </div>
+                </div>
+
+                {/* Flyer Belakang */}
+                <div
+                  onClick={() =>
+                    setPreviewFlyer({
+                      src: "/flyer-ppdb-belakang.jpg",
+                      title: "Brosur PPDB SMA Muhammadiyah 18 Jakarta — Halaman Belakang"
+                    })
+                  }
+                  className="group rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden cursor-pointer shadow-xs hover:shadow-md hover:border-blue-300 transition flex flex-col justify-between"
+                >
+                  <div className="overflow-hidden bg-slate-100 flex items-center justify-center">
+                    <img
+                      src="/flyer-ppdb-belakang.jpg"
+                      alt="Flyer PPDB SMA Muhammadiyah 18 Jakarta Belakang"
+                      className="w-full h-auto object-contain group-hover:scale-[1.01] transition-transform duration-300"
+                    />
+                  </div>
+                  <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-800">
+                    <span>Halaman Belakang — Syarat & Alur Daftar</span>
+                    <span className="inline-flex items-center gap-1 text-blue-700 font-mono text-[10.5px]">
+                      <ZoomIn className="w-3.5 h-3.5" /> Perbesar
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* MODAL ZOOM FLYER PPDB */}
+        {previewFlyer && (
+          <div
+            onClick={() => setPreviewFlyer(null)}
+            className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-2xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl border border-slate-700"
+            >
+              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between gap-2">
+                <span className="text-xs font-bold truncate">{previewFlyer.title}</span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewFlyer(null)}
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="max-h-[82vh] overflow-y-auto bg-slate-100 flex justify-center">
+                <img
+                  src={previewFlyer.src}
+                  alt={previewFlyer.title}
+                  className="w-full h-auto object-contain"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* FOOTER RESPONSIF */}
         <footer className="relative z-10 bg-white border-t border-slate-200/90 py-6 sm:py-8">

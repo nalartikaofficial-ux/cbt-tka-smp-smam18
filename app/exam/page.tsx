@@ -361,8 +361,9 @@ export default function OfficialExamChamberPage() {
     const [showViolationModal, setShowViolationModal] = useState(false);
     const [finalSavedReport, setFinalSavedReport] = useState<any>(null);
 
-    // State gerbang WhatsApp -> Unduh Rapor PDF
+    // State gerbang WhatsApp + Konfirmasi 4 Digit Nomor HP Aktif -> Unduh Rapor PDF
     const [waClickedAt, setWaClickedAt] = useState<number | null>(null);
+    const [confirmPhoneLast4, setConfirmPhoneLast4] = useState<string>("");
     const [hasVerifiedWaSwitch, setHasVerifiedWaSwitch] = useState(false);
     const [previewFlyer, setPreviewFlyer] = useState<{ src: string; title: string } | null>(null);
 
@@ -373,32 +374,6 @@ export default function OfficialExamChamberPage() {
     useEffect(() => {
         violationsRef.current = violationCount;
     }, [violationCount]);
-
-    // Deteksi apakah siswa benar-benar berpindah ke aplikasi WA minimal 3 detik setelah klik tombol WA
-    useEffect(() => {
-        if (!isExamCompleted || !waClickedAt || hasVerifiedWaSwitch) return;
-
-        const handleReturnFromWa = () => {
-            if (!document.hidden && Date.now() - waClickedAt >= 3000) {
-                setHasVerifiedWaSwitch(true);
-            }
-        };
-
-        const fallbackTimer = setInterval(() => {
-            if (Date.now() - waClickedAt >= 5000 && !document.hidden) {
-                setHasVerifiedWaSwitch(true);
-            }
-        }, 1000);
-
-        document.addEventListener("visibilitychange", handleReturnFromWa);
-        window.addEventListener("focus", handleReturnFromWa);
-
-        return () => {
-            clearInterval(fallbackTimer);
-            document.removeEventListener("visibilitychange", handleReturnFromWa);
-            window.removeEventListener("focus", handleReturnFromWa);
-        };
-    }, [isExamCompleted, waClickedAt, hasVerifiedWaSwitch]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -646,7 +621,7 @@ export default function OfficialExamChamberPage() {
 
         if (cleanPhone) {
             try {
-                // 1. Pastikan skor desimal 2 angka di belakang koma & token rapor tersimpan ke tka_students
+                // 1. Simpan skor desimal 2 angka di belakang koma & token rapor ke tka_students
                 const { error: stuErr } = await supabase.from("tka_students").upsert(
                     {
                         phone: cleanPhone,
@@ -698,7 +673,7 @@ export default function OfficialExamChamberPage() {
                     }
                 }
 
-                // 2. Simpan rincian jawaban jsonb ke tka_results (hapus lama jika re-submit agar tidak ganda)
+                // 2. Simpan rincian jawaban jsonb ke tka_results
                 await supabase.from("tka_results").delete().eq("phone", cleanPhone);
                 const { error: resErr } = await supabase.from("tka_results").insert({
                     phone: cleanPhone,
@@ -975,10 +950,12 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // SELESAI UJIAN: WAJIB KIRIM WA KE HP PANITIA UNTUK MENDAPATKAN TAUTAN RAPOR
+    // SELESAI UJIAN: WAJIB KIRIM WA PANITIA + KONFIRMASI 4 DIGIT NO. HP AKTIF + BROSUR PPDB
     if (isExamCompleted && finalSavedReport) {
         const cleanPhone = finalSavedReport.cleanPhone || String(studentSession?.phone || "").replace(/\D/g, "");
         const token = finalSavedReport.reportToken || "";
+        const expectedLast4 = cleanPhone.slice(-4);
+
         const waText = [
             `LAPOR_TKA — SMA Muhammadiyah 18 Jakarta`,
             `Assalamu'alaikum Panitia Tryout TKA SMP SMA Muhammadiyah 18 Jakarta.`,
@@ -989,10 +966,21 @@ export default function OfficialExamChamberPage() {
             `No. HP Login: ${cleanPhone}`,
             `Kode Verifikasi Rapor: ${token}`,
             ``,
-            `Mohon tautan untuk mengunduh Sertifikat Rapor SHTKA (PDF) saya. Terima kasih.`
+            `Mohon tercatat sebagai peserta Tryout TKA SMP. Terima kasih.`
         ].join("\n");
 
-        const waUrl = `https://wa.me/${6281779951229}?text=${encodeURIComponent(waText)}`;
+        const waUrl = `https://wa.me/${SCHOOL_WHATSAPP_NUMBER}?text=${encodeURIComponent(waText)}`;
+        const directPrivateRaporUrl = `/rapor?p=${encodeURIComponent(cleanPhone)}&t=${encodeURIComponent(token)}`;
+
+        const handleConfirmLast4Digits = (val: string) => {
+            const onlyDigits = val.replace(/\D/g, "").slice(0, 4);
+            setConfirmPhoneLast4(onlyDigits);
+            if (waClickedAt && onlyDigits === expectedLast4) {
+                setHasVerifiedWaSwitch(true);
+            } else {
+                setHasVerifiedWaSwitch(false);
+            }
+        };
 
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 space-y-6">
@@ -1024,40 +1012,83 @@ export default function OfficialExamChamberPage() {
                         <div className="text-base sm:text-xl font-mono font-black tracking-wider text-slate-900 bg-white py-2 px-4 rounded-xl border border-blue-200 inline-block select-all">
                             {token}
                         </div>
-                        <p className="text-[10.5px] text-slate-600">
-                            *Kirim laporan memakai <strong>nomor WhatsApp asli</strong> sesuai saat login.
-                        </p>
                     </div>
 
                     <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2 text-xs text-slate-600 leading-relaxed">
                         <div className="font-bold text-slate-900 flex items-center gap-2">
                             <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0" />
-                            <span>Cara Mendapatkan Sertifikat Hasil TKA SMP (PDF)</span>
+                            <span>Cara Mengunduh Sertifikat Hasil TKA SMP (PDF)</span>
                         </div>
                         <ol className="list-decimal pl-4 space-y-1 text-[11.5px] text-slate-700 font-medium">
                             <li>
-                                Tekan tombol hijau <strong>“Kirim Laporan ke WA Panitia”</strong> di bawah ini, lalu klik <strong>Kirim</strong> pada aplikasi WhatsApp Anda.
+                                Tekan tombol hijau <strong>“1. Kirim Laporan ke WA Panitia”</strong>, lalu klik <strong>Kirim</strong> pada aplikasi WhatsApp Anda.
                             </li>
                             <li>
-                                WhatsApp Panitia akan langsung membalas otomatis berisi <strong>tautan portal rapor</strong>.
-                            </li>
-                            <li>
-                                Buka tautan balasan tersebut, masukkan <strong>Kode Verifikasi Rapor</strong> Anda di atas, lalu unduh file PDF rapor (4 halaman A4).
+                                Kembali ke halaman ini, lalu ketikkan <strong>4 digit terakhir nomor HP Anda</strong> pada kotak konfirmasi di bawah untuk membuka tombol unduh PDF rapor.
                             </li>
                         </ol>
                     </div>
 
-                    <div className="space-y-2.5 pt-1">
+                    <div className="space-y-3 pt-1">
+                        {/* LANGKAH 1: KIRIM LAPORAN KE WA PANITIA */}
                         <a
                             href={waUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => {
+                                setWaClickedAt(Date.now());
+                                if (confirmPhoneLast4 === expectedLast4) {
+                                    setHasVerifiedWaSwitch(true);
+                                }
+                            }}
                             className="w-full py-3.5 px-5 bg-[#16a34a] hover:bg-[#15803d] text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2"
                         >
                             <MessageCircle className="w-4 h-4 shrink-0" />
-                            <span>Kirim Laporan ke WA Panitia</span>
+                            <span>1. Kirim Laporan ke WA Panitia</span>
                             <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0" />
                         </a>
+
+                        {/* LANGKAH 2: KONFIRMASI 4 DIGIT TERAKHIR NOMOR HP */}
+                        <div
+                            className={`p-3.5 rounded-2xl border text-left space-y-1.5 transition ${!waClickedAt
+                                    ? "bg-slate-100/70 border-slate-200 opacity-60"
+                                    : hasVerifiedWaSwitch
+                                        ? "bg-emerald-50/70 border-emerald-300"
+                                        : "bg-blue-50/40 border-blue-200"
+                                }`}
+                        >
+                            <label className="block text-[11px] font-mono font-bold text-slate-700">
+                                {waClickedAt
+                                    ? "KETIK 4 DIGIT TERAKHIR NO. WHATSAPP ANDA:"
+                                    : "KLIK TOMBOL HIJAU DI ATAS DULU UNTUK MEMBUKA KONFIRMASI:"}
+                            </label>
+                            <input
+                                type="tel"
+                                inputMode="numeric"
+                                maxLength={4}
+                                disabled={!waClickedAt}
+                                value={confirmPhoneLast4}
+                                onChange={(e) => handleConfirmLast4Digits(e.target.value)}
+                                placeholder="Contoh: 7912"
+                                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-mono font-black text-center text-sm tracking-[0.35em] text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] disabled:bg-slate-100"
+                            />
+                        </div>
+
+                        {/* LANGKAH 3: TOMBOL UNDUH RAPOR PDF */}
+                        {hasVerifiedWaSwitch ? (
+                            <a
+                                href={directPrivateRaporUrl}
+                                className="w-full py-3.5 px-5 bg-[#1e3a8a] hover:bg-blue-900 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-4 h-4 shrink-0" />
+                                <span>2. Buka & Unduh Rapor PDF Saya (A4)</span>
+                            </a>
+                        ) : (
+                            <div className="w-full py-3 px-4 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs flex items-center justify-center gap-2 select-none">
+                                <Download className="w-3.5 h-3.5 shrink-0" />
+                                <span>2. Tombol Unduh PDF Terkunci Sebelum Kirim WA & Isi 4 Digit HP</span>
+                            </div>
+                        )}
 
                         <button
                             type="button"

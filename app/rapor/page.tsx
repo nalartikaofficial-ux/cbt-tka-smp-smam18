@@ -223,7 +223,7 @@ function evaluateStudentItemDetail(q: any, userAns: any) {
         };
     }
 
-    const targetIdx = typeof q?.singleAnswer === "number" ? q.singleAnswer : (keyMap[rawKey] ?? 0);
+    const targetIdx = typeof q?.singleAnswer === "number" ? q?.singleAnswer : (keyMap[rawKey] ?? 0);
     let isRight = false;
     let studentLabel = "-";
     if (typeof userAns === "number") {
@@ -260,7 +260,6 @@ function triggerCrossBrowserPdfDownload(pdf: jsPDF, fileName: string): string {
     return blobUrl;
 }
 
-// Render elemen ke Canvas A4 Desktop (lebar tetap 840px) agar di layar HP tidak terpotong/gepeng
 async function captureA4DesktopCanvas(element: HTMLElement, targetId: string) {
     return html2canvas(element, {
         scale: 2,
@@ -335,7 +334,6 @@ function loadImageElement(src: string): Promise<HTMLImageElement | null> {
     });
 }
 
-// Menempatkan 1 gambar brosur utuh tanpa terpotong ke dalam 1 halaman penuh A4
 async function addFullImagePageToA4(pdf: jsPDF, imgSrc: string) {
     const img = await loadImageElement(imgSrc);
     if (!img || !img.naturalWidth || !img.naturalHeight) return;
@@ -370,16 +368,16 @@ async function addFullImagePageToA4(pdf: jsPDF, imgSrc: string) {
 
 function PrivateStudentReportContent() {
     const searchParams = useSearchParams();
-    const initialPhone = normalizePhoneDigits(searchParams.get("p") || "");
     const initialToken = String(searchParams.get("t") || "").trim().toUpperCase();
     const autoDownloadParam = searchParams.get("autodownload") === "1";
 
-    const [activePhone, setActivePhone] = useState<string>(initialPhone);
-    const [activeToken, setActiveToken] = useState<string>(initialToken);
+    const [activePhone, setActivePhone] = useState<string>("");
+    const [activeToken, setActiveToken] = useState<string>("");
     const [inputTokenCode, setInputTokenCode] = useState<string>(initialToken);
+    const [inputPhoneLast4, setInputPhoneLast4] = useState<string>("");
     const [shouldAutoDownload, setShouldAutoDownload] = useState<boolean>(autoDownloadParam);
 
-    const [isLoading, setIsLoading] = useState<boolean>(Boolean(initialToken));
+    const [isLoading, setIsLoading] = useState<boolean>(false);
     const [accessError, setAccessError] = useState<string | null>(null);
     const [allStudents, setAllStudents] = useState<any[]>([]);
     const [questionsBank, setQuestionsBank] = useState<any[]>([]);
@@ -392,10 +390,16 @@ function PrivateStudentReportContent() {
     const page1Ref = useRef<HTMLDivElement>(null);
     const page2Ref = useRef<HTMLDivElement>(null);
 
-    const verifyAndLoadStudent = useCallback(async (tokenToCheck: string, phoneHint?: string) => {
+    const verifyAndLoadStudent = useCallback(async (tokenToCheck: string, last4DigitsToCheck: string) => {
         const cleanToken = String(tokenToCheck || "").trim().toUpperCase();
+        const cleanLast4 = String(last4DigitsToCheck || "").replace(/\D/g, "").slice(0, 4);
+
         if (!cleanToken) {
             setAccessError("Silakan masukkan Kode Verifikasi Rapor (SHTKA-...) Anda terlebih dahulu.");
+            return;
+        }
+        if (cleanLast4.length !== 4) {
+            setAccessError("Silakan masukkan 4 digit terakhir nomor HP/WhatsApp yang didaftarkan saat login.");
             return;
         }
 
@@ -415,21 +419,18 @@ function PrivateStudentReportContent() {
 
             const listStudents = Array.isArray(stuRes.data) ? stuRes.data : [];
 
-            let targetStudent = listStudents.find(
-                (s) => String(s?.report_token || "").trim().toUpperCase() === cleanToken
-            );
-
-            if (!targetStudent && phoneHint) {
-                targetStudent = listStudents.find(
-                    (s) => normalizePhoneDigits(s?.phone || "") === normalizePhoneDigits(phoneHint)
-                );
-            }
+            let targetStudent = listStudents.find((s) => {
+                const dbToken = String(s?.report_token || "").trim().toUpperCase();
+                const dbPhone = normalizePhoneDigits(s?.phone || "");
+                return dbToken === cleanToken && dbPhone.endsWith(cleanLast4);
+            });
 
             if (!targetStudent && typeof window !== "undefined") {
                 try {
                     const localSaved = JSON.parse(window.localStorage.getItem("tka_result") || "{}");
-                    if (String(localSaved?.reportToken || "").trim().toUpperCase() === cleanToken) {
-                        const localPhone = normalizePhoneDigits(localSaved?.cleanPhone || "");
+                    const localToken = String(localSaved?.reportToken || "").trim().toUpperCase();
+                    const localPhone = normalizePhoneDigits(localSaved?.cleanPhone || "");
+                    if (localToken === cleanToken && localPhone.endsWith(cleanLast4)) {
                         targetStudent = listStudents.find(
                             (s) => normalizePhoneDigits(s?.phone || "") === localPhone
                         );
@@ -438,7 +439,9 @@ function PrivateStudentReportContent() {
             }
 
             if (!targetStudent) {
-                setAccessError("Kode Verifikasi Rapor tidak ditemukan. Pastikan kode SHTKA-... ditulis dengan benar.");
+                setAccessError(
+                    "Kombinasi Kode Verifikasi Rapor dan 4 digit terakhir nomor HP tidak cocok. Periksa kembali kode SHTKA-... dan 4 angka terakhir nomor WA yang Anda daftarkan."
+                );
                 setIsLoading(false);
                 return;
             }
@@ -472,12 +475,6 @@ function PrivateStudentReportContent() {
             setIsLoading(false);
         }
     }, []);
-
-    useEffect(() => {
-        if (initialToken) {
-            verifyAndLoadStudent(initialToken, initialPhone);
-        }
-    }, [initialToken, initialPhone, verifyAndLoadStudent]);
 
     const reportData = useMemo(() => {
         if (allStudents.length === 0 || !activePhone) return null;
@@ -653,7 +650,7 @@ function PrivateStudentReportContent() {
         return (
             <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 gap-3 text-slate-700 font-sans">
                 <Loader2 className="w-8 h-8 animate-spin text-[#1e3a8a]" />
-                <div className="text-sm font-bold">Memverifikasi Kode & Memuat Sertifikat Hasil TKA SMP...</div>
+                <div className="text-sm font-bold">Memverifikasi Kode & 4 Digit Nomor HP Anda...</div>
             </div>
         );
     }
@@ -676,7 +673,7 @@ function PrivateStudentReportContent() {
                             Portal Unduh Sertifikat Rapor SHTKA
                         </h2>
                         <p className="text-xs text-slate-500 leading-relaxed">
-                            Masukkan <strong>Kode Verifikasi Rapor</strong> yang Anda peroleh setelah menyelesaikan ujian untuk mengunduh file PDF rapor pribadi Anda.
+                            Masukkan <strong>Kode Verifikasi Rapor</strong> dan <strong>4 digit terakhir nomor HP terdaftar</strong> Anda untuk membuka serta mengunduh PDF rapor pribadi.
                         </p>
                     </div>
 
@@ -691,13 +688,13 @@ function PrivateStudentReportContent() {
                         onSubmit={(e) => {
                             e.preventDefault();
                             setShouldAutoDownload(true);
-                            verifyAndLoadStudent(inputTokenCode);
+                            verifyAndLoadStudent(inputTokenCode, inputPhoneLast4);
                         }}
-                        className="space-y-3 text-left"
+                        className="space-y-3.5 text-left"
                     >
                         <div>
                             <label className="block text-[11px] font-mono font-bold text-slate-700 mb-1">
-                                KODE VERIFIKASI RAPOR (CONTOH: SHTKA-XXXXXX-XXXXX)
+                                1. KODE VERIFIKASI RAPOR (SHTKA-...):
                             </label>
                             <input
                                 type="text"
@@ -710,6 +707,22 @@ function PrivateStudentReportContent() {
                                 placeholder="SHTKA-XXXXXX-XXXXX"
                                 required
                                 className="w-full px-4 py-3 rounded-xl border border-slate-300 font-mono font-bold text-sm text-center uppercase tracking-wider text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-[11px] font-mono font-bold text-slate-700 mb-1">
+                                2. 4 DIGIT TERAKHIR NO. HP / WA TERDAFTAR:
+                            </label>
+                            <input
+                                type="tel"
+                                inputMode="numeric"
+                                maxLength={4}
+                                value={inputPhoneLast4}
+                                onChange={(e) => setInputPhoneLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                                placeholder="••••"
+                                required
+                                className="w-full px-4 py-3 rounded-xl border border-slate-300 font-mono font-black text-base text-center tracking-[0.45em] text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                             />
                         </div>
 

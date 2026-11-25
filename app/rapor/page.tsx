@@ -241,35 +241,23 @@ function evaluateStudentItemDetail(q: any, userAns: any) {
     };
 }
 
-function triggerCrossBrowserPdfDownload(pdf: jsPDF, fileName: string) {
-    const isIOS =
-        typeof navigator !== "undefined" &&
-        (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-            (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
-
+function triggerCrossBrowserPdfDownload(pdf: jsPDF, fileName: string): string {
     const blob = pdf.output("blob");
     const blobUrl = URL.createObjectURL(blob);
 
-    if (isIOS) {
+    try {
         const link = document.createElement("a");
         link.href = blobUrl;
         link.download = fileName;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
+        link.style.display = "none";
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-        return;
+    } catch {
+        window.open(blobUrl, "_blank");
     }
 
-    const link = document.createElement("a");
-    link.href = blobUrl;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+    return blobUrl;
 }
 
 // Render elemen ke Canvas A4 Desktop (lebar tetap 840px) agar di layar HP tidak terpotong/gepeng

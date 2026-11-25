@@ -975,7 +975,7 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // SELESAI UJIAN: WAJIB KIRIM WA KE HUMAS UNTUK MENDAPATKAN LINK RAPOR PDF
+    // SELESAI UJIAN: GERBANG BUKTI KIRIM WA HUMAS + UNDUH RAPOR PDF + BROSUR PPDB
     if (isExamCompleted && finalSavedReport) {
         const cleanPhone = finalSavedReport.cleanPhone || String(studentSession?.phone || "").replace(/\D/g, "");
         const token = finalSavedReport.reportToken || "";
@@ -989,10 +989,21 @@ export default function OfficialExamChamberPage() {
             `No. HP Terdaftar: ${cleanPhone}`,
             `Kode Verifikasi Rapor: ${token}`,
             ``,
-            `Mohon tautan untuk mengunduh Sertifikat Rapor SHTKA (PDF) saya. Terima kasih.`
+            `Laporan ini dikirim sebagai syarat pengambilan Sertifikat Rapor SHTKA (PDF). Terima kasih.`
         ].join("\n");
 
         const waUrl = `https://wa.me/${SCHOOL_WHATSAPP_NUMBER}?text=${encodeURIComponent(waText)}`;
+        const directPrivateRaporUrl = `/rapor?p=${encodeURIComponent(cleanPhone)}&t=${encodeURIComponent(token)}`;
+
+        const handleSelectProofScreenshot = (e: React.ChangeEvent<HTMLInputElement>) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            if (!file.type.startsWith("image/")) {
+                alert("Mohon unggah file gambar/screenshot chat WhatsApp yang sudah terkirim!");
+                return;
+            }
+            setHasVerifiedWaSwitch(true);
+        };
 
         return (
             <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 space-y-6">
@@ -1011,52 +1022,81 @@ export default function OfficialExamChamberPage() {
                             Terima Kasih, {studentSession?.name}!
                         </h2>
                         <p className="text-xs text-slate-500">
-                            Asal Sekolah: <strong className="text-slate-700">{studentSession?.school}</strong> • No. Terdaftar: <strong className="font-mono text-slate-800">{cleanPhone}</strong>
+                            Asal Sekolah: <strong className="text-slate-700">{studentSession?.school}</strong> • No. Terdaftar:{" "}
+                            <strong className="font-mono text-slate-800">{cleanPhone}</strong>
                         </p>
                     </div>
 
-                    {/* KOTAK KODE VERIFIKASI RAPOR PRIVAT */}
                     <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1.5">
                         <div className="text-[10.5px] font-mono font-bold uppercase text-blue-800">
-                            KODE VERIFIKASI RAPOR ANDA (SIMPAN / SALIN):
+                            KODE VERIFIKASI RAPOR ANDA:
                         </div>
                         <div className="text-base sm:text-xl font-mono font-black tracking-wider text-slate-900 bg-white py-2 px-4 rounded-xl border border-blue-200 inline-block select-all">
                             {token}
                         </div>
-                        <p className="text-[10.5px] text-slate-600">
-                            *Gunakan <strong>nomor WhatsApp asli</strong> sesuai saat pendaftaran agar laporan Anda tervalidasi oleh panitia.
-                        </p>
                     </div>
 
                     <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs text-slate-600 leading-relaxed">
                         <div className="font-bold text-slate-900 flex items-center gap-2">
                             <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0" />
-                            <span>Cara Mendapatkan Sertifikat Hasil TKA SMP (PDF)</span>
+                            <span>2 Langkah Wajib Unduh Sertifikat Rapor (PDF)</span>
                         </div>
-                        <ol className="list-decimal pl-4 space-y-1 text-[11.5px] text-slate-700 font-medium">
+                        <ol className="list-decimal pl-4 space-y-1.5 text-[11.5px] text-slate-700 font-medium">
                             <li>
-                                Klik tombol hijau <strong>“Kirim Laporan ke WA Humas Sekolah”</strong> di bawah ini, lalu tekan tombol <strong>Kirim</strong> pada aplikasi WhatsApp Anda.
+                                Klik tombol hijau <strong>“1. Kirim Laporan ke WA Humas Sekolah”</strong>, tekan <strong>Kirim</strong> di aplikasi WhatsApp Anda, lalu <strong>screenshot</strong> bukti chat yang sudah terkirim.
                             </li>
                             <li>
-                                WhatsApp Humas <strong>SMA Muhammadiyah 18 Jakarta</strong> akan membalas otomatis berisi <strong>tautan portal rapor</strong>.
-                            </li>
-                            <li>
-                                Buka tautan balasan dari WhatsApp tersebut, lalu masukkan <strong>Kode Verifikasi Rapor</strong> Anda di atas untuk mengunduh file PDF rapornya.
+                                Unggah screenshot bukti chat WA tersebut pada kotak di bawah agar tombol <strong>“2. Buka & Unduh Rapor PDF (A4)”</strong> langsung terbuka.
                             </li>
                         </ol>
                     </div>
 
-                    <div className="space-y-2.5 pt-1">
+                    <div className="space-y-3 pt-1">
                         <a
                             href={waUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => setWaClickedAt(Date.now())}
                             className="w-full py-3.5 px-5 bg-[#16a34a] hover:bg-[#15803d] text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2"
                         >
                             <MessageCircle className="w-4 h-4 shrink-0" />
-                            <span>Kirim Laporan ke WA Humas Sekolah</span>
+                            <span>1. Kirim Laporan ke WA Humas Sekolah</span>
                             <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0" />
                         </a>
+
+                        <label className="block w-full p-3.5 rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/40 transition cursor-pointer text-center space-y-1">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleSelectProofScreenshot}
+                                className="hidden"
+                            />
+                            <div className="text-xs font-bold text-slate-800">
+                                {hasVerifiedWaSwitch
+                                    ? "✅ Bukti Screenshot WA Terlampir! Silakan Unduh Rapor di Bawah:"
+                                    : "📸 Unggah Screenshot Bukti Chat WA Terkirim (Klik di Sini)"}
+                            </div>
+                            <div className="text-[10.5px] text-slate-500">
+                                {hasVerifiedWaSwitch
+                                    ? "Tombol unduh sertifikat rapor resmi sudah aktif."
+                                    : "Format gambar (JPG/PNG/Screenshot HP)"}
+                            </div>
+                        </label>
+
+                        {hasVerifiedWaSwitch ? (
+                            <a
+                                href={directPrivateRaporUrl}
+                                className="w-full py-3.5 px-5 bg-[#1e3a8a] hover:bg-blue-900 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-4 h-4 shrink-0" />
+                                <span>2. Buka & Unduh Rapor PDF Saya (A4)</span>
+                            </a>
+                        ) : (
+                            <div className="w-full py-3 px-4 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs flex items-center justify-center gap-2 select-none">
+                                <Download className="w-3.5 h-3.5 shrink-0" />
+                                <span>2. Tombol Unduh PDF Terkunci Sebelum Unggah Bukti WA</span>
+                            </div>
+                        )}
 
                         <button
                             type="button"

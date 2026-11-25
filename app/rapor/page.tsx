@@ -15,7 +15,8 @@ import {
     Home,
     FileCheck2,
     KeyRound,
-    ArrowRight
+    ArrowRight,
+    Sparkles
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
@@ -289,7 +290,6 @@ async function captureA4DesktopCanvas(element: HTMLElement, targetId: string) {
                 clonedEl.style.borderRadius = "0px";
                 clonedEl.style.boxShadow = "none";
             }
-            // Paksa grid 2 kolom tetap berdampingan di PDF meskipun dirender dari HP
             const twoColGrids = clonedDoc.querySelectorAll(".pdf-force-desktop-grid");
             twoColGrids.forEach((node) => {
                 const el = node as HTMLElement;
@@ -317,7 +317,7 @@ async function captureA4DesktopCanvas(element: HTMLElement, targetId: string) {
 }
 
 function addCanvasFittedToA4Page(pdf: jsPDF, canvas: HTMLCanvasElement, isFirstPage: boolean) {
-    if (!isFirstPage) pdf.addPage();
+    if (!isFirstPage) pdf.addPage("a4", "portrait");
     const pageW = 210;
     const pageH = 297;
     const margin = 4;
@@ -327,7 +327,6 @@ function addCanvasFittedToA4Page(pdf: jsPDF, canvas: HTMLCanvasElement, isFirstP
     let renderW = maxW;
     let renderH = (canvas.height * renderW) / canvas.width;
 
-    // Jika tinggi melebihi 1 lembar A4, skalakan proporsional tanpa merusak rasio aspek
     if (renderH > maxH) {
         renderH = maxH;
         renderW = (canvas.width * renderH) / canvas.height;
@@ -336,6 +335,49 @@ function addCanvasFittedToA4Page(pdf: jsPDF, canvas: HTMLCanvasElement, isFirstP
     const offsetX = (pageW - renderW) / 2;
     const imgData = canvas.toDataURL("image/jpeg", 0.94);
     pdf.addImage(imgData, "JPEG", offsetX, margin, renderW, renderH);
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement | null> {
+    return new Promise((resolve) => {
+        const img = new window.Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+    });
+}
+
+// Menempatkan 1 gambar brosur utuh tanpa terpotong ke dalam 1 halaman penuh A4
+async function addFullImagePageToA4(pdf: jsPDF, imgSrc: string) {
+    const img = await loadImageElement(imgSrc);
+    if (!img || !img.naturalWidth || !img.naturalHeight) return;
+
+    const isLandscape = img.naturalWidth > img.naturalHeight;
+    pdf.addPage("a4", isLandscape ? "landscape" : "portrait");
+
+    const pageW = isLandscape ? 297 : 210;
+    const pageH = isLandscape ? 210 : 297;
+    const margin = 6;
+    const maxW = pageW - margin * 2;
+    const maxH = pageH - margin * 2;
+
+    const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+    const drawW = img.naturalWidth * scale;
+    const drawH = img.naturalHeight * scale;
+    const offsetX = (pageW - drawW) / 2;
+    const offsetY = (pageH - drawH) / 2;
+
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = img.naturalWidth;
+    tempCanvas.height = img.naturalHeight;
+    const ctx = tempCanvas.getContext("2d");
+    if (ctx) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = tempCanvas.toDataURL("image/jpeg", 0.95);
+        pdf.addImage(dataUrl, "JPEG", offsetX, offsetY, drawW, drawH);
+    }
 }
 
 function PrivateStudentReportContent() {
@@ -576,18 +618,26 @@ function PrivateStudentReportContent() {
     const handleDownloadPdfFile = useCallback(async () => {
         if (!reportData || !page1Ref.current || isGeneratingPdf) return;
         setIsGeneratingPdf(true);
-        setPdfDownloadNotice("Sedang menyusun file PDF Sertifikat SHTKA ukuran A4...");
+        setPdfDownloadNotice("Sedang menyusun file PDF Sertifikat SHTKA & Brosur PPDB (4 Halaman A4)...");
 
         try {
             const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
+            // Halaman 1: Sertifikat Hasil TKA SMP (SHTKA)
             const canvas1 = await captureA4DesktopCanvas(page1Ref.current, "shtka-page-1");
             addCanvasFittedToA4Page(pdf, canvas1, true);
 
+            // Halaman 2: Lampiran Analisis Butir Soal Peserta
             if (page2Ref.current && reportData.itemRows.length > 0) {
                 const canvas2 = await captureA4DesktopCanvas(page2Ref.current, "shtka-page-2");
                 addCanvasFittedToA4Page(pdf, canvas2, false);
             }
+
+            // Halaman 3: Brosur PPDB Halaman Depan (Full A4 Utuh Tanpa Terpotong)
+            await addFullImagePageToA4(pdf, "/flyer-ppdb-depan.jpg");
+
+            // Halaman 4: Brosur PPDB Halaman Belakang (Full A4 Utuh Tanpa Terpotong)
+            await addFullImagePageToA4(pdf, "/flyer-ppdb-belakang.jpg");
 
             const safeName = reportData.stu.name.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
             const fileName = `Rapor_SHTKA_${safeName}.pdf`;
@@ -1106,6 +1156,53 @@ function PrivateStudentReportContent() {
                         </div>
                     </div>
                 )}
+
+                {/* PRATINJAU BROSUR PPDB (HALAMAN 3 & 4 DI FILE PDF) */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-8 shadow-sm page-break-before space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-slate-900 pb-2.5">
+                        <div>
+                            <div className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase text-amber-800">
+                                <Sparkles className="w-3.5 h-3.5 text-amber-600" /> LAMPIRAN HALAMAN 3 & 4 PDF — SPMB / PPDB 2026–2027
+                            </div>
+                            <h2 className="text-xs sm:text-sm font-black uppercase text-[#1e3a8a]">
+                                BROSUR RESMI PENERIMAAN PESERTA DIDIK BARU — SMA MUHAMMADIYAH 18 JAKARTA
+                            </h2>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-900 rounded self-start sm:self-auto">
+                            WA Info PPDB: 0817-7995-1229
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="border border-slate-300 rounded-xl overflow-hidden bg-slate-50 flex flex-col justify-between">
+                            <img
+                                src="/flyer-ppdb-depan.jpg"
+                                alt="Brosur PPDB SMA Muhammadiyah 18 Jakarta Halaman Depan"
+                                className="w-full h-auto object-contain"
+                                onError={(e) => {
+                                    (e.target as HTMLElement).style.display = "none";
+                                }}
+                            />
+                            <div className="p-2.5 bg-white border-t border-slate-200 text-center font-mono text-[10px] font-bold text-slate-700">
+                                HALAMAN 3 PDF — BROSUR DEPAN (UTUH A4)
+                            </div>
+                        </div>
+
+                        <div className="border border-slate-300 rounded-xl overflow-hidden bg-slate-50 flex flex-col justify-between">
+                            <img
+                                src="/flyer-ppdb-belakang.jpg"
+                                alt="Brosur PPDB SMA Muhammadiyah 18 Jakarta Halaman Belakang"
+                                className="w-full h-auto object-contain"
+                                onError={(e) => {
+                                    (e.target as HTMLElement).style.display = "none";
+                                }}
+                            />
+                            <div className="p-2.5 bg-white border-t border-slate-200 text-center font-mono text-[10px] font-bold text-slate-700">
+                                HALAMAN 4 PDF — BROSUR BELAKANG (UTUH A4)
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );

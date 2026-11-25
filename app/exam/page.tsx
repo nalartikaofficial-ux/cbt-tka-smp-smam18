@@ -20,7 +20,10 @@ import {
     ShieldCheck,
     MessageCircle,
     Download,
-    ExternalLink
+    ExternalLink,
+    Sparkles,
+    ZoomIn,
+    X
 } from "lucide-react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
@@ -166,7 +169,15 @@ function normalizeQuestionItem(q: any, index: number) {
     const code = normalizeSubtestCode(q.subtes_code || q.subtest || q.subject);
     const subject = code === "MTK" ? "Matematika" : "Bahasa Indonesia";
     const materi = q.materi || q.competency || (code === "MTK" ? "Bilangan" : "Pemahaman Tekstual");
-    const qType = q.type || "PG_SEDERHANA";
+    const rawKey = String(q.kunci || q.singleAnswer || "A").toUpperCase().trim();
+    const rawType = String(q.type || "").toUpperCase().trim();
+
+    let qType = "PG_SEDERHANA";
+    if (rawType === "PGK_KATEGORI" || rawKey.includes("|")) {
+        qType = "PGK_KATEGORI";
+    } else if (rawType === "PGK_MCMA" || rawKey.includes(",")) {
+        qType = "PGK_MCMA";
+    }
 
     let optionsList: string[] = [];
     if (Array.isArray(q.options) && q.options.length > 0) {
@@ -193,8 +204,7 @@ function normalizeQuestionItem(q: any, index: number) {
         }
     } else if (qType === "PGK_MCMA") {
         if (multiAnswersList.length === 0) {
-            multiAnswersList = String(q.kunci || "A")
-                .toUpperCase()
+            multiAnswersList = rawKey
                 .split(",")
                 .map((k) => keyMap[k.trim()])
                 .filter((n) => n !== undefined);
@@ -203,18 +213,18 @@ function normalizeQuestionItem(q: any, index: number) {
         if (typeof q.singleAnswer === "number") {
             singleAnswerIdx = q.singleAnswer;
         } else {
-            const rawKey = String(q.kunci || q.singleAnswer || "A").toUpperCase().trim();
             singleAnswerIdx = keyMap[rawKey] ?? 0;
         }
     }
 
     return {
-        id: q.id ? String(q.id) : `${code}_${index + 1}`,
+        id: q.id !== undefined && q.id !== null ? String(q.id) : `${code}_${index + 1}`,
         no_soal: Number(q.no_soal) || index + 1,
         subtes_code: code,
         subject,
         materi,
         type: qType,
+        kunci: rawKey,
         stimulus: q.stimulus || "",
         image_url: q.image_url || "",
         image_position: q.image_position || "above",
@@ -223,7 +233,7 @@ function normalizeQuestionItem(q: any, index: number) {
         singleAnswer: singleAnswerIdx,
         multiAnswers: multiAnswersList,
         statements: statementsList,
-        difficulty: Number(q.difficulty) || 1,
+        difficulty: Number(q.difficulty) > 0 ? Number(q.difficulty) : 1,
         pembahasan: q.pembahasan || q.explanation || ""
     };
 }
@@ -239,23 +249,36 @@ export function calculateTkaSmpScore(questionsList: any[], currentAnswers: Recor
 
     questionsList.forEach((q: any, idx: number) => {
         const qKey = q.id ? String(q.id) : `${q.subtes_code}_${idx}`;
-        const userAns = currentAnswers[qKey];
-        const weight = Number(q.difficulty) || 1;
+        const userAns = currentAnswers[qKey] ?? currentAnswers[`${q.subtes_code}_${q.no_soal}`];
+        const weight = Number(q.difficulty) > 0 ? Number(q.difficulty) : 1;
         let itemFraction = 0;
 
-        if (userAns !== undefined) {
+        if (userAns !== undefined && userAns !== null) {
             if (q.type === "PG_SEDERHANA" || !q.type) {
-                if (userAns === q.singleAnswer) itemFraction = 1;
+                if (typeof userAns === "number" && userAns === q.singleAnswer) {
+                    itemFraction = 1;
+                } else if (typeof userAns === "string" && userAns.toUpperCase().trim() === String(q.kunci || "").toUpperCase().trim()) {
+                    itemFraction = 1;
+                }
             } else if (q.type === "PGK_MCMA") {
                 const correctArr: number[] = q.multiAnswers || [];
                 const userArr: number[] = Array.isArray(userAns) ? userAns : [];
                 const matchCount = userArr.filter((val) => correctArr.includes(val)).length;
                 const wrongCount = userArr.filter((val) => !correctArr.includes(val)).length;
                 itemFraction = Math.max(0, (matchCount - wrongCount) / (correctArr.length || 1));
-            } else if (q.type === "PGK_KATEGORI" && q.statements) {
+            } else if (q.type === "PGK_KATEGORI" && Array.isArray(q.statements)) {
                 let correctCount = 0;
-                q.statements.forEach((st: any) => {
-                    if (userAns && userAns[st.id] === st.correctCategory) correctCount++;
+                q.statements.forEach((st: any, sIdx: number) => {
+                    const chosen =
+                        userAns?.[st.id] ??
+                        userAns?.[`st_${idx}_${sIdx}`] ??
+                        (typeof userAns === "object" ? Object.values(userAns)[sIdx] : undefined);
+                    if (
+                        String(chosen || "").toUpperCase().trim() ===
+                        String(st.correctCategory || "").toUpperCase().trim()
+                    ) {
+                        correctCount++;
+                    }
                 });
                 itemFraction = correctCount / (q.statements.length || 1);
             }
@@ -328,6 +351,7 @@ export default function OfficialExamChamberPage() {
     );
     const violationsRef = useRef<number>(0);
     const lastViolationTimeRef = useRef<number>(0);
+    const isSubmittingRef = useRef<boolean>(false);
 
     const [isInExam, setIsInExam] = useState(false);
     const [isIntermission, setIsIntermission] = useState(false);
@@ -336,7 +360,11 @@ export default function OfficialExamChamberPage() {
     const [showSubtestConfirmModal, setShowSubtestConfirmModal] = useState(false);
     const [showViolationModal, setShowViolationModal] = useState(false);
     const [finalSavedReport, setFinalSavedReport] = useState<any>(null);
-    const [hasClickedWhatsappReport, setHasClickedWhatsappReport] = useState(false);
+
+    // State gerbang WhatsApp -> Unduh Rapor PDF
+    const [waClickedAt, setWaClickedAt] = useState<number | null>(null);
+    const [hasVerifiedWaSwitch, setHasVerifiedWaSwitch] = useState(false);
+    const [previewFlyer, setPreviewFlyer] = useState<{ src: string; title: string } | null>(null);
 
     useEffect(() => {
         answersRef.current = answers;
@@ -345,6 +373,32 @@ export default function OfficialExamChamberPage() {
     useEffect(() => {
         violationsRef.current = violationCount;
     }, [violationCount]);
+
+    // Deteksi apakah siswa benar-benar berpindah ke aplikasi WA minimal 3 detik setelah klik tombol WA
+    useEffect(() => {
+        if (!isExamCompleted || !waClickedAt || hasVerifiedWaSwitch) return;
+
+        const handleReturnFromWa = () => {
+            if (!document.hidden && Date.now() - waClickedAt >= 3000) {
+                setHasVerifiedWaSwitch(true);
+            }
+        };
+
+        const fallbackTimer = setInterval(() => {
+            if (Date.now() - waClickedAt >= 5000 && !document.hidden) {
+                setHasVerifiedWaSwitch(true);
+            }
+        }, 1000);
+
+        document.addEventListener("visibilitychange", handleReturnFromWa);
+        window.addEventListener("focus", handleReturnFromWa);
+
+        return () => {
+            clearInterval(fallbackTimer);
+            document.removeEventListener("visibilitychange", handleReturnFromWa);
+            window.removeEventListener("focus", handleReturnFromWa);
+        };
+    }, [isExamCompleted, waClickedAt, hasVerifiedWaSwitch]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -445,6 +499,7 @@ export default function OfficialExamChamberPage() {
     const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${currentQIndexInSubtest}`;
 
     const enterExamChamber = async () => {
+        if (isSubmittingRef.current || isExamCompleted) return;
         setIsInExam(true);
         try {
             if (typeof document !== "undefined" && document.documentElement.requestFullscreen) {
@@ -470,7 +525,7 @@ export default function OfficialExamChamberPage() {
 
     const recordViolation = useCallback(
         (reasonText?: string) => {
-            if (!isInExam || isExamCompleted || isIntermission) return;
+            if (!isInExam || isExamCompleted || isIntermission || isSubmittingRef.current) return;
 
             const now = Date.now();
             if (now - lastViolationTimeRef.current < 1500) return;
@@ -501,20 +556,22 @@ export default function OfficialExamChamberPage() {
     );
 
     useEffect(() => {
-        if (!isInExam || isExamCompleted || isIntermission) return;
+        if (!isInExam || isExamCompleted || isIntermission || isSubmittingRef.current) return;
 
         const handleFullscreenChange = () => {
-            if (!document.fullscreenElement) {
+            if (!document.fullscreenElement && !isSubmittingRef.current) {
                 recordViolation("Anda keluar dari mode layar penuh (Fullscreen).");
             }
         };
         const handleVisibilityChange = () => {
-            if (document.hidden) {
+            if (document.hidden && !isSubmittingRef.current) {
                 recordViolation("Anda berpindah ke tab atau aplikasi lain.");
             }
         };
         const handleWindowBlur = () => {
-            recordViolation("Fokus jendela ujian berpindah ke aplikasi/notifikasi lain.");
+            if (!isSubmittingRef.current) {
+                recordViolation("Fokus jendela ujian berpindah ke aplikasi/notifikasi lain.");
+            }
         };
         const handleKeyDown = (e: KeyboardEvent) => {
             const isPrintScreen = e.key === "PrintScreen";
@@ -539,13 +596,16 @@ export default function OfficialExamChamberPage() {
     }, [isInExam, isExamCompleted, isIntermission, recordViolation]);
 
     const executeFinalSubmission = useCallback(async () => {
+        // Kunci flag submit TERLEBIH DAHULU agar tidak pernah memicu popup kuning kilat saat keluar fullscreen
+        isSubmittingRef.current = true;
+        setShowViolationModal(false);
         setShowSubtestConfirmModal(false);
         setIsIntermission(false);
         setIsSubmittingScore(true);
 
         try {
             if (typeof document !== "undefined" && document.fullscreenElement) {
-                document.exitFullscreen().catch(() => { });
+                await document.exitFullscreen().catch(() => { });
             }
         } catch { }
 
@@ -586,7 +646,7 @@ export default function OfficialExamChamberPage() {
 
         if (cleanPhone) {
             try {
-                // 1. Simpan status "Selesai", skor desimal & token rapor privat ke tka_students
+                // 1. Pastikan skor desimal 2 angka di belakang koma & token rapor tersimpan ke tka_students
                 const { error: stuErr } = await supabase.from("tka_students").upsert(
                     {
                         phone: cleanPhone,
@@ -606,7 +666,6 @@ export default function OfficialExamChamberPage() {
                 );
 
                 if (stuErr) {
-                    // Fallback aman jika kolom report_token belum ditambahkan di Supabase
                     const { error: stuErr2 } = await supabase.from("tka_students").upsert(
                         {
                             phone: cleanPhone,
@@ -639,7 +698,8 @@ export default function OfficialExamChamberPage() {
                     }
                 }
 
-                // 2. Simpan rincian jawaban jsonb ke tka_results untuk analisis rapor & grafik
+                // 2. Simpan rincian jawaban jsonb ke tka_results (hapus lama jika re-submit agar tidak ganda)
+                await supabase.from("tka_results").delete().eq("phone", cleanPhone);
                 const { error: resErr } = await supabase.from("tka_results").insert({
                     phone: cleanPhone,
                     student_name: studentSession?.name,
@@ -696,7 +756,7 @@ export default function OfficialExamChamberPage() {
     };
 
     useEffect(() => {
-        if (!isInExam || isExamCompleted || isIntermission) return;
+        if (!isInExam || isExamCompleted || isIntermission || isSubmittingRef.current) return;
 
         const timer = setInterval(() => {
             setSubtestTimeLeft((prev) => {
@@ -915,7 +975,7 @@ export default function OfficialExamChamberPage() {
         );
     }
 
-    // SELESAI UJIAN: GERBANG BERURUTAN (1. WAJIB KLIK KIRIM WA HUMAS -> 2. TOMBOL UNDUH PDF TERBUKA)
+    // SELESAI UJIAN: GERBANG VERIFIKASI WA HUMAS + BROSUR PPDB
     if (isExamCompleted && finalSavedReport) {
         const cleanPhone = finalSavedReport.cleanPhone || String(studentSession?.phone || "").replace(/\D/g, "");
         const token = finalSavedReport.reportToken || "";
@@ -926,6 +986,7 @@ export default function OfficialExamChamberPage() {
             ``,
             `Nama: ${studentSession?.name}`,
             `Asal Sekolah: ${studentSession?.school} (Kelas ${studentSession?.grade || "9"})`,
+            `No. HP Terdaftar: ${cleanPhone}`,
             `Kode Verifikasi Rapor: ${token}`,
             ``,
             `Mohon tautan untuk mengunduh Sertifikat Rapor SHTKA (PDF) saya. Terima kasih.`
@@ -934,17 +995,14 @@ export default function OfficialExamChamberPage() {
         const waUrl = `https://wa.me/${SCHOOL_WHATSAPP_NUMBER}?text=${encodeURIComponent(waText)}`;
         const directPrivateRaporUrl = `/rapor?p=${encodeURIComponent(cleanPhone)}&t=${encodeURIComponent(token)}&autodownload=1`;
 
-        const handleOpenWhatsappAndUnlockPdf = () => {
+        const handleOpenWhatsappGate = () => {
+            setWaClickedAt(Date.now());
             window.open(waUrl, "_blank", "noopener,noreferrer");
-            // Buka kunci tombol download PDF setelah siswa diarahkan ke WhatsApp Humas
-            setTimeout(() => {
-                setHasClickedWhatsappReport(true);
-            }, 1500);
         };
 
         return (
-            <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 flex items-center justify-center">
-                <div className="max-w-xl w-full bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 text-center space-y-5 shadow-xl relative overflow-hidden">
+            <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans text-slate-800 space-y-6">
+                <div className="max-w-xl mx-auto w-full bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 text-center space-y-5 shadow-xl relative overflow-hidden">
                     <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-600" />
 
                     <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto">
@@ -959,7 +1017,7 @@ export default function OfficialExamChamberPage() {
                             Terima Kasih, {studentSession?.name}!
                         </h2>
                         <p className="text-xs text-slate-500">
-                            Asal Sekolah: <strong className="text-slate-700">{studentSession?.school}</strong>
+                            Asal Sekolah: <strong className="text-slate-700">{studentSession?.school}</strong> • No. Terdaftar: <strong className="font-mono text-slate-800">{cleanPhone}</strong>
                         </p>
                     </div>
 
@@ -968,9 +1026,12 @@ export default function OfficialExamChamberPage() {
                         <div className="text-[10.5px] font-mono font-bold uppercase text-blue-800">
                             KODE VERIFIKASI RAPOR ANDA:
                         </div>
-                        <div className="text-lg sm:text-xl font-mono font-black tracking-wider text-slate-900 bg-white py-2 px-4 rounded-xl border border-blue-200 inline-block select-all">
+                        <div className="text-base sm:text-xl font-mono font-black tracking-wider text-slate-900 bg-white py-2 px-4 rounded-xl border border-blue-200 inline-block select-all">
                             {token}
                         </div>
+                        <p className="text-[10.5px] text-slate-600">
+                            *Gunakan <strong>nomor WhatsApp asli</strong> sesuai saat pendaftaran agar laporan Anda tervalidasi oleh panitia.
+                        </p>
                     </div>
 
                     <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs text-slate-600 leading-relaxed">
@@ -983,16 +1044,16 @@ export default function OfficialExamChamberPage() {
                                 Klik tombol hijau <strong>“1. Kirim Laporan ke WA Humas Sekolah”</strong> di bawah ini, lalu tekan tombol <strong>Kirim</strong> pada aplikasi WhatsApp Anda.
                             </li>
                             <li>
-                                Setelah pesan WhatsApp terkirim, kembali ke halaman ini untuk menekan tombol <strong>“2. Unduh Sertifikat Rapor PDF (A4)”</strong> yang otomatis terbuka (atau klik link balasan dari WA Humas).
+                                Buka tautan balasan dari WhatsApp Humas dan masukkan <strong>Kode Verifikasi Rapor</strong> di atas (atau klik tombol unduh di bawah setelah pesan WhatsApp terkirim).
                             </li>
                         </ol>
                     </div>
 
                     <div className="space-y-2.5 pt-1">
-                        {/* LANGKAH 1: WAJIB KLIK KIRIM WA HUMAS DULU */}
+                        {/* LANGKAH 1: WAJIB KLIK KIRIM WA HUMAS */}
                         <button
                             type="button"
-                            onClick={handleOpenWhatsappAndUnlockPdf}
+                            onClick={handleOpenWhatsappGate}
                             className="w-full py-3.5 px-5 bg-[#16a34a] hover:bg-[#15803d] text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
                         >
                             <MessageCircle className="w-4 h-4 shrink-0" />
@@ -1000,8 +1061,8 @@ export default function OfficialExamChamberPage() {
                             <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0" />
                         </button>
 
-                        {/* LANGKAH 2: BARU MUNCUL & TERBUKA SETELAH SISWA KLIK TOMBOL WA DI ATAS */}
-                        {hasClickedWhatsappReport ? (
+                        {/* LANGKAH 2: HANYA TERBUKA SETELAH SISWA BENAR-BENAR BERPINDAH KE APLIKASI WA */}
+                        {hasVerifiedWaSwitch ? (
                             <a
                                 href={directPrivateRaporUrl}
                                 target="_blank"
@@ -1014,7 +1075,11 @@ export default function OfficialExamChamberPage() {
                         ) : (
                             <div className="w-full py-3 px-4 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs flex items-center justify-center gap-2 select-none">
                                 <Download className="w-3.5 h-3.5 shrink-0" />
-                                <span>2. Tombol Unduh PDF Terbuka Setelah Kirim WA</span>
+                                <span>
+                                    {waClickedAt
+                                        ? "Menunggu konfirmasi pengiriman pesan WhatsApp..."
+                                        : "2. Tombol Unduh PDF Terkunci Sebelum Kirim WA"}
+                                </span>
                             </div>
                         )}
 
@@ -1031,6 +1096,85 @@ export default function OfficialExamChamberPage() {
                         </button>
                     </div>
                 </div>
+
+                {/* BROSUR PROMOSI PPDB SMA MUHAMMADIYAH 18 JAKARTA */}
+                <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-slate-200 p-5 sm:p-7 shadow-md space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div className="space-y-0.5 text-left">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-mono text-[10px] font-bold">
+                                <Sparkles className="w-3 h-3 text-amber-600" /> INFO SPMB / PPDB 2026–2027
+                            </span>
+                            <h3 className="text-sm sm:text-base font-black text-slate-900">
+                                Penerimaan Peserta Didik Baru — SMA Muhammadiyah 18 Jakarta
+                            </h3>
+                        </div>
+                        <span className="text-[11px] text-slate-500">Ketuk gambar untuk memperbesar</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div
+                            onClick={() =>
+                                setPreviewFlyer({
+                                    src: "/flyer-ppdb-depan.jpg",
+                                    title: "Brosur PPDB SMA Muhammadiyah 18 Jakarta — Halaman Depan"
+                                })
+                            }
+                            className="rounded-2xl border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-blue-400 transition"
+                        >
+                            <img src="/flyer-ppdb-depan.jpg" alt="Flyer PPDB Depan" className="w-full h-auto object-contain" />
+                            <div className="p-2.5 bg-white border-t border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-700">
+                                <span>Halaman Depan</span>
+                                <span className="text-blue-700 font-mono inline-flex items-center gap-1">
+                                    <ZoomIn className="w-3.5 h-3.5" /> Perbesar
+                                </span>
+                            </div>
+                        </div>
+
+                        <div
+                            onClick={() =>
+                                setPreviewFlyer({
+                                    src: "/flyer-ppdb-belakang.jpg",
+                                    title: "Brosur PPDB SMA Muhammadiyah 18 Jakarta — Halaman Belakang"
+                                })
+                            }
+                            className="rounded-2xl border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-blue-400 transition"
+                        >
+                            <img src="/flyer-ppdb-belakang.jpg" alt="Flyer PPDB Belakang" className="w-full h-auto object-contain" />
+                            <div className="p-2.5 bg-white border-t border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-700">
+                                <span>Halaman Belakang</span>
+                                <span className="text-blue-700 font-mono inline-flex items-center gap-1">
+                                    <ZoomIn className="w-3.5 h-3.5" /> Perbesar
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {previewFlyer && (
+                    <div
+                        onClick={() => setPreviewFlyer(null)}
+                        className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+                    >
+                        <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="max-w-2xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl"
+                        >
+                            <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold truncate">{previewFlyer.title}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewFlyer(null)}
+                                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="max-h-[82vh] overflow-y-auto bg-slate-100 flex justify-center">
+                                <img src={previewFlyer.src} alt={previewFlyer.title} className="w-full h-auto object-contain" />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -1446,7 +1590,7 @@ export default function OfficialExamChamberPage() {
             )}
 
             {/* POPUP PERINGATAN LEMBUT (TANPA BLOKIR UJIAN) */}
-            {showViolationModal && (
+            {showViolationModal && !isSubmittingRef.current && (
                 <div className="fixed inset-0 z-[999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 text-center shadow-2xl border border-amber-200 animate-in zoom-in-95">
                         <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">

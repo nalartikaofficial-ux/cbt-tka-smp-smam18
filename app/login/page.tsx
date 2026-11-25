@@ -16,7 +16,19 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// Membersihkan input agar hanya menyimpan digit setelah +62 (contoh: 81234567890)
+const VALID_ID_PREFIXES = [
+    // Telkomsel
+    "811", "812", "813", "821", "822", "823", "851", "852", "853",
+    // Indosat Ooredoo Hutchison
+    "814", "815", "816", "855", "856", "857", "858",
+    // XL & Axis
+    "817", "818", "819", "831", "832", "833", "838", "859", "877", "878",
+    // Tri (3)
+    "895", "896", "897", "898", "899",
+    // Smartfren
+    "881", "882", "883", "884", "885", "886", "887", "888", "889"
+];
+
 function sanitizeSuffixPhoneID(raw: string): string {
     let digits = raw.replace(/\D/g, "");
     if (digits.startsWith("62")) {
@@ -24,6 +36,39 @@ function sanitizeSuffixPhoneID(raw: string): string {
     }
     digits = digits.replace(/^0+/, "");
     return digits.slice(0, 12);
+}
+
+function validateRealIndonesianPhone(suffix: string): string | null {
+    if (!suffix) {
+        return "Nomor WhatsApp wajib diisi untuk melanjutkan ujian!";
+    }
+    if (!suffix.startsWith("8") || suffix.length < 9 || suffix.length > 12) {
+        return "Nomor WhatsApp tidak valid! Masukkan 9–12 digit nomor HP Indonesia setelah +62 (diawali angka 8).";
+    }
+
+    const prefix3 = suffix.slice(0, 3);
+    if (!VALID_ID_PREFIXES.includes(prefix3)) {
+        return `Kode operator (+62 ${prefix3}...) tidak dikenali. Gunakan nomor WhatsApp asli Anda yang aktif!`;
+    }
+
+    // Deteksi nomor asal-asalan (contoh: 8123456789, 81234567890, atau semua digit sama)
+    const sequentialPatterns = [
+        "812345678",
+        "8123456789",
+        "81234567890",
+        "81234567891",
+        "8987654321"
+    ];
+    if (sequentialPatterns.some((pat) => suffix.startsWith(pat))) {
+        return "Nomor WhatsApp terdeteksi tidak valid (pola angka berurutan). Masukkan nomor WhatsApp asli Anda karena rapor PDF hanya dikirim ke nomor yang terdaftar!";
+    }
+
+    // Deteksi pengulangan angka yang sama berlebihan (misal 8111111111 atau 8888888888)
+    if (/^8(\d)\1{6,}$/.test(suffix)) {
+        return "Nomor WhatsApp terdeteksi tidak valid (angka berulang). Masukkan nomor WhatsApp asli Anda!";
+    }
+
+    return null;
 }
 
 export default function StudentLoginPage() {
@@ -40,7 +85,6 @@ export default function StudentLoginPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
 
-    // Prefetch halaman /exam & paket soal di latar belakang saat siswa mengisi biodata (0 ms lag saat masuk ujian)
     useEffect(() => {
         router.prefetch("/exam");
 
@@ -56,9 +100,7 @@ export default function StudentLoginPage() {
                     localStorage.setItem("tka_bank_soal_cbt", JSON.stringify(data));
                     localStorage.setItem("tka_bank_soal", JSON.stringify(data));
                 }
-            } catch {
-                // Abaikan jika gagal prefetch; halaman /exam tetap punya fallback fetch mandiri
-            }
+            } catch { }
         };
 
         prefetchQuestions();
@@ -69,13 +111,9 @@ export default function StudentLoginPage() {
         setErrorMsg("");
 
         const suffix = sanitizeSuffixPhoneID(formData.phoneSuffix);
-        if (!suffix) {
-            setErrorMsg("Nomor WhatsApp wajib diisi untuk melanjutkan ujian!");
-            return;
-        }
-
-        if (!suffix.startsWith("8") || suffix.length < 9 || suffix.length > 12) {
-            setErrorMsg("Nomor WhatsApp tidak valid! Masukkan 9–12 digit nomor HP Indonesia setelah +62 (diawali angka 8).");
+        const phoneValidationError = validateRealIndonesianPhone(suffix);
+        if (phoneValidationError) {
+            setErrorMsg(phoneValidationError);
             return;
         }
 
@@ -83,8 +121,8 @@ export default function StudentLoginPage() {
         const cleanName = formData.name.toUpperCase().replace(/\s+/g, " ").trim();
         const cleanSchool = formData.school.toUpperCase().replace(/\s+/g, " ").trim();
 
-        if (!cleanName || !cleanSchool) {
-            setErrorMsg("Nama Lengkap Siswa dan Asal Sekolah (SMP/MTs) wajib diisi!");
+        if (!cleanName || cleanName.length < 3 || !cleanSchool || cleanSchool.length < 3) {
+            setErrorMsg("Nama Lengkap Siswa dan Asal Sekolah (SMP/MTs) wajib diisi dengan lengkap!");
             return;
         }
 
@@ -97,10 +135,16 @@ export default function StudentLoginPage() {
         setIsSubmitting(true);
 
         try {
-            // Jalankan pengecekan sesi & data siswa secara paralel agar 2x lebih cepat
-            const [sessionRes, studentRes] = await Promise.all([
+            // Jalankan pengecekan sesi, data nomor HP, dan pengecekan duplikat nama+sekolah secara paralel
+            const [sessionRes, studentByPhoneRes, sameNameRes] = await Promise.all([
                 supabase.from("tka_sessions").select("*").eq("id", 1).single(),
-                supabase.from("tka_students").select("*").eq("phone", cleanPhone).maybeSingle()
+                supabase.from("tka_students").select("*").eq("phone", cleanPhone).maybeSingle(),
+                supabase
+                    .from("tka_students")
+                    .select("phone, name, school, status")
+                    .ilike("name", cleanName)
+                    .ilike("school", cleanSchool)
+                    .limit(5)
             ]);
 
             const sessionData = sessionRes.data;
@@ -119,14 +163,44 @@ export default function StudentLoginPage() {
                 }
             }
 
-            const existingStudent = studentRes.data;
+            const existingStudent = studentByPhoneRes.data;
             if (existingStudent) {
                 const stLower = String(existingStudent.status || "").toLowerCase();
                 if (stLower.includes("kunci")) {
-                    setErrorMsg("Akun ujian Anda berstatus TERKUNCI oleh sistem Kiosk. Silakan hubungi Proktor untuk membuka akses.");
+                    setErrorMsg("Akun ujian Anda berstatus TERKUNCI oleh sistem pengawas. Silakan hubungi Proktor.");
                     setIsSubmitting(false);
                     return;
                 }
+
+                const registeredName = String(existingStudent.name || "").toUpperCase().replace(/\s+/g, " ").trim();
+                if (registeredName && registeredName !== cleanName) {
+                    setErrorMsg(
+                        `Nomor WhatsApp ${cleanPhone} sudah terdaftar atas nama peserta lain (${registeredName}). Satu nomor WhatsApp hanya berlaku untuk satu peserta!`
+                    );
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (stLower.includes("selesai")) {
+                    setErrorMsg(
+                        `Peserta atas nama ${registeredName} (${cleanPhone}) sudah menyelesaikan sesi ujian ini dan tidak dapat mengulang kembali.`
+                    );
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
+            // Cegah peserta yang sama (Nama + Sekolah sama persis) mendaftar ulang memakai nomor HP lain
+            const duplicateIdentity = Array.isArray(sameNameRes.data)
+                ? sameNameRes.data.find((row: any) => String(row?.phone || "") !== cleanPhone)
+                : null;
+
+            if (duplicateIdentity) {
+                setErrorMsg(
+                    `Peserta atas nama ${cleanName} dari ${cleanSchool} sudah terdaftar sebelumnya dengan nomor ${duplicateIdentity.phone}. Silakan gunakan nomor pendaftaran awal Anda.`
+                );
+                setIsSubmitting(false);
+                return;
             }
 
             const studentPayload = {
@@ -220,12 +294,12 @@ export default function StudentLoginPage() {
                             Formulir Peserta Try Out
                         </h1>
                         <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-                            Lengkapi identitas Anda untuk memulai <strong>60 Soal Asesmen TKA SMP</strong> dan menerbitkan <strong>Sertifikat Hasil Tryout (SHTKA)</strong>.
+                            Lengkapi identitas asli Anda untuk memulai <strong>60 Soal Asesmen TKA SMP</strong> dan menerbitkan <strong>Sertifikat Hasil Tryout (SHTKA)</strong>.
                         </p>
                     </div>
 
                     {errorMsg && (
-                        <div className="p-3 sm:p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                        <div className="p-3 sm:p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold leading-relaxed">
                             {errorMsg}
                         </div>
                     )}
@@ -308,7 +382,7 @@ export default function StudentLoginPage() {
                                     />
                                 </div>
                                 <span className="text-[9.5px] sm:text-[10px] text-slate-400 block">
-                                    *Langsung ketik mulai angka 8 (9–12 digit)
+                                    *Wajib nomor WhatsApp asli (dipakai verifikasi rapor)
                                 </span>
                             </div>
 

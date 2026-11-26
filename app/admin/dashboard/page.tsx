@@ -336,7 +336,6 @@ function evaluateStudentItemDetail(q: any, userAns: any) {
         };
     }
 
-    // PG_SEDERHANA
     const targetIdx = typeof q.singleAnswer === "number" ? q.singleAnswer : (keyMap[rawKey] ?? 0);
     let isRight = false;
     let studentLabel = "-";
@@ -485,9 +484,6 @@ export default function AdminAnalyticsTkaSmpPage() {
         fetchAllAnalyticsData();
     }, []);
 
-    // =========================================================================
-    // TAHAP 1: BOBOT KESULITAN SOAL EMPIRIS + SKOR DESIMAL AKURAT (0,00 - 100,00)
-    // =========================================================================
     const { questionWeightsMap, itemAnalysisList, elementAnalysisList } = useMemo(() => {
         const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
         const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
@@ -613,7 +609,6 @@ export default function AdminAnalyticsTkaSmpPage() {
         return { questionWeightsMap: weightsMap, itemAnalysisList: scopedItems, elementAnalysisList: elements };
     }, [questionsBank, rawResultsList, selectedSchool]);
 
-    // Hitung ulang skor desimal akurat (2 angka di belakang koma) untuk tiap siswa dari answers jsonb
     const students = useMemo<TkaStudentResult[]>(() => {
         const bindoQs = questionsBank.filter((q) => !String(q.subtes_code || "").toUpperCase().includes("MTK"));
         const mtkQs = questionsBank.filter((q) => String(q.subtes_code || "").toUpperCase().includes("MTK"));
@@ -660,7 +655,6 @@ export default function AdminAnalyticsTkaSmpPage() {
         });
     }, [rawStudents, rawResultsList, questionsBank, questionWeightsMap]);
 
-    // Hitung Peringkat PARALEL (Lintas Semua Sekolah) + Peringkat INTERNAL SEKOLAH
     const rankedStudentsWithSchoolPos = useMemo(() => {
         const allFinishedPool = students.filter(
             (st) => st.status.toLowerCase().includes("selesai") || st.score > 0
@@ -730,7 +724,6 @@ export default function AdminAnalyticsTkaSmpPage() {
             });
     }, [students]);
 
-    // Klasemen Peringkat Antar-Sekolah (Seluruh SMP/MTs Peserta)
     const schoolRankings = useMemo<SchoolRankingItem[]>(() => {
         const mapSchools: Record<
             string,
@@ -839,7 +832,6 @@ export default function AdminAnalyticsTkaSmpPage() {
             .sort((a, b) => b.avgSchool - a.avgSchool);
     }, [filteredStudents]);
 
-    // Statistik Agregat
     const overallStats = useMemo(() => {
         const scopeStudents =
             selectedSchool === "ALL" ? students : students.filter((s) => s.school === selectedSchool);
@@ -934,19 +926,24 @@ export default function AdminAnalyticsTkaSmpPage() {
                     subject: comp.subject,
                     rawCorrect,
                     totalQ: compItems.length,
+                    earnedW,
+                    totalW,
                     pct,
                     category: cat.level
                 };
             });
 
+            // Sumbu heksagonal dihitung dari total bobot tercapai / total bobot sumbu agar 100% sinkron dengan Rapor Siswa
             const hexagonPoints = HEXAGON_AXES.map((ax) => {
                 const matched = sevenCompetencies.filter((c) => ax.elements.includes(c.code));
-                const wSum = matched.reduce((s, c) => s + c.pct * (c.totalQ || 1), 0);
-                const wTot = matched.reduce((s, c) => s + (c.totalQ || 1), 0);
+                const earnedSum = matched.reduce((s, c) => s + c.earnedW, 0);
+                const totalWeightSum = matched.reduce((s, c) => s + c.totalW, 0);
+                const studentPct =
+                    hasAnswerData && totalWeightSum > 0 ? Number(((earnedSum / totalWeightSum) * 100).toFixed(2)) : 0;
                 return {
                     key: ax.key,
                     short: ax.short,
-                    studentPct: wTot > 0 ? Number((wSum / wTot).toFixed(2)) : 0,
+                    studentPct,
                     schoolPct: ax.subject === "MTK" ? schAvgs.m : schAvgs.b
                 };
             });
@@ -979,7 +976,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                 hexagonPoints,
                 strongestAxis: `${sortedHex[0]?.key} (${formatScoreID(sortedHex[0]?.studentPct || 0)})`,
                 weakestAxis: `${sortedHex[sortedHex.length - 1]?.key} (${formatScoreID(sortedHex[sortedHex.length - 1]?.studentPct || 0)})`,
-                sevenCompetencies,
+                sevenCompetencies: sevenCompetencies.map(({ earnedW: _e, totalW: _t, ...rest }) => rest),
                 itemRows: itemRows.map(({ weight: _w, ...rest }) => rest)
             };
         });
@@ -1141,6 +1138,8 @@ export default function AdminAnalyticsTkaSmpPage() {
                 ...comp,
                 totalQ,
                 rawCorrect,
+                earnedWeighted,
+                totalWeighted,
                 pct
             };
         });
@@ -1164,9 +1163,10 @@ export default function AdminAnalyticsTkaSmpPage() {
         const hexagonPoints = HEXAGON_AXES.map((axis) => {
             const matchedComps = sevenCompetencyStats.filter((c) => axis.elements.includes(c.code));
             const totalQ = matchedComps.reduce((s, c) => s + c.totalQ, 0);
-            const weightedSum = matchedComps.reduce((s, c) => s + c.pct * (c.totalQ || 1), 0);
-            const totalWeight = matchedComps.reduce((s, c) => s + (c.totalQ || 1), 0);
-            const studentPct = totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(2)) : 0;
+            const earnedSum = matchedComps.reduce((s, c) => s + c.earnedWeighted, 0);
+            const totalWeight = matchedComps.reduce((s, c) => s + c.totalWeighted, 0);
+            const studentPct =
+                hasAnswerData && totalWeight > 0 ? Number(((earnedSum / totalWeight) * 100).toFixed(2)) : 0;
             const schoolPct = axis.subject === "MTK" ? schoolAvgMtk : schoolAvgBindo;
 
             return {
@@ -1478,9 +1478,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                     </button>
                 </div>
 
-                {/* ============================================================== */}
-                {/* TAB 1: RAPOR ANAK (PER SEKOLAH & RANKING PARALEL LINTAS SMP)   */}
-                {/* ============================================================== */}
+                {/* TAB 1: RAPOR ANAK */}
                 {activeTab === "prospek" && (
                     <div className="print-hidden space-y-5">
                         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-6 space-y-4 shadow-2xs">
@@ -1493,15 +1491,14 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </p>
                             </div>
 
-                            {/* Toolbar Proporsional 1 Baris */}
                             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 bg-slate-50/80 p-2.5 rounded-2xl border border-slate-200/80">
                                 <div className="inline-flex bg-slate-200/70 p-1 rounded-xl shrink-0 self-start">
                                     <button
                                         type="button"
                                         onClick={() => setStudentViewMode("grouped")}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${studentViewMode === "grouped"
-                                                ? "bg-white text-blue-900 shadow-2xs"
-                                                : "text-slate-600 hover:text-slate-900"
+                                            ? "bg-white text-blue-900 shadow-2xs"
+                                            : "text-slate-600 hover:text-slate-900"
                                             }`}
                                     >
                                         <School className="w-3.5 h-3.5 text-blue-700" />
@@ -1512,8 +1509,8 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         type="button"
                                         onClick={() => setStudentViewMode("parallel")}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${studentViewMode === "parallel"
-                                                ? "bg-white text-indigo-900 shadow-2xs"
-                                                : "text-slate-600 hover:text-slate-900"
+                                            ? "bg-white text-indigo-900 shadow-2xs"
+                                            : "text-slate-600 hover:text-slate-900"
                                             }`}
                                     >
                                         <ListOrdered className="w-3.5 h-3.5 text-indigo-700" />
@@ -1572,7 +1569,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             </div>
 
-                            {/* MODE A: KELOMPOK PER SEKOLAH */}
                             {studentViewMode === "grouped" && (
                                 <div className="space-y-4">
                                     {groupedBySchoolList.map((group) => (
@@ -1721,7 +1717,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             )}
 
-                            {/* MODE B: RANKING PARALEL LINTAS SELURUH SEKOLAH */}
                             {studentViewMode === "parallel" && (
                                 <div className="overflow-x-auto rounded-2xl border border-slate-200">
                                     <table className="w-full text-left text-xs border-collapse min-w-[1020px]">
@@ -1748,12 +1743,12 @@ export default function AdminAnalyticsTkaSmpPage() {
                                                         <td className="p-3 text-center font-mono whitespace-nowrap">
                                                             <span
                                                                 className={`px-2.5 py-1 rounded-lg font-black text-xs ${s.parallelRankOverall === 1
-                                                                        ? "bg-amber-400 text-slate-950"
-                                                                        : s.parallelRankOverall === 2
-                                                                            ? "bg-slate-200 text-slate-900"
-                                                                            : s.parallelRankOverall === 3
-                                                                                ? "bg-orange-200 text-orange-950"
-                                                                                : "bg-indigo-50 text-indigo-900 border border-indigo-200"
+                                                                    ? "bg-amber-400 text-slate-950"
+                                                                    : s.parallelRankOverall === 2
+                                                                        ? "bg-slate-200 text-slate-900"
+                                                                        : s.parallelRankOverall === 3
+                                                                            ? "bg-orange-200 text-orange-950"
+                                                                            : "bg-indigo-50 text-indigo-900 border border-indigo-200"
                                                                     }`}
                                                             >
                                                                 #{s.parallelRankOverall}
@@ -1900,9 +1895,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                     </div>
                 )}
 
-                {/* ============================================================== */}
-                {/* TAB 2: KLASEMEN PERINGKAT ANTAR-SEKOLAH (KOP RESMI + TTD)      */}
-                {/* ============================================================== */}
+                {/* TAB 2: KLASEMEN PERINGKAT ANTAR-SEKOLAH */}
                 {activeTab === "sekolah" && (
                     <div className="space-y-5">
                         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-7 shadow-2xs space-y-5 print-sheet">
@@ -1937,7 +1930,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             </div>
 
-                            {/* KOP SURAT RESMI BERLOGO UNTUK CETAK KLASEMEN ANTAR-SEKOLAH */}
                             <div className="hidden print:block pb-2">
                                 <div className="flex items-center justify-between gap-4">
                                     <div className="w-16 h-16 shrink-0 flex items-center justify-center">
@@ -1979,7 +1971,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             </div>
 
-                            {/* Grafik Batang Perbandingan Rerata Antar-Sekolah */}
                             {schoolRankings.length > 0 && (
                                 <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 print-hidden">
                                     <div className="flex items-center justify-between text-xs font-bold text-slate-800">
@@ -2053,7 +2044,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             )}
 
-                            {/* Tabel Klasemen Sekolah */}
                             <div className="overflow-x-auto rounded-2xl border border-slate-200 print:rounded-none print:border-slate-900">
                                 <table className="w-full text-left text-xs border-collapse min-w-[740px] print:min-w-0">
                                     <thead className="bg-slate-50 border-b border-slate-200 print:border-slate-900 font-mono text-[10.5px] text-slate-700">
@@ -2109,7 +2099,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </table>
                             </div>
 
-                            {/* Pengesahan & TTD Otomatis Kepala Sekolah saat Print Klasemen Sekolah */}
                             <div className="hidden print:flex justify-end pt-6 text-xs font-sans">
                                 <div className="w-64 text-center leading-snug">
                                     <p>Jakarta, {new Date().toLocaleDateString("id-ID", { dateStyle: "long" })}</p>
@@ -2131,9 +2120,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                     </div>
                 )}
 
-                {/* ============================================================== */}
-                {/* TAB 3: REKAP 7 ELEMEN MATERI (PERKABAN NO. 047/H/AN/2025)     */}
-                {/* ============================================================== */}
+                {/* TAB 3: REKAP 7 ELEMEN MATERI */}
                 {activeTab === "materi" && (
                     <div className="print-hidden bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-7 shadow-2xs space-y-5">
                         <div className="border-b border-slate-100 pb-3.5">
@@ -2184,9 +2171,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                     </div>
                 )}
 
-                {/* ============================================================== */}
-                {/* TAB 4: REKAP BUTIR SOAL KOLEKTIF                               */}
-                {/* ============================================================== */}
+                {/* TAB 4: REKAP BUTIR SOAL KOLEKTIF */}
                 {activeTab === "butir" && (
                     <div className="print-hidden bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-7 shadow-2xs space-y-4">
                         <div className="border-b border-slate-100 pb-3.5">
@@ -2247,9 +2232,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                 )}
             </div>
 
-            {/* ======================================================================== */}
-            {/* MODAL CETAK RAPOR INDIVIDUAL ANAK MULTI-HALAMAN (SHTKA + GRAFIK + BUTIR) */}
-            {/* ======================================================================== */}
+            {/* MODAL CETAK RAPOR INDIVIDUAL ANAK MULTI-HALAMAN */}
             {selectedStudentForReport && selectedStudentDiagnostic && (() => {
                 const stu = selectedStudentForReport;
                 const diag = selectedStudentDiagnostic;
@@ -2291,7 +2274,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                 return (
                     <div className="print-modal-wrapper fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
                         <div className="print-modal-card bg-white rounded-2xl sm:rounded-3xl w-[97vw] sm:max-w-5xl max-h-[94vh] flex flex-col shadow-2xl border border-slate-200 my-auto text-left">
-                            {/* Toolbar Atas Modal */}
                             <div className="print-hidden p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between gap-2.5 bg-slate-50 rounded-t-2xl sm:rounded-t-3xl shrink-0">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                     <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
@@ -2326,11 +2308,8 @@ export default function AdminAnalyticsTkaSmpPage() {
                                 </div>
                             </div>
 
-                            {/* LEMBAR CETAK RAPOR MULTI-HALAMAN A4 */}
                             <div className="p-4 sm:p-7 overflow-y-auto flex-1 text-slate-900 space-y-4 print-sheet">
-                                {/* ==================== HALAMAN 1: SHTKA, PERINGKAT & GRAFIK ==================== */}
                                 <div className="space-y-3 print:space-y-2 print-page-one">
-                                    {/* Kop Surat Resmi */}
                                     <div className="pb-0.5">
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="w-14 h-14 shrink-0 flex items-center justify-center">
@@ -2356,7 +2335,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         <div className="w-full kop-divider-thin mt-[2px]" />
                                     </div>
 
-                                    {/* Judul Rapor */}
                                     <div className="text-center space-y-0.5">
                                         <h2 className="text-xs sm:text-[13px] font-black underline uppercase">
                                             SERTIFIKAT HASIL & LAPORAN DIAGNOSTIK TRYOUT TKA SMP/MTs (SHTKA)
@@ -2366,7 +2344,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         </p>
                                     </div>
 
-                                    {/* Identitas Siswa */}
                                     <div className="border border-slate-900 p-2 bg-slate-50/50 text-[10.5px]">
                                         <table className="w-full">
                                             <tbody>
@@ -2390,7 +2367,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         </table>
                                     </div>
 
-                                    {/* Tabel Hasil Mata Uji, Peringkat Sekolah & Peringkat Paralel */}
                                     <table className="w-full text-[10px] border border-slate-900 text-left border-collapse">
                                         <thead className="bg-slate-100 border-b border-slate-900 font-mono text-[9px]">
                                             <tr>
@@ -2467,9 +2443,7 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         <strong>{stu.school}</strong> ({diag.schoolFinishedCount} siswa), sedangkan <strong>Rank Paralel</strong> menunjukkan peringkat peserta di antara seluruh {stu.parallelTotalFinished} peserta lintas sekolah.
                                     </div>
 
-                                    {/* GRAFIK DIAGNOSTIK: RADAR HEKSAGONAL + GRAFIK BATANG PER KISI-KISI */}
                                     <div className="print-diag-grid grid grid-cols-1 md:grid-cols-12 gap-2.5 border border-slate-300 rounded-xl p-2.5 bg-slate-50/40">
-                                        {/* KIRI: GRAFIK HEKSAGONAL 6 KOMPETENSI */}
                                         <div className="md:col-span-5 bg-white border border-slate-200 rounded-lg p-2 flex flex-col justify-between space-y-1">
                                             <div className="text-center">
                                                 <div className="text-[9px] font-mono font-black uppercase text-slate-900">
@@ -2567,7 +2541,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                             </div>
                                         </div>
 
-                                        {/* KANAN: GRAFIK BATANG SKOR & PERSENTASE PER KISI-KISI SOAL */}
                                         <div className="md:col-span-7 bg-white border border-slate-200 rounded-lg p-2 flex flex-col justify-between space-y-1.5">
                                             <div className="flex items-center justify-between border-b border-slate-100 pb-1">
                                                 <span className="text-[9px] font-mono font-black uppercase text-slate-900">
@@ -2619,7 +2592,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         </div>
                                     </div>
 
-                                    {/* Keterangan Acuan Penilaian Resmi TKA SMP */}
                                     <div className="p-2 border border-slate-900 bg-white text-[9px] space-y-0.5">
                                         <div className="font-bold font-mono text-[8.5px] uppercase text-slate-900">
                                             KETERANGAN ACUAN PENILAIAN RESMI TKA JENJANG SMP/MTs:
@@ -2631,7 +2603,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                         </p>
                                     </div>
 
-                                    {/* Tanda Tangan Kepala Sekolah (Proporsional & Terjamin Muncul saat Print) */}
                                     <div className="pt-2 flex justify-end text-[10.5px] font-sans">
                                         <div className="w-64 text-center leading-snug">
                                             <p>Jakarta, {new Date().toLocaleDateString("id-ID", { dateStyle: "long" })}</p>
@@ -2651,7 +2622,6 @@ export default function AdminAnalyticsTkaSmpPage() {
                                     </div>
                                 </div>
 
-                                {/* ==================== HALAMAN 2+: LAMPIRAN ANALISIS BUTIR SOAL ANAK ==================== */}
                                 {diag.studentItemRows.length > 0 && (
                                     <div className="pt-6 border-t-2 border-dashed border-slate-300 print:border-none print:pt-0 page-break-before space-y-3">
                                         <div className="flex items-center justify-between border-b-2 border-slate-900 pb-2">

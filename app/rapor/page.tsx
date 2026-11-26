@@ -97,6 +97,26 @@ function parseAnswersJson(raw: unknown): Record<string, any> {
     return typeof raw === "object" ? (raw as Record<string, any>) : {};
 }
 
+function findMatchingResultRow(resultsList: any[], phone: string, name: string) {
+    const cleanP = normalizePhoneDigits(phone);
+    const cleanN = String(name || "").toUpperCase().trim();
+
+    const exactMatch = resultsList.find(
+        (r) =>
+            cleanP &&
+            normalizePhoneDigits(r?.phone || "") === cleanP &&
+            String(r?.student_name || "").toUpperCase().trim() === cleanN
+    );
+    if (exactMatch) return exactMatch;
+
+    const nameMatch = resultsList.find(
+        (r) => cleanN && String(r?.student_name || "").toUpperCase().trim() === cleanN
+    );
+    if (nameMatch) return nameMatch;
+
+    return resultsList.find((r) => cleanP && normalizePhoneDigits(r?.phone || "") === cleanP);
+}
+
 function mapQuestionToOfficialElement(subtesCode: string, rawMateri?: string): string {
     const m = String(rawMateri || "").toLowerCase();
     if (subtesCode === "BINDO") {
@@ -241,6 +261,40 @@ function evaluateStudentItemDetail(q: any, userAns: any) {
     };
 }
 
+// Bobot kesulitan soal empiris identik dengan Dashboard Admin
+function computeUnifiedWeightsMap(questionsBank: any[], rawResultsList: any[]): Record<string, number> {
+    const bindoQs = questionsBank.filter((q) => !String(q?.subtes_code || "").toUpperCase().includes("MTK"));
+    const mtkQs = questionsBank.filter((q) => String(q?.subtes_code || "").toUpperCase().includes("MTK"));
+    const weightsMap: Record<string, number> = {};
+
+    const processList = (qList: any[], globalOffset: number) => {
+        qList.forEach((q: any, idx: number) => {
+            const qId = String(q?.id ?? idx);
+            let totalAttempt = 0;
+            let correctCount = 0;
+
+            rawResultsList.forEach((res) => {
+                const ansMap = parseAnswersJson(res?.answers);
+                const userAns = resolveStudentAnswerForQuestion(q, idx, globalOffset + idx, ansMap);
+                if (userAns !== undefined && userAns !== null) {
+                    totalAttempt++;
+                    if (evaluateStudentItemDetail(q, userAns).fraction >= 0.99) {
+                        correctCount++;
+                    }
+                }
+            });
+
+            const pRatio = totalAttempt > 0 ? correctCount / totalAttempt : 0.5;
+            const baseDiff = Number(q?.difficulty) > 1 ? Number(q.difficulty) : 1 + (1 - pRatio) * 0.85;
+            weightsMap[qId] = Number(baseDiff.toFixed(4));
+        });
+    };
+
+    processList(bindoQs, 0);
+    processList(mtkQs, bindoQs.length);
+    return weightsMap;
+}
+
 function triggerCrossBrowserPdfDownload(pdf: jsPDF, fileName: string): string {
     const blob = pdf.output("blob");
     const blobUrl = URL.createObjectURL(blob);
@@ -381,7 +435,7 @@ function PrivateStudentReportContent() {
     const [accessError, setAccessError] = useState<string | null>(null);
     const [allStudents, setAllStudents] = useState<any[]>([]);
     const [questionsBank, setQuestionsBank] = useState<any[]>([]);
-    const [studentResultRow, setStudentResultRow] = useState<any>(null);
+    const [allResultsList, setAllResultsList] = useState<any[]>([]);
 
     const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
     const [pdfDownloadNotice, setPdfDownloadNotice] = useState<string>("");
@@ -408,16 +462,18 @@ function PrivateStudentReportContent() {
         autoDownloadTriggeredRef.current = false;
 
         try {
-            const [stuRes, qRes] = await Promise.all([
+            const [stuRes, qRes, resAll] = await Promise.all([
                 supabase.from("tka_students").select("*"),
                 supabase
                     .from("tka_questions")
                     .select("*")
                     .order("subtes_code", { ascending: true })
-                    .order("no_soal", { ascending: true })
+                    .order("no_soal", { ascending: true }),
+                supabase.from("tka_results").select("*").order("submitted_at", { ascending: false })
             ]);
 
             const listStudents = Array.isArray(stuRes.data) ? stuRes.data : [];
+            const listResults = Array.isArray(resAll.data) ? resAll.data : [];
 
             let targetStudent = listStudents.find((s) => {
                 const dbToken = String(s?.report_token || "").trim().toUpperCase();
@@ -452,23 +508,20 @@ function PrivateStudentReportContent() {
             setAllStudents(listStudents);
             if (Array.isArray(qRes.data)) setQuestionsBank(qRes.data);
 
-            const { data: resData } = await supabase
-                .from("tka_results")
-                .select("*")
-                .eq("phone", matchedPhone)
-                .order("submitted_at", { ascending: false })
-                .limit(1);
-
-            if (Array.isArray(resData) && resData.length > 0) {
-                setStudentResultRow(resData[0]);
-            } else if (typeof window !== "undefined") {
+            let finalResultsList = [...listResults];
+            if (typeof window !== "undefined") {
                 try {
                     const localSaved = JSON.parse(window.localStorage.getItem("tka_result") || "{}");
-                    if (localSaved?.answers) {
-                        setStudentResultRow({ answers: localSaved.answers });
+                    if (localSaved?.answers && !findMatchingResultRow(finalResultsList, matchedPhone, targetStudent.name)) {
+                        finalResultsList.push({
+                            phone: matchedPhone,
+                            student_name: targetStudent.name,
+                            answers: localSaved.answers
+                        });
                     }
                 } catch { }
             }
+            setAllResultsList(finalResultsList);
         } catch {
             setAccessError("Terjadi gangguan koneksi saat memuat Sertifikat Hasil TKA SMP.");
         } finally {
@@ -479,17 +532,56 @@ function PrivateStudentReportContent() {
     const reportData = useMemo(() => {
         if (allStudents.length === 0 || !activePhone) return null;
 
+        const weightsMap = computeUnifiedWeightsMap(questionsBank, allResultsList);
+        const bindoQs = questionsBank.filter((q) => !String(q?.subtes_code || "").toUpperCase().includes("MTK"));
+        const mtkQs = questionsBank.filter((q) => String(q?.subtes_code || "").toUpperCase().includes("MTK"));
+
+        // Hitung ulang skor desimal seluruh peserta dengan rumus yang identik dengan Dashboard Admin
         const normalizedAll = allStudents.map((item: any) => {
-            const cleanScore = Number(item?.score ?? 0);
+            const cleanP = normalizePhoneDigits(item?.phone || "");
+            const cleanN = String(item?.name || "PESERTA").toUpperCase().trim();
+            const rawScore = Number(item?.score ?? 0);
+            let bindoScore = Number(item?.bindo_score ?? rawScore);
+            let mtkScore = Number(item?.mtk_score ?? rawScore);
+            let score = rawScore;
+
+            const matchedRes = findMatchingResultRow(allResultsList, cleanP, cleanN);
+            const ansObj = parseAnswersJson(matchedRes?.answers);
+            const hasAns = Object.keys(ansObj).length > 0 && questionsBank.length > 0;
+
+            if (hasAns) {
+                let bEarned = 0,
+                    bTotalW = 0;
+                bindoQs.forEach((q, idx) => {
+                    const w = weightsMap[String(q?.id ?? idx)] || 1;
+                    const uAns = resolveStudentAnswerForQuestion(q, idx, idx, ansObj);
+                    bEarned += evaluateStudentItemDetail(q, uAns).fraction * w;
+                    bTotalW += w;
+                });
+
+                let mEarned = 0,
+                    mTotalW = 0;
+                mtkQs.forEach((q, idx) => {
+                    const w = weightsMap[String(q?.id ?? idx)] || 1;
+                    const uAns = resolveStudentAnswerForQuestion(q, idx, bindoQs.length + idx, ansObj);
+                    mEarned += evaluateStudentItemDetail(q, uAns).fraction * w;
+                    mTotalW += w;
+                });
+
+                if (bTotalW > 0) bindoScore = Number(((bEarned / bTotalW) * 100).toFixed(2));
+                if (mTotalW > 0) mtkScore = Number(((mEarned / mTotalW) * 100).toFixed(2));
+                score = Number(((bindoScore + mtkScore) / 2).toFixed(2));
+            }
+
             return {
-                phone: normalizePhoneDigits(item?.phone || ""),
-                name: String(item?.name || "PESERTA").toUpperCase().trim(),
+                phone: cleanP,
+                name: cleanN,
                 school: normalizeSchoolName(item?.school || "SMP / MTs"),
                 grade: String(item?.grade || "9").trim(),
-                status: String(item?.status || (cleanScore > 0 ? "Selesai" : "Terdaftar")).trim(),
-                score: cleanScore,
-                bindoScore: Number(item?.bindo_score ?? cleanScore),
-                mtkScore: Number(item?.mtk_score ?? cleanScore)
+                status: String(item?.status || (score > 0 ? "Selesai" : "Terdaftar")).trim(),
+                score,
+                bindoScore,
+                mtkScore
             };
         });
 
@@ -521,9 +613,8 @@ function PrivateStudentReportContent() {
             (activeSchoolPool.reduce((sum, x) => sum + x.score, 0) / activeSchoolPool.length).toFixed(2)
         );
 
-        const bindoQs = questionsBank.filter((q) => !String(q?.subtes_code || "").toUpperCase().includes("MTK"));
-        const mtkQs = questionsBank.filter((q) => String(q?.subtes_code || "").toUpperCase().includes("MTK"));
-        const studentAnswers = parseAnswersJson(studentResultRow?.answers);
+        const targetResultRow = findMatchingResultRow(allResultsList, stu.phone, stu.name);
+        const studentAnswers = parseAnswersJson(targetResultRow?.answers);
         const hasAnswers = Object.keys(studentAnswers).length > 0 && questionsBank.length > 0;
 
         const buildItems = (qList: any[], subCode: "BINDO" | "MTK", globalOffset: number) =>
@@ -531,7 +622,7 @@ function PrivateStudentReportContent() {
                 const uAns = resolveStudentAnswerForQuestion(q, idx, globalOffset + idx, studentAnswers);
                 const detail = evaluateStudentItemDetail(q, uAns);
                 const element = mapQuestionToOfficialElement(subCode, q?.materi);
-                const weight = Number(q?.difficulty) > 1 ? Number(q.difficulty) : 1;
+                const weight = weightsMap[String(q?.id ?? idx)] || 1;
                 return {
                     id: String(q?.id ?? `${subCode}_${idx + 1}`),
                     no_soal: Number(q?.no_soal) || idx + 1,
@@ -562,17 +653,21 @@ function PrivateStudentReportContent() {
                 ...comp,
                 totalQ: compItems.length,
                 rawCorrect,
+                earnedW,
+                totalW,
                 pct
             };
         });
 
         const hexagonPoints = HEXAGON_AXES.map((ax) => {
             const matched = sevenCompetencies.filter((c) => ax.elements.includes(c.code));
-            const wSum = matched.reduce((s, c) => s + c.pct * (c.totalQ || 1), 0);
-            const wTot = matched.reduce((s, c) => s + (c.totalQ || 1), 0);
+            const earnedSum = matched.reduce((s, c) => s + c.earnedW, 0);
+            const totalWeightSum = matched.reduce((s, c) => s + c.totalW, 0);
+            const studentPct =
+                hasAnswers && totalWeightSum > 0 ? Number(((earnedSum / totalWeightSum) * 100).toFixed(2)) : 0;
             return {
                 ...ax,
-                studentPct: wTot > 0 ? Number((wSum / wTot).toFixed(2)) : 0,
+                studentPct,
                 schoolPct: ax.subject === "MTK" ? schoolAvgMtk : schoolAvgBindo
             };
         });
@@ -598,7 +693,7 @@ function PrivateStudentReportContent() {
             weakestAxis: sortedHex[sortedHex.length - 1],
             itemRows
         };
-    }, [allStudents, questionsBank, studentResultRow, activePhone]);
+    }, [allStudents, questionsBank, allResultsList, activePhone]);
 
     const handleDownloadPdfFile = useCallback(async () => {
         if (!reportData || !page1Ref.current || isGeneratingPdf) return;

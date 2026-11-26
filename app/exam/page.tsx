@@ -19,7 +19,6 @@ import {
     ArrowRight,
     ShieldCheck,
     MessageCircle,
-    Download,
     ExternalLink,
     Sparkles,
     ZoomIn,
@@ -352,6 +351,7 @@ export default function OfficialExamChamberPage() {
     const violationsRef = useRef<number>(0);
     const lastViolationTimeRef = useRef<number>(0);
     const isSubmittingRef = useRef<boolean>(false);
+    const hasRestoredProgressRef = useRef<boolean>(false);
 
     const [isInExam, setIsInExam] = useState(false);
     const [isIntermission, setIsIntermission] = useState(false);
@@ -360,11 +360,6 @@ export default function OfficialExamChamberPage() {
     const [showSubtestConfirmModal, setShowSubtestConfirmModal] = useState(false);
     const [showViolationModal, setShowViolationModal] = useState(false);
     const [finalSavedReport, setFinalSavedReport] = useState<any>(null);
-
-    // State gerbang WhatsApp + Konfirmasi 4 Digit Nomor HP Aktif -> Unduh Rapor PDF
-    const [waClickedAt, setWaClickedAt] = useState<number | null>(null);
-    const [confirmPhoneLast4, setConfirmPhoneLast4] = useState<string>("");
-    const [hasVerifiedWaSwitch, setHasVerifiedWaSwitch] = useState(false);
     const [previewFlyer, setPreviewFlyer] = useState<{ src: string; title: string } | null>(null);
 
     useEffect(() => {
@@ -379,6 +374,7 @@ export default function OfficialExamChamberPage() {
         if (typeof window === "undefined") return;
 
         const localData = localStorage.getItem("tka_student");
+        let parsedStudent: any = null;
         if (localData) {
             try {
                 const parsed = JSON.parse(localData);
@@ -386,6 +382,7 @@ export default function OfficialExamChamberPage() {
                     router.replace("/login");
                     return;
                 }
+                parsedStudent = parsed;
                 setStudentSession(parsed);
             } catch {
                 router.replace("/login");
@@ -395,6 +392,42 @@ export default function OfficialExamChamberPage() {
             router.replace("/login");
             return;
         }
+
+        // PULIHKAN PROGRES OTOMATIS JIKA BROWSER SEMPAT FORCE CLOSE / PUTUS SINYAL / REFRESH
+        try {
+            const rawProgress = localStorage.getItem("tka_exam_progress");
+            if (rawProgress) {
+                const saved = JSON.parse(rawProgress);
+                const cleanCurrentPhone = String(parsedStudent.phone || "").replace(/\D/g, "");
+                const cleanSavedPhone = String(saved?.phone || "").replace(/\D/g, "");
+                if (cleanCurrentPhone && cleanCurrentPhone === cleanSavedPhone) {
+                    hasRestoredProgressRef.current = true;
+                    if (saved.answers && typeof saved.answers === "object") {
+                        setAnswers(saved.answers);
+                        answersRef.current = saved.answers;
+                    }
+                    if (saved.doubtfuls && typeof saved.doubtfuls === "object") {
+                        setDoubtfuls(saved.doubtfuls);
+                    }
+                    if (typeof saved.subtestIdx === "number" && saved.subtestIdx >= 0 && saved.subtestIdx < TKA_SMP_SUBJECTS.length) {
+                        setCurrentSubtestIndex(saved.subtestIdx);
+                    }
+                    if (typeof saved.qIdx === "number" && saved.qIdx >= 0) {
+                        setCurrentQIndexInSubtest(saved.qIdx);
+                    }
+                    if (typeof saved.timeLeft === "number" && saved.timeLeft > 0) {
+                        setSubtestTimeLeft(saved.timeLeft);
+                    }
+                    if (typeof saved.violations === "number" && saved.violations > 0) {
+                        setViolationCount(saved.violations);
+                        violationsRef.current = saved.violations;
+                    }
+                    if (saved.isIntermission) {
+                        setIsIntermission(true);
+                    }
+                }
+            }
+        } catch { }
 
         const preloadImages = (list: any[]) => {
             list.forEach((item) => {
@@ -454,7 +487,9 @@ export default function OfficialExamChamberPage() {
                     const bindoSec = Number(data.durasi_bindo_detik) > 0 ? Number(data.durasi_bindo_detik) : 4500;
                     const mtkSec = Number(data.durasi_mtk_detik) > 0 ? Number(data.durasi_mtk_detik) : 4500;
                     setSubtestDurationsSec({ BINDO: bindoSec, MTK: mtkSec });
-                    setSubtestTimeLeft(bindoSec);
+                    if (!hasRestoredProgressRef.current) {
+                        setSubtestTimeLeft(bindoSec);
+                    }
                 }
             } catch { }
         };
@@ -470,8 +505,40 @@ export default function OfficialExamChamberPage() {
         return filtered.length > 0 ? filtered : allQuestionsList;
     }, [allQuestionsList, activeSubtest]);
 
-    const currentQ = currentSubtestQuestions[currentQIndexInSubtest] || currentSubtestQuestions[0];
-    const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${currentQIndexInSubtest}`;
+    const safeQIndex = Math.min(currentQIndexInSubtest, Math.max(0, currentSubtestQuestions.length - 1));
+    const currentQ = currentSubtestQuestions[safeQIndex] || currentSubtestQuestions[0];
+    const currentQKey = currentQ?.id ? String(currentQ.id) : `${activeSubtest.code}_${safeQIndex}`;
+
+    // SIMPAN PROGRES OTOMATIS KE PERANGKAT SETIAP PERUBAHAN JAWABAN / NOMOR / WAKTU
+    useEffect(() => {
+        if ((!isInExam && !isIntermission) || isExamCompleted || !studentSession?.phone) return;
+        try {
+            localStorage.setItem(
+                "tka_exam_progress",
+                JSON.stringify({
+                    phone: String(studentSession.phone).replace(/\D/g, ""),
+                    answers: answersRef.current,
+                    doubtfuls,
+                    subtestIdx: currentSubtestIndex,
+                    qIdx: safeQIndex,
+                    timeLeft: subtestTimeLeft,
+                    violations: violationsRef.current,
+                    isIntermission
+                })
+            );
+        } catch { }
+    }, [
+        isInExam,
+        isIntermission,
+        isExamCompleted,
+        studentSession,
+        answers,
+        doubtfuls,
+        currentSubtestIndex,
+        safeQIndex,
+        subtestTimeLeft,
+        violationCount
+    ]);
 
     const enterExamChamber = async () => {
         if (isSubmittingRef.current || isExamCompleted) return;
@@ -571,7 +638,6 @@ export default function OfficialExamChamberPage() {
     }, [isInExam, isExamCompleted, isIntermission, recordViolation]);
 
     const executeFinalSubmission = useCallback(async () => {
-        // Kunci flag submit TERLEBIH DAHULU agar tidak pernah memicu popup kuning kilat saat keluar fullscreen
         isSubmittingRef.current = true;
         setShowViolationModal(false);
         setShowSubtestConfirmModal(false);
@@ -617,6 +683,7 @@ export default function OfficialExamChamberPage() {
         localStorage.setItem("tka_result", JSON.stringify(finalReport));
         try {
             localStorage.removeItem("tka_draft_answers");
+            localStorage.removeItem("tka_exam_progress");
         } catch { }
 
         if (cleanPhone) {
@@ -808,6 +875,8 @@ export default function OfficialExamChamberPage() {
     if (!isInExam && !isExamCompleted) {
         const bindoCount = allQuestionsList.filter((q) => q.subtes_code === "BINDO").length;
         const mtkCount = allQuestionsList.filter((q) => q.subtes_code === "MTK").length;
+        const answeredCount = Object.keys(answers).length;
+        const isResuming = hasRestoredProgressRef.current && (answeredCount > 0 || currentSubtestIndex > 0 || safeQIndex > 0);
 
         return (
             <div className="min-h-screen bg-slate-100 flex items-center justify-center p-3.5 sm:p-4 font-sans text-slate-800">
@@ -836,6 +905,20 @@ export default function OfficialExamChamberPage() {
                             Peserta: <strong className="text-slate-800">{studentSession?.name}</strong> ({studentSession?.school})
                         </p>
                     </div>
+
+                    {isResuming && (
+                        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs text-left space-y-1">
+                            <div className="font-black flex items-center gap-1.5 text-emerald-800">
+                                <ShieldCheck className="w-4 h-4 shrink-0" />
+                                <span>Progres Ujian Sebelumnya Ditemukan!</span>
+                            </div>
+                            <p className="text-[11px] text-emerald-800 leading-relaxed">
+                                Sistem memulihkan <strong>{answeredCount} jawaban</strong> Anda. Sesi akan langsung dilanjutkan pada{" "}
+                                <strong>{activeSubtest.name} Soal No. {safeQIndex + 1}</strong> (sisa waktu{" "}
+                                <strong>{formatTime(subtestTimeLeft)}</strong>).
+                            </p>
+                        </div>
+                    )}
 
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5 text-xs">
                         <div className="font-bold text-slate-700 font-mono uppercase text-[11px] flex justify-between items-center">
@@ -887,7 +970,11 @@ export default function OfficialExamChamberPage() {
                         className="w-full py-3.5 px-6 rounded-2xl bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
                         <Maximize2 className="w-4 h-4" />
-                        <span>Masuk Layar Penuh & Mulai Bahasa Indonesia</span>
+                        <span>
+                            {isResuming
+                                ? `Lanjutkan ${activeSubtest.name} (Soal No. ${safeQIndex + 1})`
+                                : "Masuk Layar Penuh & Mulai Bahasa Indonesia"}
+                        </span>
                     </button>
                 </div>
             </div>
@@ -1185,7 +1272,7 @@ export default function OfficialExamChamberPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
                         <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[10.5px] font-mono font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                                SOAL NO. {currentQIndexInSubtest + 1} • {activeSubtest.code}
+                                SOAL NO. {safeQIndex + 1} • {activeSubtest.code}
                             </span>
                             <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-bold">
                                 {currentQ?.materi}
@@ -1363,7 +1450,7 @@ export default function OfficialExamChamberPage() {
                     <div className="pt-5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                         <button
                             type="button"
-                            disabled={currentQIndexInSubtest === 0}
+                            disabled={safeQIndex === 0}
                             onClick={() => setCurrentQIndexInSubtest((i) => Math.max(0, i - 1))}
                             className="px-4 sm:px-5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 disabled:opacity-40 flex items-center gap-1.5 hover:bg-slate-200 transition cursor-pointer"
                         >
@@ -1384,7 +1471,7 @@ export default function OfficialExamChamberPage() {
                         <button
                             type="button"
                             onClick={() => {
-                                if (currentQIndexInSubtest < currentSubtestQuestions.length - 1) {
+                                if (safeQIndex < currentSubtestQuestions.length - 1) {
                                     setCurrentQIndexInSubtest((i) => i + 1);
                                 } else {
                                     setShowSubtestConfirmModal(true);
@@ -1392,7 +1479,7 @@ export default function OfficialExamChamberPage() {
                             }}
                             className="px-5 sm:px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-blue-700/20 transition cursor-pointer"
                         >
-                            {currentQIndexInSubtest < currentSubtestQuestions.length - 1 ? (
+                            {safeQIndex < currentSubtestQuestions.length - 1 ? (
                                 <>
                                     Berikutnya <ChevronRight className="w-4 h-4" />
                                 </>
@@ -1428,7 +1515,7 @@ export default function OfficialExamChamberPage() {
                     <div className="grid grid-cols-5 gap-2 sm:gap-2.5">
                         {currentSubtestQuestions.map((q: any, idx: number) => {
                             const key = q.id ? String(q.id) : `${activeSubtest.code}_${idx}`;
-                            const isCurrent = currentQIndexInSubtest === idx;
+                            const isCurrent = safeQIndex === idx;
                             const ans = answers[key];
                             let isAnswered = false;
                             if (ans !== undefined) {
